@@ -1,0 +1,17 @@
+# FastAPI & Server
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# Database
+sqlmodel==0.0.22
+psycopg2-binary==2.9.10
+alembic==1.14.0
+
+# Plaid Integration
+plaid-python==18.2.0
+
+# Security & Config
+python-dotenv==1.0.1
+pydantic-settings==2.6.1
+cryptography==44.0.0
+
