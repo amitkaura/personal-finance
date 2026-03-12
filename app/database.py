@@ -2,9 +2,10 @@
 
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.config import settings
-from app.models import Account, CategoryRule, PlaidItem, Transaction
+from app.config import get_settings
+import app.models as _models  # noqa: F401 — registers table metadata with SQLModel
 
+settings = get_settings()
 engine = create_engine(
     settings.database_url,
     echo=settings.debug,

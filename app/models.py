@@ -8,6 +8,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Optional
 
+import sqlalchemy as sa
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -16,6 +17,8 @@ class AccountType(str, Enum):
 
     DEPOSITORY = "depository"
     INVESTMENT = "investment"
+    CREDIT = "credit"
+    LOAN = "loan"
 
 
 class PlaidItem(SQLModel, table=True):
@@ -39,8 +42,12 @@ class Account(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     official_name: Optional[str] = None
-    type: AccountType
+    type: AccountType = Field(sa_type=sa.String(20))
+    subtype: Optional[str] = None  # e.g. checking, savings, credit card, mortgage, student, auto
     current_balance: Decimal = Field(default=Decimal("0"), max_digits=15, decimal_places=2)
+    available_balance: Optional[Decimal] = Field(default=None, max_digits=15, decimal_places=2)
+    credit_limit: Optional[Decimal] = Field(default=None, max_digits=15, decimal_places=2)
+    currency_code: Optional[str] = Field(default="CAD")
     plaid_account_id: str = Field(unique=True, index=True)
     plaid_item_id: Optional[int] = Field(default=None, foreign_key="plaid_items.id")
 
@@ -58,6 +65,7 @@ class Transaction(SQLModel, table=True):
     date: date
     amount: Decimal = Field(max_digits=15, decimal_places=2)
     merchant_name: Optional[str] = None
+    plaid_category_code: Optional[str] = None
     category: Optional[str] = None
     pending_status: bool = False
     needs_review: bool = Field(default=True)
