@@ -182,6 +182,7 @@ def sync_transactions(plaid_item_id: int) -> None:
                         if cat:
                             existing.category = cat
                             existing.needs_review = False
+                    session.add(existing)
                 else:
                     new_txn = Transaction(
                         plaid_transaction_id=txn.transaction_id,
