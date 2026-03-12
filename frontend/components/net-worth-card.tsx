@@ -3,16 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Wallet, Landmark, TrendingUp, ArrowUp, ArrowDown } from "lucide-react";
 import { api } from "@/lib/api";
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    minimumFractionDigits: 2,
-  }).format(n);
-}
+import { useFormatCurrencyPrecise } from "@/lib/hooks";
 
 export default function NetWorthCard() {
+  const formatCurrency = useFormatCurrencyPrecise();
   const { data, isLoading } = useQuery({
     queryKey: ["accountSummary"],
     queryFn: api.getAccountSummary,

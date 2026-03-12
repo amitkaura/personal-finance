@@ -14,6 +14,7 @@ import {
   LinkIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useFormatCurrencyPrecise } from "@/lib/hooks";
 import type { Account } from "@/lib/types";
 import LinkAccount from "@/components/link-account";
 import ConfirmDialog from "@/components/confirm-dialog";
@@ -32,19 +33,12 @@ const SUBTYPES: Record<string, string[]> = {
   investment: ["rrsp", "tfsa", "brokerage", "cd", "401k", "ira", "roth", "529"],
 };
 
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    minimumFractionDigits: 2,
-  }).format(n);
-}
-
 function typeConfig(type: string) {
   return ACCOUNT_TYPES.find((t) => t.value === type) ?? ACCOUNT_TYPES[0];
 }
 
 export default function AccountsPage() {
+  const formatCurrency = useFormatCurrencyPrecise();
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["accounts"],
     queryFn: api.getAccounts,

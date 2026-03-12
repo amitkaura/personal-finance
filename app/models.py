@@ -84,3 +84,27 @@ class CategoryRule(SQLModel, table=True):
     keyword: str = Field(index=True)
     category: str
     case_sensitive: bool = False
+
+
+class UserSettings(SQLModel, table=True):
+    """Single-row table for user preferences (self-hosted, single-user app)."""
+
+    __tablename__ = "user_settings"
+
+    id: int = Field(default=1, primary_key=True)
+
+    # Display
+    currency: str = "CAD"
+    date_format: str = "YYYY-MM-DD"
+    locale: str = "en-CA"
+
+    # Sync schedule
+    sync_enabled: bool = True
+    sync_hour: int = 0
+    sync_minute: int = 0
+    sync_timezone: str = "America/Toronto"
+
+    # LLM categorization
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_api_key: str = ""
+    llm_model: str = "gpt-4o-mini"

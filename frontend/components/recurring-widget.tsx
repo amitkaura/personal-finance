@@ -3,15 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { RotateCw, Calendar } from "lucide-react";
 import { api } from "@/lib/api";
+import { useFormatCurrencyPrecise } from "@/lib/hooks";
 import type { Transaction } from "@/lib/types";
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    minimumFractionDigits: 2,
-  }).format(Math.abs(n));
-}
 
 function detectRecurring(transactions: Transaction[]): Transaction[] {
   const merchantCounts = new Map<string, Transaction[]>();
@@ -35,6 +28,7 @@ function detectRecurring(transactions: Transaction[]): Transaction[] {
 }
 
 export default function RecurringWidget() {
+  const formatCurrency = useFormatCurrencyPrecise();
   const { data: transactions, isLoading } = useQuery({
     queryKey: ["transactions", "all"],
     queryFn: () => api.getTransactions({ limit: 200 }),
@@ -78,7 +72,7 @@ export default function RecurringWidget() {
                 </div>
               </div>
               <span className="ml-3 text-sm font-semibold text-danger">
-                -{formatCurrency(txn.amount)}
+                -{formatCurrency(Math.abs(txn.amount))}
               </span>
             </li>
           ))}

@@ -13,6 +13,9 @@ plaid-python==18.2.0
 # Python 3.9 compatibility
 eval_type_backport==0.3.1
 
+# Scheduling
+apscheduler==3.11.0
+
 # Security & Config
 python-dotenv==1.0.1
 pydantic-settings==2.6.1

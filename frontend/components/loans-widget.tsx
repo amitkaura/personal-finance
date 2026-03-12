@@ -3,16 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Building2 } from "lucide-react";
 import { api } from "@/lib/api";
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    minimumFractionDigits: 2,
-  }).format(Math.abs(n));
-}
+import { useFormatCurrencyPrecise } from "@/lib/hooks";
 
 export default function LoansWidget() {
+  const formatCurrency = useFormatCurrencyPrecise();
   const { data, isLoading } = useQuery({
     queryKey: ["accountSummary"],
     queryFn: api.getAccountSummary,
@@ -30,7 +24,7 @@ export default function LoansWidget() {
         </div>
         {!isLoading && loans.length > 0 && (
           <span className="text-sm font-semibold text-danger">
-            {formatCurrency(totalOwed)} remaining
+            {formatCurrency(Math.abs(totalOwed))} remaining
           </span>
         )}
       </div>
@@ -59,7 +53,7 @@ export default function LoansWidget() {
                 </p>
               </div>
               <span className="ml-3 text-sm font-semibold text-danger">
-                {formatCurrency(loan.current_balance)}
+                {formatCurrency(Math.abs(loan.current_balance))}
               </span>
             </li>
           ))}

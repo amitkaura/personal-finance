@@ -3,16 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { CreditCard } from "lucide-react";
 import { api } from "@/lib/api";
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    minimumFractionDigits: 2,
-  }).format(Math.abs(n));
-}
+import { useFormatCurrencyPrecise } from "@/lib/hooks";
 
 export default function CreditCardsWidget() {
+  const formatCurrency = useFormatCurrencyPrecise();
   const { data, isLoading } = useQuery({
     queryKey: ["accountSummary"],
     queryFn: api.getAccountSummary,
@@ -32,7 +26,7 @@ export default function CreditCardsWidget() {
         </div>
         {!isLoading && cards.length > 0 && (
           <span className="text-sm font-semibold text-danger">
-            {formatCurrency(totalOwed)} owed
+            {formatCurrency(Math.abs(totalOwed))} owed
           </span>
         )}
       </div>
@@ -71,7 +65,7 @@ export default function CreditCardsWidget() {
                   </div>
                   <div className="ml-3 text-right">
                     <span className="text-sm font-semibold text-danger">
-                      {formatCurrency(card.current_balance)}
+                      {formatCurrency(Math.abs(card.current_balance))}
                     </span>
                     {limit > 0 && (
                       <p className="text-[10px] text-muted-foreground">

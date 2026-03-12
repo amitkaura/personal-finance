@@ -3,17 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useFormatCurrencyPrecise } from "@/lib/hooks";
 import type { Account } from "@/lib/types";
 
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    minimumFractionDigits: 2,
-  }).format(n);
-}
-
 export default function TopMovers() {
+  const formatCurrency = useFormatCurrencyPrecise();
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["accounts"],
     queryFn: api.getAccounts,

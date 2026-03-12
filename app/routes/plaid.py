@@ -19,7 +19,7 @@ from plaid.model.transactions_get_request_options import TransactionsGetRequestO
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from app.categorizer import categorize_transaction
+from app.categorizer import categorize_by_rules, categorize_batch_llm
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
 from app.models import Account, AccountType, PlaidItem, Transaction
@@ -263,11 +263,6 @@ def sync_transactions(plaid_item_id: int) -> None:
                     existing.plaid_category_code = plaid_cat
                     existing.pending_status = txn.pending
                     existing.date = txn.date
-                    if existing.needs_review:
-                        cat = categorize_transaction(existing, session)
-                        if cat:
-                            existing.category = cat
-                            existing.needs_review = False
                     session.add(existing)
                 else:
                     new_txn = Transaction(
@@ -276,23 +271,45 @@ def sync_transactions(plaid_item_id: int) -> None:
                         amount=Decimal(str(txn.amount)),
                         merchant_name=txn.merchant_name,
                         plaid_category_code=plaid_cat,
-                        category=txn.category[0] if txn.category else None,
+                        category=None,
                         pending_status=txn.pending,
                         needs_review=True,
                         account_id=account.id if account else None,
                     )
-                    cat = categorize_transaction(new_txn, session)
-                    if cat:
-                        new_txn.category = cat
-                        new_txn.needs_review = False
                     session.add(new_txn)
 
-                session.commit()
+            session.commit()
 
             batch_size = len(txn_response.transactions)
             if batch_size == 0:
                 break
             offset += batch_size
+
+        # Batch auto-categorize all uncategorized transactions
+        pending = session.exec(
+            select(Transaction).where(Transaction.needs_review == True)
+        ).all()
+
+        llm_candidates = []
+        for t in pending:
+            cat = categorize_by_rules(t.merchant_name or "", session)
+            if cat:
+                t.category = cat
+                t.needs_review = False
+                session.add(t)
+            else:
+                llm_candidates.append(t)
+
+        if llm_candidates:
+            llm_results = categorize_batch_llm(llm_candidates)
+            for t in llm_candidates:
+                cat = llm_results.get(t.id)
+                if cat:
+                    t.category = cat
+                    t.needs_review = False
+                    session.add(t)
+
+        session.commit()
 
         _update_balances(session, access_token, plaid_item_id)
 

@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
 
+    # Scheduled sync (cron-style, runs daily by default at midnight)
+    sync_enabled: bool = True
+    sync_hour: int = 0
+    sync_minute: int = 0
+    sync_timezone: str = "America/Toronto"
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8000

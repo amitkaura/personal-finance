@@ -1,4 +1,4 @@
-import type { Account, AccountSummary, PlaidConnection, Transaction } from "./types";
+import type { Account, AccountSummary, CategoryRule, PlaidConnection, Transaction, UserSettings } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -74,4 +74,42 @@ export const api = {
       `/plaid/items/${plaidItemId}/unlink`,
       { method: "POST" }
     ),
+
+  // Settings
+  getSettings: () => fetcher<UserSettings>("/settings"),
+
+  updateSettings: (body: Partial<UserSettings> & { llm_api_key?: string }) =>
+    fetcher<UserSettings>("/settings", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  // Category rules
+  getRules: () => fetcher<CategoryRule[]>("/settings/rules"),
+
+  createRule: (body: { keyword: string; category: string; case_sensitive?: boolean }) =>
+    fetcher<CategoryRule>("/settings/rules", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  updateRule: (id: number, body: Partial<CategoryRule>) =>
+    fetcher<CategoryRule>(`/settings/rules/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  deleteRule: (id: number) =>
+    fetch(`${API_BASE}/settings/rules/${id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    }),
+
+  exportTransactions: () => `${API_BASE}/settings/export`,
+
+  clearTransactions: () =>
+    fetch(`${API_BASE}/settings/transactions`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    }),
 };

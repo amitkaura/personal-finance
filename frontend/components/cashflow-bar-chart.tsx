@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ResponsiveBar } from "@nivo/bar";
 import { api } from "@/lib/api";
+import { useFormatCurrency } from "@/lib/hooks";
 import type { Transaction } from "@/lib/types";
 
 type Granularity = "month" | "quarter" | "year";
@@ -12,6 +13,11 @@ const GRANULARITY_OPTIONS: { value: Granularity; label: string }[] = [
   { value: "month", label: "Monthly" },
   { value: "quarter", label: "Quarterly" },
   { value: "year", label: "Yearly" },
+];
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ];
 
 function periodKey(dateStr: string, granularity: Granularity): string {
@@ -67,26 +73,66 @@ function buildChartData(transactions: Transaction[], granularity: Granularity) {
     }));
 }
 
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(Math.abs(n));
-}
-
 export default function CashFlowBarChart() {
+  const formatCurrency = useFormatCurrency();
   const [granularity, setGranularity] = useState<Granularity>("month");
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedQuarter, setSelectedQuarter] = useState<number | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
 
   const { data: transactions } = useQuery({
     queryKey: ["transactions", "all"],
     queryFn: () => api.getTransactions({ limit: 200 }),
   });
 
-  const chartData = transactions
-    ? buildChartData(transactions, granularity)
-    : [];
+  const availableYears = useMemo(() => {
+    if (!transactions) return [];
+    const years = new Set(transactions.map((t) => new Date(t.date).getFullYear()));
+    return Array.from(years).sort((a, b) => b - a);
+  }, [transactions]);
+
+  const monthsForQuarter = useMemo(() => {
+    if (selectedQuarter === null) return Array.from({ length: 12 }, (_, i) => i);
+    const start = (selectedQuarter - 1) * 3;
+    return [start, start + 1, start + 2];
+  }, [selectedQuarter]);
+
+  const filteredTransactions = useMemo(() => {
+    if (!transactions) return [];
+    return transactions.filter((t) => {
+      const d = new Date(t.date);
+      if (selectedYear !== null && d.getFullYear() !== selectedYear) return false;
+      if (selectedQuarter !== null && Math.floor(d.getMonth() / 3) + 1 !== selectedQuarter) return false;
+      if (selectedMonth !== null && d.getMonth() !== selectedMonth) return false;
+      return true;
+    });
+  }, [transactions, selectedYear, selectedQuarter, selectedMonth]);
+
+  const chartData = buildChartData(filteredTransactions, granularity);
+
+  function handleGranularityChange(g: Granularity) {
+    setGranularity(g);
+    if (g === "year") {
+      setSelectedQuarter(null);
+      setSelectedMonth(null);
+    } else if (g === "quarter") {
+      setSelectedMonth(null);
+    }
+  }
+
+  function handleYearChange(value: string) {
+    setSelectedYear(value === "" ? null : parseInt(value));
+    setSelectedQuarter(null);
+    setSelectedMonth(null);
+  }
+
+  function handleQuarterChange(value: string) {
+    setSelectedQuarter(value === "" ? null : parseInt(value));
+    setSelectedMonth(null);
+  }
+
+  const selectClass =
+    "rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-foreground outline-none focus:ring-1 focus:ring-ring cursor-pointer";
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
@@ -98,7 +144,7 @@ export default function CashFlowBarChart() {
           {GRANULARITY_OPTIONS.map(({ value, label }) => (
             <button
               key={value}
-              onClick={() => setGranularity(value)}
+              onClick={() => handleGranularityChange(value)}
               className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                 granularity === value
                   ? "bg-accent text-accent-foreground"
@@ -109,6 +155,46 @@ export default function CashFlowBarChart() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <select
+          value={selectedYear ?? ""}
+          onChange={(e) => handleYearChange(e.target.value)}
+          className={selectClass}
+        >
+          <option value="">All Years</option>
+          {availableYears.map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+
+        {granularity !== "year" && (
+          <select
+            value={selectedQuarter ?? ""}
+            onChange={(e) => handleQuarterChange(e.target.value)}
+            className={selectClass}
+          >
+            <option value="">All Quarters</option>
+            <option value="1">Q1 (Jan – Mar)</option>
+            <option value="2">Q2 (Apr – Jun)</option>
+            <option value="3">Q3 (Jul – Sep)</option>
+            <option value="4">Q4 (Oct – Dec)</option>
+          </select>
+        )}
+
+        {granularity === "month" && (
+          <select
+            value={selectedMonth ?? ""}
+            onChange={(e) => setSelectedMonth(e.target.value === "" ? null : parseInt(e.target.value))}
+            className={selectClass}
+          >
+            <option value="">All Months</option>
+            {monthsForQuarter.map((m) => (
+              <option key={m} value={m}>{MONTH_NAMES[m]}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {chartData.length === 0 ? (
@@ -123,7 +209,7 @@ export default function CashFlowBarChart() {
             data={chartData}
             keys={["Income", "Expenses"]}
             indexBy="period"
-            groupMode="grouped"
+            groupMode="stacked"
             margin={{ top: 10, right: 20, bottom: 40, left: 70 }}
             padding={0.3}
             valueScale={{ type: "symlog" }}
@@ -137,7 +223,7 @@ export default function CashFlowBarChart() {
             axisLeft={{
               tickSize: 0,
               tickPadding: 8,
-              format: (v) => formatCurrency(v as number),
+              format: (v) => formatCurrency(Math.abs(v as number)),
             }}
             enableGridX={false}
             gridYValues={5}
@@ -149,7 +235,7 @@ export default function CashFlowBarChart() {
                   style={{ background: color }}
                 />
                 <span className="font-medium">{id}:</span>{" "}
-                {formatCurrency(value as number)}
+                {formatCurrency(Math.abs(value as number))}
               </div>
             )}
             theme={{

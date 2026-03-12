@@ -4,16 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    minimumFractionDigits: 2,
-  }).format(Math.abs(n));
-}
+import { useFormatCurrencyPrecise } from "@/lib/hooks";
 
 export default function ReviewSnippet() {
+  const formatCurrency = useFormatCurrencyPrecise();
   const { data, isLoading } = useQuery({
     queryKey: ["transactions", "needsReview"],
     queryFn: () => api.getTransactions({ needs_review: true, limit: 5 }),
@@ -62,7 +56,7 @@ export default function ReviewSnippet() {
                 <p className="text-xs text-muted-foreground">{txn.date}</p>
               </div>
               <span className="ml-3 text-sm font-medium">
-                {formatCurrency(txn.amount)}
+                {formatCurrency(Math.abs(txn.amount))}
               </span>
             </li>
           ))}

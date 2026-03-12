@@ -70,3 +70,23 @@ export interface Transaction {
   account_id: number | null;
   plaid_transaction_id: string;
 }
+
+export interface UserSettings {
+  currency: string;
+  date_format: string;
+  locale: string;
+  sync_enabled: boolean;
+  sync_hour: number;
+  sync_minute: number;
+  sync_timezone: string;
+  llm_base_url: string;
+  llm_api_key_set: boolean;
+  llm_model: string;
+}
+
+export interface CategoryRule {
+  id: number;
+  keyword: string;
+  category: string;
+  case_sensitive: boolean;
+}

@@ -15,7 +15,8 @@ import httpx
 from sqlmodel import Session, select
 
 from app.config import get_settings
-from app.models import CategoryRule, Transaction
+from app.database import engine
+from app.models import CategoryRule, Transaction, UserSettings
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +75,24 @@ def categorize_by_llm(transaction: Transaction) -> str | None:
     return results.get(transaction.id)
 
 
+def _get_llm_config() -> tuple[str, str, str]:
+    """Return (base_url, api_key, model) from DB settings, falling back to env."""
+    try:
+        with Session(engine) as session:
+            db = session.get(UserSettings, 1)
+            if db and db.llm_api_key:
+                return db.llm_base_url, db.llm_api_key, db.llm_model
+    except Exception:
+        pass
+    env = get_settings()
+    return env.llm_base_url, env.llm_api_key, env.llm_model
+
+
 def categorize_batch_llm(transactions: list[Transaction]) -> dict[int, str]:
     """Send a batch of transactions to the LLM and return {id: category} mapping."""
-    settings = get_settings()
-    if not settings.llm_api_key:
-        logger.warning("LLM_API_KEY not configured — skipping LLM categorization")
+    base_url, api_key, model = _get_llm_config()
+    if not api_key:
+        logger.warning("LLM API key not configured — skipping LLM categorization")
         return {}
 
     txn_list = []
@@ -98,10 +112,10 @@ def categorize_batch_llm(transactions: list[Transaction]) -> dict[int, str]:
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {settings.llm_api_key}",
+        "Authorization": f"Bearer {api_key}",
     }
     payload = {
-        "model": settings.llm_model,
+        "model": model,
         "temperature": 0.1,
         "messages": [
             {"role": "system", "content": system_message},
@@ -111,7 +125,7 @@ def categorize_batch_llm(transactions: list[Transaction]) -> dict[int, str]:
 
     try:
         resp = httpx.post(
-            f"{settings.llm_base_url}/chat/completions",
+            f"{base_url}/chat/completions",
             headers=headers,
             json=payload,
             timeout=60.0,
