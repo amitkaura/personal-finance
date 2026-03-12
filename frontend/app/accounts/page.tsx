@@ -85,6 +85,7 @@ export default function AccountsPage() {
 }
 
 function AccountRow({ account }: { account: Account }) {
+  const formatCurrency = useFormatCurrencyPrecise();
   const queryClient = useQueryClient();
   const [typeOpen, setTypeOpen] = useState(false);
   const [subtypeOpen, setSubtypeOpen] = useState(false);

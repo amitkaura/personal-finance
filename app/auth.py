@@ -1,6 +1,9 @@
 """JWT helpers and FastAPI authentication dependency."""
 
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 import jwt
 from fastapi import Cookie, Depends, HTTPException, status
@@ -34,7 +37,7 @@ def _decode_jwt(token: str) -> int:
 
 
 def get_current_user(
-    session_token: str | None = Cookie(None, alias=_COOKIE_NAME),
+    session_token: Optional[str] = Cookie(None, alias=_COOKIE_NAME),
     db: Session = Depends(get_session),
 ) -> User:
     if not session_token:

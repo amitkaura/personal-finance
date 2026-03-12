@@ -1,11 +1,15 @@
 """Authentication routes – Google OAuth login, session check, logout."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import id_token as google_id_token
 from pydantic import BaseModel
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 from app.auth import create_jwt, get_current_user
 from app.config import get_settings
@@ -37,7 +41,8 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
             GoogleRequest(),
             settings.google_client_id,
         )
-    except ValueError:
+    except Exception:
+        logger.exception("Google token verification failed")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google token")
 
     google_id = idinfo["sub"]
