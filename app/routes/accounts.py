@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,6 +33,8 @@ def _acct_to_dict(a: Account) -> dict:
         "credit_limit": float(a.credit_limit) if a.credit_limit is not None else None,
         "currency_code": a.currency_code,
         "plaid_account_id": a.plaid_account_id,
+        "plaid_item_id": a.plaid_item_id,
+        "is_linked": a.is_linked,
     }
 
 
@@ -63,6 +66,66 @@ def update_account(
     session.commit()
     session.refresh(acct)
     return _acct_to_dict(acct)
+
+
+@router.post("/{account_id}/unlink")
+def unlink_account(
+    account_id: int,
+    session: Session = Depends(get_session),
+):
+    """Unlink a single account: zero balances, mark unlinked, revoke Plaid item if last account."""
+    from app.models import PlaidItem
+
+    acct = session.get(Account, account_id)
+    if not acct:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if not acct.is_linked:
+        raise HTTPException(status_code=400, detail="Account is already unlinked")
+
+    acct.current_balance = Decimal("0")
+    acct.available_balance = None
+    acct.credit_limit = None
+    acct.is_linked = False
+
+    plaid_item_id = acct.plaid_item_id
+    acct.plaid_item_id = None
+    session.add(acct)
+    session.commit()
+
+    if plaid_item_id:
+        remaining = session.exec(
+            select(Account).where(
+                Account.plaid_item_id == plaid_item_id,
+                Account.is_linked == True,
+            )
+        ).all()
+        if not remaining:
+            _revoke_and_delete_item(session, plaid_item_id)
+
+    session.refresh(acct)
+    return _acct_to_dict(acct)
+
+
+def _revoke_and_delete_item(session: Session, plaid_item_id: int) -> None:
+    """Revoke the Plaid access token and delete the PlaidItem record."""
+    from app.crypto import decrypt_token
+    from app.models import PlaidItem
+    from app.plaid_client import get_plaid_client
+
+    item = session.get(PlaidItem, plaid_item_id)
+    if not item:
+        return
+
+    try:
+        from plaid.model.item_remove_request import ItemRemoveRequest
+        client = get_plaid_client()
+        access_token = decrypt_token(item.encrypted_access_token)
+        client.item_remove(ItemRemoveRequest(access_token=access_token))
+    except Exception:
+        pass
+
+    session.delete(item)
+    session.commit()
 
 
 @router.get("/summary")

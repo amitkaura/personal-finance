@@ -9,6 +9,24 @@ export interface Account {
   credit_limit: number | null;
   currency_code: string | null;
   plaid_account_id: string;
+  plaid_item_id: number | null;
+  is_linked: boolean;
+}
+
+export interface PlaidConnectionAccount {
+  id: number;
+  name: string;
+  type: string;
+  subtype: string | null;
+  current_balance: number;
+  is_linked: boolean;
+}
+
+export interface PlaidConnection {
+  id: number;
+  item_id: string;
+  institution_name: string | null;
+  accounts: PlaidConnectionAccount[];
 }
 
 export interface CreditAccountSummary {

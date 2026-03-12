@@ -122,7 +122,9 @@ def categorize_batch_llm(transactions: list[Transaction]) -> dict[int, str]:
         # Strip markdown fences if the model wraps the JSON
         content = content.strip()
         if content.startswith("```"):
-            content = content.split("\n", 1)[1]
+            # Handle malformed fences like "```" with no newline.
+            parts = content.split("\n", 1)
+            content = parts[1] if len(parts) > 1 else ""
         if content.endswith("```"):
             content = content.rsplit("```", 1)[0]
         content = content.strip()

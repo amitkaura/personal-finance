@@ -28,6 +28,9 @@ from app.plaid_client import get_plaid_client
 router = APIRouter(prefix="/plaid", tags=["plaid"])
 
 
+from plaid.model.item_remove_request import ItemRemoveRequest
+
+
 class LinkTokenResponse(BaseModel):
     link_token: str
 
@@ -86,8 +89,24 @@ def exchange_public_token(
 
     synced = 0
     for acct in accounts_response.accounts:
-        db_account = _plaid_account_to_db(acct, plaid_item.id)
-        session.add(db_account)
+        existing = session.exec(
+            select(Account).where(Account.plaid_account_id == acct.account_id)
+        ).first()
+        if existing:
+            existing.plaid_item_id = plaid_item.id
+            existing.is_linked = True
+            existing.current_balance = Decimal(str(acct.balances.current or 0))
+            if acct.balances.available is not None:
+                existing.available_balance = Decimal(str(acct.balances.available))
+            if acct.balances.limit is not None:
+                existing.credit_limit = Decimal(str(acct.balances.limit))
+            existing.currency_code = acct.balances.iso_currency_code or existing.currency_code
+            if acct.official_name:
+                existing.official_name = acct.official_name
+            session.add(existing)
+        else:
+            db_account = _plaid_account_to_db(acct, plaid_item.id)
+            session.add(db_account)
         synced += 1
 
     session.commit()
@@ -123,6 +142,73 @@ def trigger_sync_all(
     for item in items:
         background_tasks.add_task(sync_transactions, item.id)
     return {"status": "sync_started", "items_queued": len(items)}
+
+
+@router.get("/items")
+def list_plaid_items(session: Session = Depends(get_session)):
+    """List all Plaid items (institution connections) with their accounts."""
+    items = session.exec(select(PlaidItem)).all()
+    result = []
+    for item in items:
+        accounts = session.exec(
+            select(Account).where(Account.plaid_item_id == item.id)
+        ).all()
+        result.append({
+            "id": item.id,
+            "item_id": item.item_id,
+            "institution_name": item.institution_name,
+            "accounts": [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "type": a.type.value if hasattr(a.type, "value") else a.type,
+                    "subtype": a.subtype,
+                    "current_balance": float(a.current_balance),
+                    "is_linked": a.is_linked,
+                }
+                for a in accounts
+            ],
+        })
+    return result
+
+
+@router.post("/items/{plaid_item_id}/unlink")
+def unlink_plaid_item(
+    plaid_item_id: int,
+    session: Session = Depends(get_session),
+):
+    """Unlink all accounts under a Plaid item, revoke token, delete the item."""
+    item = session.get(PlaidItem, plaid_item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Plaid item not found")
+
+    accounts = session.exec(
+        select(Account).where(Account.plaid_item_id == item.id)
+    ).all()
+
+    for acct in accounts:
+        acct.current_balance = Decimal("0")
+        acct.available_balance = None
+        acct.credit_limit = None
+        acct.is_linked = False
+        acct.plaid_item_id = None
+        session.add(acct)
+
+    try:
+        client = get_plaid_client()
+        access_token = decrypt_token(item.encrypted_access_token)
+        client.item_remove(ItemRemoveRequest(access_token=access_token))
+    except Exception:
+        pass
+
+    session.delete(item)
+    session.commit()
+
+    return {
+        "status": "unlinked",
+        "institution_name": item.institution_name,
+        "accounts_unlinked": len(accounts),
+    }
 
 
 def sync_transactions(plaid_item_id: int) -> None:

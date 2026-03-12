@@ -8,6 +8,7 @@ import {
   ArrowLeftRight,
   TrendingUp,
   Wallet,
+  Cable,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -15,6 +16,7 @@ const NAV_ITEMS = [
   { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/cashflow", label: "Cash Flow", icon: TrendingUp },
+  { href: "/connections", label: "Connections", icon: Cable },
 ];
 
 export default function Sidebar() {

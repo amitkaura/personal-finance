@@ -50,6 +50,7 @@ class Account(SQLModel, table=True):
     currency_code: Optional[str] = Field(default="CAD")
     plaid_account_id: str = Field(unique=True, index=True)
     plaid_item_id: Optional[int] = Field(default=None, foreign_key="plaid_items.id")
+    is_linked: bool = Field(default=True)
 
     plaid_item: Optional[PlaidItem] = Relationship(back_populates="accounts")
     transactions: list["Transaction"] = Relationship(back_populates="account")

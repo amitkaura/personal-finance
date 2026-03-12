@@ -1,4 +1,4 @@
-import type { Account, AccountSummary, Transaction } from "./types";
+import type { Account, AccountSummary, PlaidConnection, Transaction } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -61,6 +61,17 @@ export const api = {
   autoCategorize: () =>
     fetcher<{ total: number; categorized: number; skipped: number }>(
       "/transactions/auto-categorize",
+      { method: "POST" }
+    ),
+
+  unlinkAccount: (accountId: number) =>
+    fetcher<Account>(`/accounts/${accountId}/unlink`, { method: "POST" }),
+
+  getPlaidItems: () => fetcher<PlaidConnection[]>("/plaid/items"),
+
+  unlinkPlaidItem: (plaidItemId: number) =>
+    fetcher<{ status: string; institution_name: string; accounts_unlinked: number }>(
+      `/plaid/items/${plaidItemId}/unlink`,
       { method: "POST" }
     ),
 };
