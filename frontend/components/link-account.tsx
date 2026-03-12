@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, CheckCircle, Loader2 } from "lucide-react";
@@ -34,11 +34,6 @@ export default function LinkAccount() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      setTimeout(() => {
-        setStatus("idle");
-        setResult(null);
-        setLinkToken(null);
-      }, 3000);
     },
     onError: () => {
       setStatus("idle");
@@ -77,6 +72,24 @@ export default function LinkAccount() {
       fetchToken.mutate();
     }
   };
+
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (status === "done") {
+      resetTimer.current = setTimeout(() => {
+        setStatus("idle");
+        setResult(null);
+        setLinkToken(null);
+      }, 3000);
+    }
+    return () => {
+      if (resetTimer.current) {
+        clearTimeout(resetTimer.current);
+        resetTimer.current = null;
+      }
+    };
+  }, [status]);
 
   useEffect(() => {
     if (status === "linking" && linkToken && ready) {

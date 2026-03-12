@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
@@ -8,12 +8,16 @@ import { api } from "@/lib/api";
 export default function SyncButton() {
   const queryClient = useQueryClient();
   const [syncing, setSyncing] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const mutation = useMutation({
     mutationFn: () => api.triggerSyncAll(),
     onMutate: () => setSyncing(true),
     onSettled: () => {
-      setTimeout(() => {
+      if (timer.current) {
+        clearTimeout(timer.current);
+      }
+      timer.current = setTimeout(() => {
         setSyncing(false);
         queryClient.invalidateQueries({ queryKey: ["accounts"] });
         queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
@@ -21,6 +25,14 @@ export default function SyncButton() {
       }, 5000);
     },
   });
+
+  useEffect(() => {
+    return () => {
+      if (timer.current) {
+        clearTimeout(timer.current);
+      }
+    };
+  }, []);
 
   return (
     <button
