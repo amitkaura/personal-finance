@@ -9,15 +9,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from app.auth import get_current_user
 from app.database import get_session
-from app.models import Account, AccountType
+from app.models import Account, AccountType, User
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 
 @router.get("")
-def list_accounts(session: Session = Depends(get_session)):
-    accounts = session.exec(select(Account)).all()
+def list_accounts(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    accounts = session.exec(
+        select(Account).where(Account.user_id == user.id)
+    ).all()
     return [_acct_to_dict(a) for a in accounts]
 
 
@@ -49,9 +55,10 @@ def update_account(
     account_id: int,
     body: AccountUpdate,
     session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     acct = session.get(Account, account_id)
-    if not acct:
+    if not acct or acct.user_id != user.id:
         raise HTTPException(status_code=404, detail="Account not found")
     if body.type is not None:
         valid_types = {t.value for t in AccountType}
@@ -72,12 +79,13 @@ def update_account(
 def unlink_account(
     account_id: int,
     session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     """Unlink a single account: zero balances, mark unlinked, revoke Plaid item if last account."""
     from app.models import PlaidItem
 
     acct = session.get(Account, account_id)
-    if not acct:
+    if not acct or acct.user_id != user.id:
         raise HTTPException(status_code=404, detail="Account not found")
     if not acct.is_linked:
         raise HTTPException(status_code=400, detail="Account is already unlinked")
@@ -129,9 +137,14 @@ def _revoke_and_delete_item(session: Session, plaid_item_id: int) -> None:
 
 
 @router.get("/summary")
-def accounts_summary(session: Session = Depends(get_session)):
+def accounts_summary(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     """Aggregated balance info for the dashboard."""
-    accounts = session.exec(select(Account)).all()
+    accounts = session.exec(
+        select(Account).where(Account.user_id == user.id)
+    ).all()
     by_type: dict[str, list] = {}
     for a in accounts:
         t = a.type.value if hasattr(a.type, "value") else a.type

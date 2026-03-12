@@ -8,6 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlmodel import Session, select
 
+from app.config import get_settings
 from app.database import engine
 from app.models import PlaidItem, UserSettings
 from app.routes.plaid import sync_transactions
@@ -17,15 +18,8 @@ logger = logging.getLogger(__name__)
 _scheduler: BackgroundScheduler | None = None
 
 
-def _get_sync_settings() -> UserSettings:
-    """Read sync config from the DB, falling back to defaults."""
-    with Session(engine) as session:
-        settings = session.get(UserSettings, 1)
-        return settings or UserSettings(id=1)
-
-
 def _sync_all_items() -> None:
-    """Sync transactions for every linked Plaid item."""
+    """Sync transactions for every linked Plaid item across all users."""
     with Session(engine) as session:
         items = session.exec(select(PlaidItem)).all()
 
@@ -44,28 +38,28 @@ def _sync_all_items() -> None:
 
 
 def start_scheduler() -> None:
-    """Start the background scheduler if sync is enabled."""
+    """Start the background scheduler using env-level sync settings."""
     global _scheduler
 
-    settings = _get_sync_settings()
-    if not settings.sync_enabled:
+    env = get_settings()
+    if not env.sync_enabled:
         logger.info("Scheduled sync is disabled")
         return
 
     _scheduler = BackgroundScheduler()
     trigger = CronTrigger(
-        hour=settings.sync_hour,
-        minute=settings.sync_minute,
-        timezone=settings.sync_timezone,
+        hour=env.sync_hour,
+        minute=env.sync_minute,
+        timezone=env.sync_timezone,
     )
     _scheduler.add_job(_sync_all_items, trigger, id="sync_all_transactions")
     _scheduler.start()
 
     logger.info(
         "Scheduler started — syncing daily at %02d:%02d (%s)",
-        settings.sync_hour,
-        settings.sync_minute,
-        settings.sync_timezone,
+        env.sync_hour,
+        env.sync_minute,
+        env.sync_timezone,
     )
 
 
@@ -79,6 +73,6 @@ def stop_scheduler() -> None:
 
 
 def restart_scheduler() -> None:
-    """Stop and re-start the scheduler with current DB settings."""
+    """Stop and re-start the scheduler with current settings."""
     stop_scheduler()
     start_scheduler()

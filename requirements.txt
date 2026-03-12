@@ -16,6 +16,10 @@ eval_type_backport==0.3.1
 # Scheduling
 apscheduler==3.11.0
 
+# Authentication
+PyJWT==2.9.0
+google-auth==2.36.0
+
 # Security & Config
 python-dotenv==1.0.1
 pydantic-settings==2.6.1

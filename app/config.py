@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # Encryption key for access tokens (32 bytes hex = 64 chars)
     encryption_key: str = ""
 
+    # Google OAuth
+    google_client_id: str = ""
+
+    # JWT session secret
+    jwt_secret: str = "change-me-in-production"
+
     # LLM categorization (OpenAI-compatible API — works with OpenAI, Ollama, etc.)
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""

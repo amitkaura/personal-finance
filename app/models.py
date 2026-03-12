@@ -12,6 +12,18 @@ import sqlalchemy as sa
 from sqlmodel import Field, Relationship, SQLModel
 
 
+class User(SQLModel, table=True):
+    """Authenticated user via Google OAuth."""
+
+    __tablename__ = "users"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    google_id: str = Field(unique=True, index=True)
+    email: str = Field(unique=True, index=True)
+    name: str = ""
+    picture: Optional[str] = None
+
+
 class AccountType(str, Enum):
     """Account type as defined by Plaid."""
 
@@ -27,6 +39,7 @@ class PlaidItem(SQLModel, table=True):
     __tablename__ = "plaid_items"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
     encrypted_access_token: str = Field(index=True)
     item_id: str = Field(unique=True, index=True)
     institution_name: Optional[str] = None
@@ -40,10 +53,11 @@ class Account(SQLModel, table=True):
     __tablename__ = "accounts"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
     name: str
     official_name: Optional[str] = None
     type: AccountType = Field(sa_type=sa.String(20))
-    subtype: Optional[str] = None  # e.g. checking, savings, credit card, mortgage, student, auto
+    subtype: Optional[str] = None
     current_balance: Decimal = Field(default=Decimal("0"), max_digits=15, decimal_places=2)
     available_balance: Optional[Decimal] = Field(default=None, max_digits=15, decimal_places=2)
     credit_limit: Optional[Decimal] = Field(default=None, max_digits=15, decimal_places=2)
@@ -81,17 +95,19 @@ class CategoryRule(SQLModel, table=True):
     __tablename__ = "category_rules"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
     keyword: str = Field(index=True)
     category: str
     case_sensitive: bool = False
 
 
 class UserSettings(SQLModel, table=True):
-    """Single-row table for user preferences (self-hosted, single-user app)."""
+    """Per-user preferences."""
 
     __tablename__ = "user_settings"
 
-    id: int = Field(default=1, primary_key=True)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", unique=True, index=True)
 
     # Display
     currency: str = "CAD"

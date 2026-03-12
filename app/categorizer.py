@@ -16,7 +16,7 @@ from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.database import engine
-from app.models import CategoryRule, Transaction, UserSettings
+from app.models import Account, CategoryRule, Transaction, UserSettings
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +54,14 @@ Rules:
 - No extra text outside the JSON array."""
 
 
-def categorize_by_rules(merchant_name: str, session: Session) -> str | None:
+def categorize_by_rules(merchant_name: str, session: Session, user_id: int) -> str | None:
     """Return a category if the merchant matches any user-defined keyword rule."""
     if not merchant_name:
         return None
 
-    rules = session.exec(select(CategoryRule)).all()
+    rules = session.exec(
+        select(CategoryRule).where(CategoryRule.user_id == user_id)
+    ).all()
     for rule in rules:
         keyword = rule.keyword if rule.case_sensitive else rule.keyword.lower()
         name = merchant_name if rule.case_sensitive else merchant_name.lower()
@@ -69,17 +71,19 @@ def categorize_by_rules(merchant_name: str, session: Session) -> str | None:
     return None
 
 
-def categorize_by_llm(transaction: Transaction) -> str | None:
+def categorize_by_llm(transaction: Transaction, user_id: int) -> str | None:
     """Categorize a single transaction via LLM. Prefer batch version for efficiency."""
-    results = categorize_batch_llm([transaction])
+    results = categorize_batch_llm([transaction], user_id)
     return results.get(transaction.id)
 
 
-def _get_llm_config() -> tuple[str, str, str]:
+def _get_llm_config(user_id: int) -> tuple[str, str, str]:
     """Return (base_url, api_key, model) from DB settings, falling back to env."""
     try:
         with Session(engine) as session:
-            db = session.get(UserSettings, 1)
+            db = session.exec(
+                select(UserSettings).where(UserSettings.user_id == user_id)
+            ).first()
             if db and db.llm_api_key:
                 return db.llm_base_url, db.llm_api_key, db.llm_model
     except Exception:
@@ -88,9 +92,9 @@ def _get_llm_config() -> tuple[str, str, str]:
     return env.llm_base_url, env.llm_api_key, env.llm_model
 
 
-def categorize_batch_llm(transactions: list[Transaction]) -> dict[int, str]:
+def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[int, str]:
     """Send a batch of transactions to the LLM and return {id: category} mapping."""
-    base_url, api_key, model = _get_llm_config()
+    base_url, api_key, model = _get_llm_config(user_id)
     if not api_key:
         logger.warning("LLM API key not configured — skipping LLM categorization")
         return {}
@@ -133,10 +137,8 @@ def categorize_batch_llm(transactions: list[Transaction]) -> dict[int, str]:
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
 
-        # Strip markdown fences if the model wraps the JSON
         content = content.strip()
         if content.startswith("```"):
-            # Handle malformed fences like "```" with no newline.
             parts = content.split("\n", 1)
             content = parts[1] if len(parts) > 1 else ""
         if content.endswith("```"):
@@ -156,29 +158,34 @@ def categorize_batch_llm(transactions: list[Transaction]) -> dict[int, str]:
         return {}
 
 
-def categorize_transaction(transaction: Transaction, session: Session) -> str | None:
+def categorize_transaction(transaction: Transaction, session: Session, user_id: int) -> str | None:
     """Run the full categorization pipeline on a single transaction."""
-    category = categorize_by_rules(transaction.merchant_name or "", session)
+    category = categorize_by_rules(transaction.merchant_name or "", session, user_id)
     if category:
         return category
 
-    return categorize_by_llm(transaction)
+    return categorize_by_llm(transaction, user_id)
 
 
-def auto_categorize_pending(session: Session) -> dict[str, int]:
-    """Batch-categorize all needs_review transactions. Returns counts."""
+def auto_categorize_pending(session: Session, user_id: int) -> dict[str, int]:
+    """Batch-categorize all needs_review transactions for a given user. Returns counts."""
+    user_account_ids = session.exec(
+        select(Account.id).where(Account.user_id == user_id)
+    ).all()
     txns = session.exec(
-        select(Transaction).where(Transaction.needs_review == True)
+        select(Transaction).where(
+            Transaction.needs_review == True,
+            Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+        )
     ).all()
 
     if not txns:
         return {"total": 0, "categorized": 0, "skipped": 0}
 
-    # First pass: keyword rules
     rule_matched = []
     llm_candidates = []
     for txn in txns:
-        cat = categorize_by_rules(txn.merchant_name or "", session)
+        cat = categorize_by_rules(txn.merchant_name or "", session, user_id)
         if cat:
             txn.category = cat
             txn.needs_review = False
@@ -187,8 +194,7 @@ def auto_categorize_pending(session: Session) -> dict[str, int]:
         else:
             llm_candidates.append(txn)
 
-    # Second pass: LLM batch
-    llm_results = categorize_batch_llm(llm_candidates) if llm_candidates else {}
+    llm_results = categorize_batch_llm(llm_candidates, user_id) if llm_candidates else {}
     llm_matched = 0
     for txn in llm_candidates:
         cat = llm_results.get(txn.id)

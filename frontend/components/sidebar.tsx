@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -7,10 +8,12 @@ import {
   Landmark,
   ArrowLeftRight,
   TrendingUp,
-  Wallet,
   Cable,
   Settings,
+  LogOut,
+  Wallet,
 } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -23,6 +26,7 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col bg-sidebar border-r border-border">
@@ -51,10 +55,39 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-border p-4">
-        <p className="text-xs text-muted-foreground">Self-hosted</p>
-        <p className="text-xs text-muted-foreground">v0.1.0</p>
-      </div>
+      {user && (
+        <div className="border-t border-border p-4">
+          <div className="flex items-center gap-3">
+            {user.picture ? (
+              <Image
+                src={user.picture}
+                alt={user.name}
+                width={32}
+                height={32}
+                className="rounded-full"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/15 text-xs font-medium text-accent">
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="truncate text-sm font-medium">{user.name}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {user.email}
+              </p>
+            </div>
+            <button
+              onClick={logout}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

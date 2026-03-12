@@ -1,10 +1,11 @@
-import type { Account, AccountSummary, CategoryRule, PlaidConnection, Transaction, UserSettings } from "./types";
+import type { Account, AccountSummary, CategoryRule, PlaidConnection, Transaction, User, UserSettings } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 async function fetcher<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     ...init,
   });
   if (!res.ok) {
@@ -13,7 +14,31 @@ async function fetcher<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+async function fetchVoid(path: string, init?: RequestInit): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    ...init,
+  });
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${await res.text()}`);
+  }
+}
+
 export const api = {
+  // Auth
+  loginWithGoogle: (idToken: string) =>
+    fetcher<User>("/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ id_token: idToken }),
+    }),
+
+  getMe: () => fetcher<User>("/auth/me"),
+
+  logout: () =>
+    fetcher<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+
+  // Accounts
   getAccounts: () => fetcher<Account[]>("/accounts"),
 
   getAccountSummary: () => fetcher<AccountSummary>("/accounts/summary"),
@@ -100,16 +125,10 @@ export const api = {
     }),
 
   deleteRule: (id: number) =>
-    fetch(`${API_BASE}/settings/rules/${id}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-    }),
+    fetchVoid(`/settings/rules/${id}`, { method: "DELETE" }),
 
   exportTransactions: () => `${API_BASE}/settings/export`,
 
   clearTransactions: () =>
-    fetch(`${API_BASE}/settings/transactions`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-    }),
+    fetchVoid("/settings/transactions", { method: "DELETE" }),
 };

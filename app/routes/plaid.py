@@ -11,6 +11,7 @@ from plaid.model.country_code import CountryCode
 from plaid.model.item_public_token_exchange_request import (
     ItemPublicTokenExchangeRequest,
 )
+from plaid.model.item_remove_request import ItemRemoveRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
 from plaid.model.products import Products
@@ -19,16 +20,14 @@ from plaid.model.transactions_get_request_options import TransactionsGetRequestO
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from app.auth import get_current_user
 from app.categorizer import categorize_by_rules, categorize_batch_llm
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
-from app.models import Account, AccountType, PlaidItem, Transaction
+from app.models import Account, AccountType, PlaidItem, Transaction, User
 from app.plaid_client import get_plaid_client
 
 router = APIRouter(prefix="/plaid", tags=["plaid"])
-
-
-from plaid.model.item_remove_request import ItemRemoveRequest
 
 
 class LinkTokenResponse(BaseModel):
@@ -46,11 +45,11 @@ class ExchangeTokenResponse(BaseModel):
 
 
 @router.post("/link-token", response_model=LinkTokenResponse)
-def create_link_token():
+def create_link_token(user: User = Depends(get_current_user)):
     """Generate a Plaid Link token to initialize the Link flow."""
     client = get_plaid_client()
     request = LinkTokenCreateRequest(
-        user=LinkTokenCreateRequestUser(client_user_id="personal-finance-user"),
+        user=LinkTokenCreateRequestUser(client_user_id=str(user.id)),
         client_name="Personal Finance",
         products=[Products("transactions"), Products("liabilities")],
         country_codes=[CountryCode("US"), CountryCode("CA")],
@@ -65,6 +64,7 @@ def exchange_public_token(
     body: ExchangeTokenRequest,
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     """Exchange a public token for an access token and persist the Plaid item."""
     client = get_plaid_client()
@@ -76,6 +76,7 @@ def exchange_public_token(
     item_id = exchange_response.item_id
 
     plaid_item = PlaidItem(
+        user_id=user.id,
         encrypted_access_token=encrypt_token(access_token),
         item_id=item_id,
         institution_name=body.institution_name,
@@ -94,6 +95,7 @@ def exchange_public_token(
         ).first()
         if existing:
             existing.plaid_item_id = plaid_item.id
+            existing.user_id = user.id
             existing.is_linked = True
             existing.current_balance = Decimal(str(acct.balances.current or 0))
             if acct.balances.available is not None:
@@ -105,7 +107,7 @@ def exchange_public_token(
                 existing.official_name = acct.official_name
             session.add(existing)
         else:
-            db_account = _plaid_account_to_db(acct, plaid_item.id)
+            db_account = _plaid_account_to_db(acct, plaid_item.id, user.id)
             session.add(db_account)
         synced += 1
 
@@ -121,10 +123,11 @@ def trigger_sync(
     plaid_item_id: int,
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     """Manually trigger a transaction sync for a specific Plaid item."""
     item = session.get(PlaidItem, plaid_item_id)
-    if not item:
+    if not item or item.user_id != user.id:
         raise HTTPException(status_code=404, detail="Plaid item not found")
     background_tasks.add_task(sync_transactions, plaid_item_id)
     return {"status": "sync_started", "plaid_item_id": plaid_item_id}
@@ -134,9 +137,12 @@ def trigger_sync(
 def trigger_sync_all(
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
-    """Sync transactions for all linked Plaid items."""
-    items = session.exec(select(PlaidItem)).all()
+    """Sync transactions for all linked Plaid items belonging to the current user."""
+    items = session.exec(
+        select(PlaidItem).where(PlaidItem.user_id == user.id)
+    ).all()
     if not items:
         raise HTTPException(status_code=404, detail="No Plaid items linked")
     for item in items:
@@ -145,9 +151,14 @@ def trigger_sync_all(
 
 
 @router.get("/items")
-def list_plaid_items(session: Session = Depends(get_session)):
+def list_plaid_items(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     """List all Plaid items (institution connections) with their accounts."""
-    items = session.exec(select(PlaidItem)).all()
+    items = session.exec(
+        select(PlaidItem).where(PlaidItem.user_id == user.id)
+    ).all()
     result = []
     for item in items:
         accounts = session.exec(
@@ -176,10 +187,11 @@ def list_plaid_items(session: Session = Depends(get_session)):
 def unlink_plaid_item(
     plaid_item_id: int,
     session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     """Unlink all accounts under a Plaid item, revoke token, delete the item."""
     item = session.get(PlaidItem, plaid_item_id)
-    if not item:
+    if not item or item.user_id != user.id:
         raise HTTPException(status_code=404, detail="Plaid item not found")
 
     accounts = session.exec(
@@ -220,6 +232,7 @@ def sync_transactions(plaid_item_id: int) -> None:
         if not item:
             return
 
+        user_id = item.user_id
         access_token = decrypt_token(item.encrypted_access_token)
         client = get_plaid_client()
 
@@ -227,7 +240,7 @@ def sync_transactions(plaid_item_id: int) -> None:
         start_date = end_date - timedelta(days=30)
 
         offset = 0
-        total = 1  # will be updated after first response
+        total = 1
         while offset < total:
             txn_request = TransactionsGetRequest(
                 access_token=access_token,
@@ -285,14 +298,20 @@ def sync_transactions(plaid_item_id: int) -> None:
                 break
             offset += batch_size
 
-        # Batch auto-categorize all uncategorized transactions
+        # Batch auto-categorize all uncategorized transactions for this user
+        user_account_ids = session.exec(
+            select(Account.id).where(Account.user_id == user_id)
+        ).all()
         pending = session.exec(
-            select(Transaction).where(Transaction.needs_review == True)
+            select(Transaction).where(
+                Transaction.needs_review == True,
+                Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+            )
         ).all()
 
         llm_candidates = []
         for t in pending:
-            cat = categorize_by_rules(t.merchant_name or "", session)
+            cat = categorize_by_rules(t.merchant_name or "", session, user_id)
             if cat:
                 t.category = cat
                 t.needs_review = False
@@ -301,7 +320,7 @@ def sync_transactions(plaid_item_id: int) -> None:
                 llm_candidates.append(t)
 
         if llm_candidates:
-            llm_results = categorize_batch_llm(llm_candidates)
+            llm_results = categorize_batch_llm(llm_candidates, user_id)
             for t in llm_candidates:
                 cat = llm_results.get(t.id)
                 if cat:
@@ -311,10 +330,10 @@ def sync_transactions(plaid_item_id: int) -> None:
 
         session.commit()
 
-        _update_balances(session, access_token, plaid_item_id)
+        _update_balances(session, access_token, plaid_item_id, user_id)
 
 
-def _update_balances(session: Session, access_token: str, plaid_item_id: int) -> None:
+def _update_balances(session: Session, access_token: str, plaid_item_id: int, user_id: int) -> None:
     """Refresh account balances and metadata after a sync."""
     client = get_plaid_client()
     accounts_response = client.accounts_get(
@@ -342,7 +361,7 @@ def _update_balances(session: Session, access_token: str, plaid_item_id: int) ->
     session.commit()
 
 
-def _plaid_account_to_db(acct, plaid_item_id: int) -> Account:
+def _plaid_account_to_db(acct, plaid_item_id: int, user_id: int) -> Account:
     """Map a Plaid account object to our Account model."""
     acct_type = acct.type.value if acct.type else "depository"
     valid_types = {t.value for t in AccountType}
@@ -354,6 +373,7 @@ def _plaid_account_to_db(acct, plaid_item_id: int) -> Account:
         acct_subtype = acct.subtype.value if hasattr(acct.subtype, "value") else str(acct.subtype)
 
     return Account(
+        user_id=user_id,
         name=acct.name,
         official_name=acct.official_name,
         type=AccountType(acct_type),

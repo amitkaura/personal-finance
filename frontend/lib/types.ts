@@ -90,3 +90,10 @@ export interface CategoryRule {
   category: string;
   case_sensitive: boolean;
 }
+
+export interface User {
+  id: number;
+  email: string;
+  name: string;
+  picture: string | null;
+}

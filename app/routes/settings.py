@@ -11,17 +11,20 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from app.auth import get_current_user
 from app.database import get_session
-from app.models import CategoryRule, Transaction, UserSettings
+from app.models import Account, CategoryRule, Transaction, User, UserSettings
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
-def _get_or_create_settings(session: Session) -> UserSettings:
-    """Return the singleton settings row, creating it with defaults if needed."""
-    settings = session.get(UserSettings, 1)
+def _get_or_create_settings(session: Session, user_id: int) -> UserSettings:
+    """Return the user's settings row, creating it with defaults if needed."""
+    settings = session.exec(
+        select(UserSettings).where(UserSettings.user_id == user_id)
+    ).first()
     if not settings:
-        settings = UserSettings(id=1)
+        settings = UserSettings(user_id=user_id)
         session.add(settings)
         session.commit()
         session.refresh(settings)
@@ -60,13 +63,20 @@ def _settings_to_dict(s: UserSettings) -> dict:
 
 
 @router.get("")
-def get_settings(session: Session = Depends(get_session)):
-    return _settings_to_dict(_get_or_create_settings(session))
+def get_settings(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    return _settings_to_dict(_get_or_create_settings(session, user.id))
 
 
 @router.put("")
-def update_settings(body: SettingsUpdate, session: Session = Depends(get_session)):
-    settings = _get_or_create_settings(session)
+def update_settings(
+    body: SettingsUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    settings = _get_or_create_settings(session, user.id)
 
     sync_fields = {"sync_enabled", "sync_hour", "sync_minute", "sync_timezone"}
     sync_changed = False
@@ -112,14 +122,25 @@ def _rule_to_dict(r: CategoryRule) -> dict:
 
 
 @router.get("/rules")
-def list_rules(session: Session = Depends(get_session)):
-    rules = session.exec(select(CategoryRule).order_by(CategoryRule.id)).all()
+def list_rules(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    rules = session.exec(
+        select(CategoryRule)
+        .where(CategoryRule.user_id == user.id)
+        .order_by(CategoryRule.id)
+    ).all()
     return [_rule_to_dict(r) for r in rules]
 
 
 @router.post("/rules", status_code=201)
-def create_rule(body: RuleCreate, session: Session = Depends(get_session)):
-    rule = CategoryRule(**body.model_dump())
+def create_rule(
+    body: RuleCreate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    rule = CategoryRule(user_id=user.id, **body.model_dump())
     session.add(rule)
     session.commit()
     session.refresh(rule)
@@ -128,10 +149,13 @@ def create_rule(body: RuleCreate, session: Session = Depends(get_session)):
 
 @router.put("/rules/{rule_id}")
 def update_rule(
-    rule_id: int, body: RuleUpdate, session: Session = Depends(get_session)
+    rule_id: int,
+    body: RuleUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     rule = session.get(CategoryRule, rule_id)
-    if not rule:
+    if not rule or rule.user_id != user.id:
         raise HTTPException(status_code=404, detail="Rule not found")
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(rule, field, value)
@@ -142,9 +166,13 @@ def update_rule(
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
-def delete_rule(rule_id: int, session: Session = Depends(get_session)):
+def delete_rule(
+    rule_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     rule = session.get(CategoryRule, rule_id)
-    if not rule:
+    if not rule or rule.user_id != user.id:
         raise HTTPException(status_code=404, detail="Rule not found")
     session.delete(rule)
     session.commit()
@@ -154,10 +182,18 @@ def delete_rule(rule_id: int, session: Session = Depends(get_session)):
 
 
 @router.get("/export")
-def export_transactions(session: Session = Depends(get_session)):
+def export_transactions(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     """Export all transactions as a CSV download."""
+    user_account_ids = session.exec(
+        select(Account.id).where(Account.user_id == user.id)
+    ).all()
     txns = session.exec(
-        select(Transaction).order_by(Transaction.date.desc())
+        select(Transaction)
+        .where(Transaction.account_id.in_(user_account_ids))  # type: ignore[union-attr]
+        .order_by(Transaction.date.desc())
     ).all()
 
     buf = io.StringIO()
@@ -186,9 +222,19 @@ def export_transactions(session: Session = Depends(get_session)):
 
 
 @router.delete("/transactions", status_code=204)
-def clear_transactions(session: Session = Depends(get_session)):
-    """Delete all transaction records. Irreversible."""
-    txns = session.exec(select(Transaction)).all()
+def clear_transactions(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Delete all transaction records for the current user. Irreversible."""
+    user_account_ids = session.exec(
+        select(Account.id).where(Account.user_id == user.id)
+    ).all()
+    txns = session.exec(
+        select(Transaction).where(
+            Transaction.account_id.in_(user_account_ids)  # type: ignore[union-attr]
+        )
+    ).all()
     for t in txns:
         session.delete(t)
     session.commit()
