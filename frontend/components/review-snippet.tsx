@@ -4,13 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { useFormatCurrencyPrecise } from "@/lib/hooks";
+import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 
 export default function ReviewSnippet() {
   const formatCurrency = useFormatCurrencyPrecise();
+  const scope = useScope();
   const { data, isLoading } = useQuery({
-    queryKey: ["transactions", "needsReview"],
-    queryFn: () => api.getTransactions({ needs_review: true, limit: 5 }),
+    queryKey: ["transactions", "needsReview", scope],
+    queryFn: () => api.getTransactions({ needs_review: true, limit: 5, scope }),
   });
 
   const count = data?.length ?? 0;

@@ -12,14 +12,23 @@ import {
   Settings,
   LogOut,
   Wallet,
+  PiggyBank,
+  Target,
+  BarChart3,
+  RotateCw,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import ViewSwitcher from "@/components/view-switcher";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
+  { href: "/budgets", label: "Budgets", icon: PiggyBank },
+  { href: "/goals", label: "Goals", icon: Target },
   { href: "/cashflow", label: "Cash Flow", icon: TrendingUp },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/recurring", label: "Recurring", icon: RotateCw },
   { href: "/connections", label: "Connections", icon: Cable },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -34,6 +43,8 @@ export default function Sidebar() {
         <Wallet className="h-6 w-6 text-accent" />
         <span className="text-lg font-semibold tracking-tight">Finance</span>
       </div>
+
+      <ViewSwitcher />
 
       <nav className="flex-1 space-y-1 px-3 py-4">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {

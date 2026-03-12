@@ -12,7 +12,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { useFormatCurrencyPrecise } from "@/lib/hooks";
+import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 import type { PlaidConnection, PlaidConnectionAccount } from "@/lib/types";
 import LinkAccount from "@/components/link-account";
 import ConfirmDialog from "@/components/confirm-dialog";
@@ -33,9 +33,10 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function ConnectionsPage() {
   const formatCurrency = useFormatCurrencyPrecise();
+  const scope = useScope();
   const { data: connections, isLoading } = useQuery({
-    queryKey: ["plaidItems"],
-    queryFn: api.getPlaidItems,
+    queryKey: ["plaidItems", scope],
+    queryFn: () => api.getPlaidItems(scope),
   });
 
   const hasConnections = connections && connections.length > 0;
@@ -172,6 +173,7 @@ function ConnectionCard({ connection }: { connection: PlaidConnection }) {
 }
 
 function ConnectionAccountRow({ account }: { account: PlaidConnectionAccount }) {
+  const formatCurrency = useFormatCurrencyPrecise();
   const Icon = TYPE_ICONS[account.type] ?? Landmark;
   const color = TYPE_COLORS[account.type] ?? "text-accent";
 

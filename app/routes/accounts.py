@@ -5,12 +5,13 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.auth import get_current_user
 from app.database import get_session
+from app.household import get_scoped_user_ids
 from app.models import Account, AccountType, User
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -18,18 +19,32 @@ router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 @router.get("")
 def list_accounts(
+    scope: str = Query("personal"),
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
+    user_ids = get_scoped_user_ids(session, user, scope)
     accounts = session.exec(
-        select(Account).where(Account.user_id == user.id)
+        select(Account).where(Account.user_id.in_(user_ids))  # type: ignore[union-attr]
     ).all()
-    return [_acct_to_dict(a) for a in accounts]
+    owner_names = _build_owner_names(session, user_ids)
+    return [_acct_to_dict(a, owner_names) for a in accounts]
 
 
-def _acct_to_dict(a: Account) -> dict:
-    return {
+def _build_owner_names(session: Session, user_ids: list[int]) -> dict[int, str]:
+    """Map user_id -> name for badge display."""
+    owners: dict[int, str] = {}
+    for uid in user_ids:
+        u = session.get(User, uid)
+        if u:
+            owners[uid] = u.name
+    return owners
+
+
+def _acct_to_dict(a: Account, owner_names: dict[int, str] | None = None) -> dict:
+    d = {
         "id": a.id,
+        "user_id": a.user_id,
         "name": a.name,
         "official_name": a.official_name,
         "type": a.type.value if hasattr(a.type, "value") else a.type,
@@ -42,6 +57,9 @@ def _acct_to_dict(a: Account) -> dict:
         "plaid_item_id": a.plaid_item_id,
         "is_linked": a.is_linked,
     }
+    if owner_names:
+        d["owner_name"] = owner_names.get(a.user_id, "")
+    return d
 
 
 class AccountUpdate(BaseModel):
@@ -138,12 +156,14 @@ def _revoke_and_delete_item(session: Session, plaid_item_id: int) -> None:
 
 @router.get("/summary")
 def accounts_summary(
+    scope: str = Query("personal"),
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
     """Aggregated balance info for the dashboard."""
+    user_ids = get_scoped_user_ids(session, user, scope)
     accounts = session.exec(
-        select(Account).where(Account.user_id == user.id)
+        select(Account).where(Account.user_id.in_(user_ids))  # type: ignore[union-attr]
     ).all()
     by_type: dict[str, list] = {}
     for a in accounts:

@@ -3,13 +3,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { Building2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { useFormatCurrencyPrecise } from "@/lib/hooks";
+import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 
 export default function LoansWidget() {
   const formatCurrency = useFormatCurrencyPrecise();
+  const scope = useScope();
   const { data, isLoading } = useQuery({
-    queryKey: ["accountSummary"],
-    queryFn: api.getAccountSummary,
+    queryKey: ["accountSummary", scope],
+    queryFn: () => api.getAccountSummary(scope),
   });
 
   const loans = data?.loan_accounts ?? [];

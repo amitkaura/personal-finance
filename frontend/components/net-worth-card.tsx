@@ -3,13 +3,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { Wallet, Landmark, TrendingUp, ArrowUp, ArrowDown } from "lucide-react";
 import { api } from "@/lib/api";
-import { useFormatCurrencyPrecise } from "@/lib/hooks";
+import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 
 export default function NetWorthCard() {
   const formatCurrency = useFormatCurrencyPrecise();
+  const scope = useScope();
   const { data, isLoading } = useQuery({
-    queryKey: ["accountSummary"],
-    queryFn: api.getAccountSummary,
+    queryKey: ["accountSummary", scope],
+    queryFn: () => api.getAccountSummary(scope),
   });
 
   const assets = (data?.depository_balance ?? 0) + (data?.investment_balance ?? 0);

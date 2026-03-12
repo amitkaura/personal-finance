@@ -1,4 +1,9 @@
-import type { Account, AccountSummary, CategoryRule, PlaidConnection, Transaction, User, UserSettings } from "./types";
+import type {
+  Account, AccountSummary, Budget, BudgetSummary, CategoryRule, Goal,
+  Household, HouseholdInvitation, MonthlyTrend, NetWorthSnapshot,
+  PlaidConnection, RecurringTransaction, SpendingByCategory, Tag,
+  TopMerchant, Transaction, User, UserProfile, UserSettings, ViewScope,
+} from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -25,6 +30,17 @@ async function fetchVoid(path: string, init?: RequestInit): Promise<void> {
   }
 }
 
+async function fetchBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    ...init,
+  });
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${await res.text()}`);
+  }
+  return res.blob();
+}
+
 export const api = {
   // Auth
   loginWithGoogle: (idToken: string) =>
@@ -39,9 +55,11 @@ export const api = {
     fetcher<{ ok: boolean }>("/auth/logout", { method: "POST" }),
 
   // Accounts
-  getAccounts: () => fetcher<Account[]>("/accounts"),
+  getAccounts: (scope?: ViewScope) =>
+    fetcher<Account[]>(`/accounts${scope && scope !== "personal" ? `?scope=${scope}` : ""}`),
 
-  getAccountSummary: () => fetcher<AccountSummary>("/accounts/summary"),
+  getAccountSummary: (scope?: ViewScope) =>
+    fetcher<AccountSummary>(`/accounts/summary${scope && scope !== "personal" ? `?scope=${scope}` : ""}`),
 
   updateAccount: (id: number, body: { type?: string; subtype?: string; name?: string }) =>
     fetcher<Account>(`/accounts/${id}`, {
@@ -49,22 +67,48 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  getTransactions: (params?: { needs_review?: boolean; limit?: number }) => {
+  getTransactions: (params?: { needs_review?: boolean; limit?: number; scope?: ViewScope }) => {
     const query = new URLSearchParams();
     if (params?.needs_review !== undefined)
       query.set("needs_review", String(params.needs_review));
     if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.scope && params.scope !== "personal")
+      query.set("scope", params.scope);
     const qs = query.toString();
     return fetcher<Transaction[]>(`/transactions${qs ? `?${qs}` : ""}`);
   },
 
   getCategories: () => fetcher<string[]>("/transactions/categories"),
 
-  updateTransaction: (id: number, body: { needs_review?: boolean; category?: string }) =>
+  createTransaction: (body: {
+    date: string; amount: number; merchant_name: string;
+    category?: string; notes?: string; account_id?: number;
+  }) =>
+    fetcher<Transaction>("/transactions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  updateTransaction: (id: number, body: {
+    needs_review?: boolean; category?: string; merchant_name?: string;
+    amount?: number; date?: string; notes?: string;
+  }) =>
     fetcher<Transaction>(`/transactions/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+
+  deleteTransaction: (id: number) =>
+    fetchVoid(`/transactions/${id}`, { method: "DELETE" }),
+
+  getRecurring: (params?: { months?: number; scope?: ViewScope }) => {
+    const query = new URLSearchParams();
+    if (params?.months) query.set("months", String(params.months));
+    if (params?.scope && params.scope !== "personal")
+      query.set("scope", params.scope);
+    const qs = query.toString();
+    return fetcher<RecurringTransaction[]>(`/transactions/recurring${qs ? `?${qs}` : ""}`);
+  },
 
   triggerSync: (plaidItemId: number) =>
     fetcher<{ status: string }>(`/plaid/sync/${plaidItemId}`, { method: "POST" }),
@@ -92,13 +136,23 @@ export const api = {
   unlinkAccount: (accountId: number) =>
     fetcher<Account>(`/accounts/${accountId}/unlink`, { method: "POST" }),
 
-  getPlaidItems: () => fetcher<PlaidConnection[]>("/plaid/items"),
+  getPlaidItems: (scope?: ViewScope) =>
+    fetcher<PlaidConnection[]>(`/plaid/items${scope && scope !== "personal" ? `?scope=${scope}` : ""}`),
 
   unlinkPlaidItem: (plaidItemId: number) =>
     fetcher<{ status: string; institution_name: string; accounts_unlinked: number }>(
       `/plaid/items/${plaidItemId}/unlink`,
       { method: "POST" }
     ),
+
+  // Profile
+  getProfile: () => fetcher<UserProfile>("/settings/profile"),
+
+  updateProfile: (body: { display_name?: string; avatar_url?: string; bio?: string }) =>
+    fetcher<UserProfile>("/settings/profile", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 
   // Settings
   getSettings: () => fetcher<UserSettings>("/settings"),
@@ -127,8 +181,139 @@ export const api = {
   deleteRule: (id: number) =>
     fetchVoid(`/settings/rules/${id}`, { method: "DELETE" }),
 
-  exportTransactions: () => `${API_BASE}/settings/export`,
+  exportTransactions: async () => {
+    const blob = await fetchBlob("/settings/export");
+    return URL.createObjectURL(blob);
+  },
 
   clearTransactions: () =>
     fetchVoid("/settings/transactions", { method: "DELETE" }),
+
+  // Household
+  getHousehold: () => fetcher<Household | null>("/household"),
+
+  invitePartner: (email: string) =>
+    fetcher<{ id: number; token: string; invited_email: string; status: string }>(
+      "/household/invite",
+      { method: "POST", body: JSON.stringify({ email }) }
+    ),
+
+  getPendingInvitations: () =>
+    fetcher<HouseholdInvitation[]>("/household/invitations/pending"),
+
+  acceptInvitation: (token: string) =>
+    fetcher<{ status: string; household_id: number }>(
+      `/household/invitations/${token}/accept`,
+      { method: "POST" }
+    ),
+
+  declineInvitation: (token: string) =>
+    fetcher<{ status: string }>(
+      `/household/invitations/${token}/decline`,
+      { method: "POST" }
+    ),
+
+  leaveHousehold: () =>
+    fetcher<{ status: string }>("/household/leave", { method: "DELETE" }),
+
+  // Budgets
+  getBudgets: (month?: string, scope?: ViewScope) => {
+    const params = new URLSearchParams();
+    if (month) params.set("month", month);
+    if (scope && scope !== "personal") params.set("scope", scope);
+    const qs = params.toString();
+    return fetcher<Budget[]>(`/budgets${qs ? `?${qs}` : ""}`);
+  },
+
+  getBudgetSummary: (month?: string, scope?: ViewScope) => {
+    const params = new URLSearchParams();
+    if (month) params.set("month", month);
+    if (scope && scope !== "personal") params.set("scope", scope);
+    const qs = params.toString();
+    return fetcher<BudgetSummary>(`/budgets/summary${qs ? `?${qs}` : ""}`);
+  },
+
+  createBudget: (body: { category: string; amount: number; month?: string; rollover?: boolean }) =>
+    fetcher<Budget>("/budgets", { method: "POST", body: JSON.stringify(body) }),
+
+  updateBudget: (id: number, body: { amount?: number; rollover?: boolean }) =>
+    fetcher<Budget>(`/budgets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  deleteBudget: (id: number) =>
+    fetchVoid(`/budgets/${id}`, { method: "DELETE" }),
+
+  copyBudgets: (sourceMonth: string, targetMonth: string) =>
+    fetcher<{ copied: number }>(`/budgets/copy?source_month=${sourceMonth}&target_month=${targetMonth}`, { method: "POST" }),
+
+  // Goals
+  getGoals: (scope?: ViewScope) =>
+    fetcher<Goal[]>(`/goals${scope && scope !== "personal" ? `?scope=${scope}` : ""}`),
+
+  createGoal: (body: {
+    name: string; target_amount: number; current_amount?: number;
+    target_date?: string; icon?: string; color?: string;
+  }) =>
+    fetcher<Goal>("/goals", { method: "POST", body: JSON.stringify(body) }),
+
+  updateGoal: (id: number, body: Partial<Goal>) =>
+    fetcher<Goal>(`/goals/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  deleteGoal: (id: number) =>
+    fetchVoid(`/goals/${id}`, { method: "DELETE" }),
+
+  // Reports
+  getSpendingByCategory: (months?: number, scope?: ViewScope) => {
+    const params = new URLSearchParams();
+    if (months) params.set("months", String(months));
+    if (scope && scope !== "personal") params.set("scope", scope);
+    const qs = params.toString();
+    return fetcher<SpendingByCategory>(`/reports/spending-by-category${qs ? `?${qs}` : ""}`);
+  },
+
+  getMonthlyTrends: (months?: number, scope?: ViewScope) => {
+    const params = new URLSearchParams();
+    if (months) params.set("months", String(months));
+    if (scope && scope !== "personal") params.set("scope", scope);
+    const qs = params.toString();
+    return fetcher<MonthlyTrend[]>(`/reports/monthly-trends${qs ? `?${qs}` : ""}`);
+  },
+
+  getTopMerchants: (months?: number, limit?: number, scope?: ViewScope) => {
+    const params = new URLSearchParams();
+    if (months) params.set("months", String(months));
+    if (limit) params.set("limit", String(limit));
+    if (scope && scope !== "personal") params.set("scope", scope);
+    const qs = params.toString();
+    return fetcher<TopMerchant[]>(`/reports/top-merchants${qs ? `?${qs}` : ""}`);
+  },
+
+  // Net Worth
+  getNetWorthHistory: (months?: number, scope?: ViewScope) => {
+    const params = new URLSearchParams();
+    if (months) params.set("months", String(months));
+    if (scope && scope !== "personal") params.set("scope", scope);
+    const qs = params.toString();
+    return fetcher<NetWorthSnapshot[]>(`/net-worth/history${qs ? `?${qs}` : ""}`);
+  },
+
+  takeNetWorthSnapshot: () =>
+    fetcher<NetWorthSnapshot>("/net-worth/snapshot", { method: "POST" }),
+
+  // Tags
+  getTags: () => fetcher<Tag[]>("/tags"),
+
+  createTag: (body: { name: string; color?: string }) =>
+    fetcher<Tag>("/tags", { method: "POST", body: JSON.stringify(body) }),
+
+  updateTag: (id: number, body: { name?: string; color?: string }) =>
+    fetcher<Tag>(`/tags/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  deleteTag: (id: number) =>
+    fetchVoid(`/tags/${id}`, { method: "DELETE" }),
+
+  addTagToTransaction: (transactionId: number, tagId: number) =>
+    fetcher<{ status: string }>(`/tags/transactions/${transactionId}/tags/${tagId}`, { method: "POST" }),
+
+  removeTagFromTransaction: (transactionId: number, tagId: number) =>
+    fetchVoid(`/tags/transactions/${transactionId}/tags/${tagId}`, { method: "DELETE" }),
 };

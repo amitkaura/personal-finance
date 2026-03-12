@@ -21,4 +21,6 @@ def get_plaid_client() -> plaid_api.PlaidApi:
         },
     )
     api_client = plaid.ApiClient(configuration)
+    # Avoid indefinite network hangs on upstream requests.
+    api_client.rest_client.pool_manager.connection_pool_kw["timeout"] = 60
     return plaid_api.PlaidApi(api_client)

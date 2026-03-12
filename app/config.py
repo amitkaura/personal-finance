@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql://postgres:postgres@db:5432/finance"
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
 
     # Plaid (set via env vars - never commit real values)
     plaid_client_id: str = ""
@@ -23,7 +25,7 @@ class Settings(BaseSettings):
     google_client_id: str = ""
 
     # JWT session secret
-    jwt_secret: str = "change-me-in-production"
+    jwt_secret: str = ""
 
     # LLM categorization (OpenAI-compatible API — works with OpenAI, Ollama, etc.)
     llm_base_url: str = "https://api.openai.com/v1"
@@ -40,6 +42,16 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     debug: bool = False
+    secure_cookies: bool = False
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    run_scheduler: bool = True
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 120
+    auth_rate_limit_per_minute: int = 30
+    plaid_rate_limit_per_minute: int = 60
+    rate_limit_trust_proxy: bool = False
+    rate_limit_backend: str = "memory"  # memory | redis
+    redis_url: str = "redis://redis:6379/0"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

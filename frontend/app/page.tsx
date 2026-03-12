@@ -1,10 +1,13 @@
 import NetWorthCard from "@/components/net-worth-card";
+import NetWorthHistory from "@/components/net-worth-history";
 import RecurringWidget from "@/components/recurring-widget";
 import TopMovers from "@/components/top-movers";
 import CreditCardsWidget from "@/components/credit-cards-widget";
 import LoansWidget from "@/components/loans-widget";
 import SyncButton from "@/components/sync-button";
 import ReviewSnippet from "@/components/review-snippet";
+import BudgetSnippet from "@/components/budget-snippet";
+import GoalsSnippet from "@/components/goals-snippet";
 
 export default function DashboardPage() {
   return (
@@ -24,6 +27,15 @@ export default function DashboardPage() {
           <NetWorthCard />
         </div>
         <TopMovers />
+      </div>
+
+      <div className="mt-6">
+        <NetWorthHistory />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <BudgetSnippet />
+        <GoalsSnippet />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">

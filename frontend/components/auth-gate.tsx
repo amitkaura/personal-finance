@@ -3,6 +3,7 @@
 import { type ReactNode } from "react";
 import { useAuth } from "@/components/auth-provider";
 import Sidebar from "@/components/sidebar";
+import InvitationBanner from "@/components/invitation-banner";
 import LoginPage from "@/app/login/page";
 import { Loader2 } from "lucide-react";
 
@@ -25,7 +26,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     <>
       <Sidebar />
       <main className="ml-60 min-h-screen">
-        <div className="mx-auto max-w-7xl px-6 py-8">{children}</div>
+        <div className="mx-auto max-w-7xl px-6 py-8">
+          <InvitationBanner />
+          {children}
+        </div>
       </main>
     </>
   );

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.country_code import CountryCode
 from plaid.model.item_public_token_exchange_request import (
@@ -24,6 +24,7 @@ from app.auth import get_current_user
 from app.categorizer import categorize_by_rules, categorize_batch_llm
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
+from app.household import get_scoped_user_ids
 from app.models import Account, AccountType, PlaidItem, Transaction, User
 from app.plaid_client import get_plaid_client
 
@@ -82,20 +83,24 @@ def exchange_public_token(
         institution_name=body.institution_name,
     )
     session.add(plaid_item)
-    session.commit()
-    session.refresh(plaid_item)
+    session.flush()
 
     accounts_request = AccountsGetRequest(access_token=access_token)
     accounts_response = client.accounts_get(accounts_request)
 
     synced = 0
+    user_scope_ids = set(get_scoped_user_ids(session, user, "household"))
     for acct in accounts_response.accounts:
         existing = session.exec(
             select(Account).where(Account.plaid_account_id == acct.account_id)
         ).first()
         if existing:
+            if existing.user_id not in user_scope_ids:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Account is already linked to another user",
+                )
             existing.plaid_item_id = plaid_item.id
-            existing.user_id = user.id
             existing.is_linked = True
             existing.current_balance = Decimal(str(acct.balances.current or 0))
             if acct.balances.available is not None:
@@ -112,6 +117,7 @@ def exchange_public_token(
         synced += 1
 
     session.commit()
+    session.refresh(plaid_item)
 
     background_tasks.add_task(sync_transactions, plaid_item.id)
 
@@ -152,18 +158,28 @@ def trigger_sync_all(
 
 @router.get("/items")
 def list_plaid_items(
+    scope: str = Query("personal"),
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
     """List all Plaid items (institution connections) with their accounts."""
+    user_ids = get_scoped_user_ids(session, user, scope)
     items = session.exec(
-        select(PlaidItem).where(PlaidItem.user_id == user.id)
+        select(PlaidItem).where(PlaidItem.user_id.in_(user_ids))  # type: ignore[union-attr]
     ).all()
+    item_ids = [item.id for item in items if item.id is not None]
+    accounts_by_item: dict[int, list[Account]] = {i: [] for i in item_ids}
+    if item_ids:
+        all_accounts = session.exec(
+            select(Account).where(Account.plaid_item_id.in_(item_ids))  # type: ignore[union-attr]
+        ).all()
+        for account in all_accounts:
+            if account.plaid_item_id is not None:
+                accounts_by_item.setdefault(account.plaid_item_id, []).append(account)
+
     result = []
     for item in items:
-        accounts = session.exec(
-            select(Account).where(Account.plaid_item_id == item.id)
-        ).all()
+        accounts = accounts_by_item.get(item.id or -1, [])
         result.append({
             "id": item.id,
             "item_id": item.item_id,
@@ -288,6 +304,7 @@ def sync_transactions(plaid_item_id: int) -> None:
                         pending_status=txn.pending,
                         needs_review=True,
                         account_id=account.id if account else None,
+                        user_id=user_id,
                     )
                     session.add(new_txn)
 
@@ -331,6 +348,13 @@ def sync_transactions(plaid_item_id: int) -> None:
         session.commit()
 
         _update_balances(session, access_token, plaid_item_id, user_id)
+
+        # Take a net worth snapshot after sync
+        from app.routes.net_worth import take_snapshot
+        try:
+            take_snapshot(session, user_id)
+        except Exception:
+            pass
 
 
 def _update_balances(session: Session, access_token: str, plaid_item_id: int, user_id: int) -> None:

@@ -26,7 +26,17 @@ class GoogleLoginBody(BaseModel):
 
 
 def _user_dict(u: User) -> dict:
-    return {"id": u.id, "email": u.email, "name": u.name, "picture": u.picture}
+    return {
+        "id": u.id,
+        "email": u.email,
+        "name": u.display_name or u.name,
+        "picture": u.avatar_url or u.picture,
+        "display_name": u.display_name,
+        "avatar_url": u.avatar_url,
+        "bio": u.bio,
+        "google_name": u.google_name or u.name,
+        "google_picture": u.google_picture or u.picture,
+    }
 
 
 @router.post("/google")
@@ -53,11 +63,18 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
     user = db.exec(select(User).where(User.google_id == google_id)).first()
     if user:
         user.email = email
-        user.name = name
-        user.picture = picture
+        user.google_name = name
+        user.google_picture = picture
+        if not user.display_name:
+            user.name = name
+        if not user.avatar_url:
+            user.picture = picture
         db.add(user)
     else:
-        user = User(google_id=google_id, email=email, name=name, picture=picture)
+        user = User(
+            google_id=google_id, email=email, name=name, picture=picture,
+            google_name=name, google_picture=picture,
+        )
         db.add(user)
         db.flush()
         db.add(UserSettings(user_id=user.id))
@@ -65,13 +82,14 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
     db.refresh(user)
 
     token = create_jwt(user.id)
+    secure_cookie = settings.secure_cookies and not settings.debug
     resp = JSONResponse(content=_user_dict(user))
     resp.set_cookie(
         key=_COOKIE_NAME,
         value=token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=secure_cookie,
         max_age=7 * 24 * 60 * 60,
         path="/",
     )
@@ -85,6 +103,13 @@ def me(user: User = Depends(get_current_user)):
 
 @router.post("/logout")
 def logout():
+    settings = get_settings()
+    secure_cookie = settings.secure_cookies and not settings.debug
     resp = JSONResponse(content={"ok": True})
-    resp.delete_cookie(key=_COOKIE_NAME, path="/")
+    resp.delete_cookie(
+        key=_COOKIE_NAME,
+        path="/",
+        secure=secure_cookie,
+        samesite="lax",
+    )
     return resp

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ResponsiveSankey } from "@nivo/sankey";
 import { api } from "@/lib/api";
+import { useScope } from "@/lib/hooks";
 import type { Transaction } from "@/lib/types";
 import type { Account } from "@/lib/types";
 
@@ -94,14 +95,16 @@ function labelFromId(id: string): string {
 }
 
 export default function SankeyDiagram() {
+  const scope = useScope();
+  const queryLimit = 200;
   const { data: transactions } = useQuery({
-    queryKey: ["transactions", "all"],
-    queryFn: () => api.getTransactions({ limit: 200 }),
+    queryKey: ["transactions", "all", scope, queryLimit],
+    queryFn: () => api.getTransactions({ limit: queryLimit, scope }),
   });
 
   const { data: accounts } = useQuery({
-    queryKey: ["accounts"],
-    queryFn: api.getAccounts,
+    queryKey: ["accounts", scope],
+    queryFn: () => api.getAccounts(scope),
   });
 
   if (!transactions?.length || !accounts?.length) {

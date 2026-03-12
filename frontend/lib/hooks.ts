@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { api } from "./api";
-import type { UserSettings } from "./types";
+import { useHousehold } from "@/components/household-provider";
+import type { UserSettings, ViewScope } from "./types";
 
 export function useSettings() {
   return useQuery<UserSettings>({
@@ -28,6 +29,11 @@ export function useFormatCurrency() {
       }).format(n),
     [currency, locale]
   );
+}
+
+export function useScope(): ViewScope {
+  const { scope } = useHousehold();
+  return scope;
 }
 
 export function useFormatCurrencyPrecise() {

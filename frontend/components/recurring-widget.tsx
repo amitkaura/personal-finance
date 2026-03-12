@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { RotateCw, Calendar } from "lucide-react";
 import { api } from "@/lib/api";
-import { useFormatCurrencyPrecise } from "@/lib/hooks";
+import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 import type { Transaction } from "@/lib/types";
 
 function detectRecurring(transactions: Transaction[]): Transaction[] {
@@ -29,9 +29,11 @@ function detectRecurring(transactions: Transaction[]): Transaction[] {
 
 export default function RecurringWidget() {
   const formatCurrency = useFormatCurrencyPrecise();
+  const scope = useScope();
+  const queryLimit = 200;
   const { data: transactions, isLoading } = useQuery({
-    queryKey: ["transactions", "all"],
-    queryFn: () => api.getTransactions({ limit: 200 }),
+    queryKey: ["transactions", "all", scope, queryLimit],
+    queryFn: () => api.getTransactions({ limit: queryLimit, scope }),
   });
 
   const recurring = transactions ? detectRecurring(transactions) : [];

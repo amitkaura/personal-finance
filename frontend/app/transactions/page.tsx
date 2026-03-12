@@ -10,15 +10,22 @@ import {
   Sparkles,
   Loader2,
   X,
+  Plus,
+  Trash2,
+  Pencil,
+  Tag,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { useFormatCurrencyPrecise } from "@/lib/hooks";
-import type { Transaction } from "@/lib/types";
+import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
+import type { Transaction, Tag as TagType } from "@/lib/types";
 
 export default function TransactionsPage() {
   const formatCurrency = useFormatCurrencyPrecise();
   const queryClient = useQueryClient();
+  const scope = useScope();
+  const isViewingOwn = scope === "personal";
   const [filter, setFilter] = useState<"review" | "all">("review");
+  const [showAddForm, setShowAddForm] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -29,12 +36,15 @@ export default function TransactionsPage() {
   const [dateTo, setDateTo] = useState("");
   const [amountMin, setAmountMin] = useState("");
   const [amountMax, setAmountMax] = useState("");
+  const queryLimit = 100;
 
   const { data: transactions, isLoading } = useQuery({
-    queryKey: ["transactions", filter],
+    queryKey: ["transactions", filter, scope, queryLimit],
     queryFn: () =>
       api.getTransactions(
-        filter === "review" ? { needs_review: true, limit: 100 } : { limit: 100 }
+        filter === "review"
+          ? { needs_review: true, limit: queryLimit, scope }
+          : { limit: queryLimit, scope }
       ),
   });
 
@@ -62,6 +72,21 @@ export default function TransactionsPage() {
       api.updateTransaction(id, { category, needs_review: false }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteTransaction(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: api.createTransaction,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      setShowAddForm(false);
     },
   });
 
@@ -133,19 +158,39 @@ export default function TransactionsPage() {
             Review and categorize your transactions.
           </p>
         </div>
-        <button
-          onClick={() => autoCatMutation.mutate()}
-          disabled={autoCatMutation.isPending}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
-        >
-          {autoCatMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Sparkles className="h-4 w-4" />
-          )}
-          {autoCatMutation.isPending ? "Categorizing..." : "Auto-Categorize"}
-        </button>
+        {isViewingOwn && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              <Plus className="h-4 w-4" />
+              Add Transaction
+            </button>
+            <button
+              onClick={() => autoCatMutation.mutate()}
+              disabled={autoCatMutation.isPending}
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+            >
+              {autoCatMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {autoCatMutation.isPending ? "Categorizing..." : "Auto-Categorize"}
+            </button>
+          </div>
+        )}
       </div>
+
+      {showAddForm && (
+        <AddTransactionForm
+          categories={categories ?? []}
+          onSubmit={(data) => createMutation.mutate(data)}
+          onCancel={() => setShowAddForm(false)}
+          isPending={createMutation.isPending}
+        />
+      )}
 
       {autoCatMutation.isSuccess && (
         <div className="mt-4 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
@@ -318,6 +363,9 @@ export default function TransactionsPage() {
               onRecategorize={(id, cat) =>
                 recategorizeMutation.mutate({ id, category: cat })
               }
+              onDelete={(id) => deleteMutation.mutate(id)}
+              editable={isViewingOwn}
+              showOwner={!isViewingOwn}
             />
           ))}
         </div>
@@ -332,12 +380,18 @@ function TransactionRow({
   formatCurrency,
   onApprove,
   onRecategorize,
+  onDelete,
+  editable = true,
+  showOwner = false,
 }: {
   txn: Transaction;
   categories: string[];
   formatCurrency: (n: number) => string;
   onApprove: (id: number) => void;
   onRecategorize: (id: number, category: string) => void;
+  onDelete: (id: number) => void;
+  editable?: boolean;
+  showOwner?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -353,19 +407,46 @@ function TransactionRow({
               PENDING
             </span>
           )}
+          {txn.is_manual && (
+            <span className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+              MANUAL
+            </span>
+          )}
         </div>
-        <p className="text-xs text-muted-foreground">
-          {txn.date}
+        <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+          <span>{txn.date}</span>
           {txn.category && (
-            <span className="ml-2 rounded bg-muted px-1.5 py-0.5">
+            <span className="rounded bg-muted px-1.5 py-0.5">
               {txn.category}
             </span>
           )}
-        </p>
+          {txn.tags?.map((tag) => (
+            <span
+              key={tag.id}
+              className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+              style={{
+                backgroundColor: `${tag.color}20`,
+                color: tag.color,
+              }}
+            >
+              {tag.name}
+            </span>
+          ))}
+          {showOwner && txn.owner_name && (
+            <span className="rounded-full bg-accent/10 px-1.5 py-0.5 text-accent">
+              {txn.owner_name}
+            </span>
+          )}
+          {txn.notes && (
+            <span className="ml-1 italic text-muted-foreground/70 truncate max-w-[200px]">
+              {txn.notes}
+            </span>
+          )}
+        </div>
       </div>
 
       <span
-        className={`text-sm font-semibold ${
+        className={`text-sm font-semibold whitespace-nowrap ${
           txn.amount < 0 ? "text-success" : "text-foreground"
         }`}
       >
@@ -373,7 +454,7 @@ function TransactionRow({
         {formatCurrency(Math.abs(txn.amount))}
       </span>
 
-      {txn.needs_review && (
+      {txn.needs_review && editable && (
         <div className="flex items-center gap-2">
           <div className="relative">
             <button
@@ -409,6 +490,167 @@ function TransactionRow({
           </button>
         </div>
       )}
+
+      {txn.is_manual && editable && (
+        <button
+          onClick={() => onDelete(txn.id)}
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-danger transition-colors"
+          title="Delete manual transaction"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
+  );
+}
+
+function AddTransactionForm({
+  categories,
+  onSubmit,
+  onCancel,
+  isPending,
+}: {
+  categories: string[];
+  onSubmit: (data: {
+    date: string;
+    amount: number;
+    merchant_name: string;
+    category?: string;
+    notes?: string;
+  }) => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [amount, setAmount] = useState("");
+  const [merchant, setMerchant] = useState("");
+  const [category, setCategory] = useState("");
+  const [notes, setNotes] = useState("");
+  const [isExpense, setIsExpense] = useState(true);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const numAmount = parseFloat(amount);
+    if (!numAmount || !merchant) return;
+    onSubmit({
+      date,
+      amount: isExpense ? Math.abs(numAmount) : -Math.abs(numAmount),
+      merchant_name: merchant,
+      category: category || undefined,
+      notes: notes || undefined,
+    });
+  }
+
+  const inputClass =
+    "w-full rounded-md bg-muted px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground";
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="mt-4 rounded-2xl border border-border bg-card p-6"
+    >
+      <h3 className="text-sm font-medium mb-4">Add Manual Transaction</h3>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">
+            Merchant
+          </label>
+          <input
+            type="text"
+            value={merchant}
+            onChange={(e) => setMerchant(e.target.value)}
+            placeholder="e.g. Coffee Shop"
+            className={inputClass}
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">
+            Amount
+          </label>
+          <div className="flex gap-2">
+            <select
+              value={isExpense ? "expense" : "income"}
+              onChange={(e) => setIsExpense(e.target.value === "expense")}
+              className="rounded-md bg-muted px-2 py-2 text-sm text-foreground outline-none cursor-pointer"
+            >
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+            </select>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              step="0.01"
+              min="0"
+              className={inputClass}
+              required
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">
+            Date
+          </label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">
+            Category
+          </label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className={`${inputClass} cursor-pointer`}
+          >
+            <option value="">Select category</option>
+            {categories.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs text-muted-foreground mb-1">
+            Notes (optional)
+          </label>
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Add a note..."
+            className={inputClass}
+          />
+        </div>
+      </div>
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={isPending || !merchant || !amount}
+          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+        >
+          {isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Plus className="h-4 w-4" />
+          )}
+          Add Transaction
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }

@@ -3,14 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 import { api } from "@/lib/api";
-import { useFormatCurrencyPrecise } from "@/lib/hooks";
+import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 import type { Account } from "@/lib/types";
 
 export default function TopMovers() {
   const formatCurrency = useFormatCurrencyPrecise();
+  const scope = useScope();
   const { data: accounts, isLoading } = useQuery({
-    queryKey: ["accounts"],
-    queryFn: api.getAccounts,
+    queryKey: ["accounts", scope],
+    queryFn: () => api.getAccounts(scope),
   });
 
   const investments = (accounts ?? []).filter((a: Account) => a.type === "investment");

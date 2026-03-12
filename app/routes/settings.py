@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
 from app.database import get_session
@@ -29,6 +29,78 @@ def _get_or_create_settings(session: Session, user_id: int) -> UserSettings:
         session.commit()
         session.refresh(settings)
     return settings
+
+
+# ── Profile ────────────────────────────────────────────────────
+
+_MAX_DISPLAY_NAME = 100
+_MAX_BIO = 300
+_MAX_URL = 500
+
+
+class ProfileUpdate(BaseModel):
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
+
+
+def _profile_to_dict(u: User) -> dict:
+    return {
+        "id": u.id,
+        "email": u.email,
+        "name": u.display_name or u.name,
+        "picture": u.avatar_url or u.picture,
+        "display_name": u.display_name,
+        "avatar_url": u.avatar_url,
+        "bio": u.bio,
+        "google_name": u.google_name or u.name,
+        "google_picture": u.google_picture or u.picture,
+    }
+
+
+@router.get("/profile")
+def get_profile(user: User = Depends(get_current_user)):
+    return _profile_to_dict(user)
+
+
+@router.put("/profile")
+def update_profile(
+    body: ProfileUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    if body.display_name is not None:
+        trimmed = body.display_name.strip()
+        if len(trimmed) > _MAX_DISPLAY_NAME:
+            raise HTTPException(status_code=400, detail="Display name too long")
+        user.display_name = trimmed or None
+        if trimmed:
+            user.name = trimmed
+        else:
+            user.name = user.google_name or user.name
+
+    if body.avatar_url is not None:
+        trimmed = body.avatar_url.strip()
+        if trimmed and len(trimmed) > _MAX_URL:
+            raise HTTPException(status_code=400, detail="Avatar URL too long")
+        if trimmed and not trimmed.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="Avatar URL must start with http:// or https://")
+        user.avatar_url = trimmed or None
+        if trimmed:
+            user.picture = trimmed
+        else:
+            user.picture = user.google_picture or user.picture
+
+    if body.bio is not None:
+        trimmed = body.bio.strip()
+        if len(trimmed) > _MAX_BIO:
+            raise HTTPException(status_code=400, detail="Bio too long")
+        user.bio = trimmed or None
+
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return _profile_to_dict(user)
 
 
 # ── User Settings ──────────────────────────────────────────────
@@ -192,7 +264,12 @@ def export_transactions(
     ).all()
     txns = session.exec(
         select(Transaction)
-        .where(Transaction.account_id.in_(user_account_ids))  # type: ignore[union-attr]
+        .where(
+            or_(
+                Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+                Transaction.user_id == user.id,
+            )
+        )
         .order_by(Transaction.date.desc())
     ).all()
 
@@ -232,7 +309,10 @@ def clear_transactions(
     ).all()
     txns = session.exec(
         select(Transaction).where(
-            Transaction.account_id.in_(user_account_ids)  # type: ignore[union-attr]
+            or_(
+                Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+                Transaction.user_id == user.id,
+            )
         )
     ).all()
     for t in txns:

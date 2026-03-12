@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ResponsiveBar } from "@nivo/bar";
 import { api } from "@/lib/api";
-import { useFormatCurrency } from "@/lib/hooks";
+import { useFormatCurrency, useScope } from "@/lib/hooks";
 import type { Transaction } from "@/lib/types";
 
 type Granularity = "month" | "quarter" | "year";
@@ -80,9 +80,11 @@ export default function CashFlowBarChart() {
   const [selectedQuarter, setSelectedQuarter] = useState<number | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
 
+  const scope = useScope();
+  const queryLimit = 200;
   const { data: transactions } = useQuery({
-    queryKey: ["transactions", "all"],
-    queryFn: () => api.getTransactions({ limit: 200 }),
+    queryKey: ["transactions", "all", scope, queryLimit],
+    queryFn: () => api.getTransactions({ limit: queryLimit, scope }),
   });
 
   const availableYears = useMemo(() => {

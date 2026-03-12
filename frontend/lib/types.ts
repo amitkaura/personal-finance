@@ -1,5 +1,8 @@
+export type ViewScope = "personal" | "partner" | "household";
+
 export interface Account {
   id: number;
+  user_id: number;
   name: string;
   official_name: string | null;
   type: "depository" | "investment" | "credit" | "loan";
@@ -11,6 +14,7 @@ export interface Account {
   plaid_account_id: string;
   plaid_item_id: number | null;
   is_linked: boolean;
+  owner_name?: string;
 }
 
 export interface PlaidConnectionAccount {
@@ -59,6 +63,12 @@ export interface AccountSummary {
   account_count: number;
 }
 
+export interface TagInfo {
+  id: number;
+  name: string;
+  color: string;
+}
+
 export interface Transaction {
   id: number;
   date: string;
@@ -69,6 +79,105 @@ export interface Transaction {
   needs_review: boolean;
   account_id: number | null;
   plaid_transaction_id: string;
+  owner_name?: string;
+  is_manual: boolean;
+  notes: string | null;
+  tags: TagInfo[];
+}
+
+export interface Budget {
+  id: number;
+  category: string;
+  amount: number;
+  month: string;
+  rollover: boolean;
+}
+
+export interface BudgetSummaryItem {
+  id: number;
+  category: string;
+  budgeted: number;
+  rollover: number;
+  effective_budget: number;
+  spent: number;
+  remaining: number;
+  percent_used: number;
+}
+
+export interface BudgetSummary {
+  month: string;
+  items: BudgetSummaryItem[];
+  total_budgeted: number;
+  total_spent: number;
+  total_remaining: number;
+}
+
+export interface Goal {
+  id: number;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  target_date: string | null;
+  icon: string;
+  color: string;
+  is_completed: boolean;
+  progress: number;
+  remaining: number;
+  months_left: number | null;
+  monthly_needed: number | null;
+  created_at: string;
+}
+
+export interface SpendingCategory {
+  category: string;
+  amount: number;
+  percent: number;
+}
+
+export interface SpendingByCategory {
+  period_months: number;
+  total_expenses: number;
+  total_income: number;
+  categories: SpendingCategory[];
+}
+
+export interface MonthlyTrend {
+  month: string;
+  income: number;
+  expenses: number;
+  net: number;
+}
+
+export interface TopMerchant {
+  merchant: string;
+  total: number;
+  count: number;
+  category: string | null;
+}
+
+export interface NetWorthSnapshot {
+  date: string;
+  assets: number;
+  liabilities: number;
+  net_worth: number;
+}
+
+export interface RecurringTransaction {
+  merchant_name: string;
+  category: string | null;
+  latest_amount: number;
+  average_amount: number;
+  is_consistent_amount: boolean;
+  frequency: string;
+  occurrence_count: number;
+  last_date: string;
+  next_expected: string | null;
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+  color: string;
 }
 
 export interface UserSettings {
@@ -96,4 +205,46 @@ export interface User {
   email: string;
   name: string;
   picture: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  google_name: string;
+  google_picture: string | null;
+}
+
+export interface UserProfile {
+  id: number;
+  email: string;
+  name: string;
+  picture: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  google_name: string;
+  google_picture: string | null;
+}
+
+export interface HouseholdMember {
+  id: number;
+  user_id: number;
+  name: string;
+  email: string;
+  picture: string | null;
+  role: string;
+}
+
+export interface Household {
+  id: number;
+  name: string;
+  members: HouseholdMember[];
+  pending_invitations: { id: number; invited_email: string; status: string }[];
+}
+
+export interface HouseholdInvitation {
+  id: number;
+  token: string;
+  household_name: string;
+  invited_by_name: string;
+  invited_by_picture: string | null;
+  status: string;
 }
