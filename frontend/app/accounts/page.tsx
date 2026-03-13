@@ -260,6 +260,8 @@ function AccountRow({
   const [subtypeOpen, setSubtypeOpen] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editingBalance, setEditingBalance] = useState(false);
+  const [balanceValue, setBalanceValue] = useState("");
   const config = typeConfig(account.type);
   const Icon = config.icon;
   const isManual = isManualAccount(account);
@@ -287,6 +289,33 @@ function AccountRow({
       setSubtypeOpen(false);
     },
   });
+
+  const balanceMutation = useMutation({
+    mutationFn: (newBalance: number) =>
+      api.updateAccount(account.id, { current_balance: newBalance }),
+    onSuccess: () => {
+      invalidate();
+      setEditingBalance(false);
+    },
+  });
+
+  function startEditingBalance() {
+    setBalanceValue(String(account.current_balance));
+    setEditingBalance(true);
+  }
+
+  function commitBalance() {
+    const parsed = parseFloat(balanceValue);
+    if (isNaN(parsed)) {
+      setEditingBalance(false);
+      return;
+    }
+    if (parsed === account.current_balance) {
+      setEditingBalance(false);
+      return;
+    }
+    balanceMutation.mutate(parsed);
+  }
 
   const unlinkMutation = useMutation({
     mutationFn: () => api.unlinkAccount(account.id),
@@ -357,9 +386,33 @@ function AccountRow({
 
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <p className="text-lg font-semibold">
-              {formatCurrency(account.current_balance)}
-            </p>
+            {editingBalance && isManual && editable ? (
+              <input
+                type="number"
+                step="0.01"
+                autoFocus
+                value={balanceValue}
+                onChange={(e) => setBalanceValue(e.target.value)}
+                onBlur={() => commitBalance()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitBalance();
+                  if (e.key === "Escape") setEditingBalance(false);
+                }}
+                className="w-32 rounded-md border border-accent bg-background px-2 py-1 text-right text-lg font-semibold tabular-nums outline-none focus:ring-1 focus:ring-accent"
+              />
+            ) : (
+              <p
+                className={`text-lg font-semibold ${
+                  isManual && editable
+                    ? "cursor-pointer rounded-md px-2 py-1 transition-colors hover:bg-muted"
+                    : ""
+                }`}
+                onClick={() => isManual && editable && startEditingBalance()}
+                title={isManual && editable ? "Click to edit balance" : undefined}
+              >
+                {formatCurrency(account.current_balance)}
+              </p>
+            )}
             {account.available_balance !== null && (
               <p className="text-[10px] text-muted-foreground">
                 {formatCurrency(account.available_balance)} available

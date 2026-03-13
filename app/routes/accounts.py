@@ -146,6 +146,7 @@ class AccountUpdate(BaseModel):
     type: Optional[str] = None
     subtype: Optional[str] = None
     name: Optional[str] = None
+    current_balance: Optional[float] = None
 
 
 @router.patch("/{account_id}")
@@ -158,6 +159,10 @@ def update_account(
     acct = session.get(Account, account_id)
     if not acct or acct.user_id != user.id:
         raise HTTPException(status_code=404, detail="Account not found")
+    if body.current_balance is not None:
+        if not acct.plaid_account_id or not acct.plaid_account_id.startswith("manual-"):
+            raise HTTPException(status_code=400, detail="Balance can only be edited on manual accounts")
+        acct.current_balance = Decimal(str(body.current_balance))
     if body.type is not None:
         valid_types = {t.value for t in AccountType}
         if body.type not in valid_types:

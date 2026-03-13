@@ -154,7 +154,7 @@ export const api = {
   deleteAccount: (accountId: number) =>
     fetcher<{ ok: boolean }>(`/accounts/${accountId}`, { method: "DELETE" }),
 
-  updateAccount: (id: number, body: { type?: string; subtype?: string; name?: string }) =>
+  updateAccount: (id: number, body: { type?: string; subtype?: string; name?: string; current_balance?: number }) =>
     fetcher<Account>(`/accounts/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
