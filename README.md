@@ -369,6 +369,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | DELETE | `/:id` | Delete a tag |
 | POST | `/transactions/:txn_id/tags/:tag_id` | Attach tag to transaction |
 | DELETE | `/transactions/:txn_id/tags/:tag_id` | Remove tag from transaction |
+| GET | `/transactions/:txn_id` | List tags for a transaction |
 
 ## Getting Started
 
@@ -454,7 +455,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (175 tests across 12 files):**
+**What's tested (176 tests across 12 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -465,7 +466,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_goals` | 30 | CRUD, shared goals, linked accounts, contributions, ownership |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
-| `test_household` | 21 | Invite, accept, decline, cancel, rename, leave, scope |
+| `test_household` | 22 | Invite, accept, decline, cancel, rename, leave, scope |
 | `test_settings` | 19 | Profile, user settings, category rules, export, clear |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_net_worth` | 5 | Snapshots, history |
