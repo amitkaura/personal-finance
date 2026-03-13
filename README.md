@@ -23,6 +23,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Supports US and Canadian institutions
 - Automatic balance refresh on every sync
 - Account type classification (depository, credit, loan, investment) with editable subtypes
+- **Edit account modal** -- consolidated edit dialog for name, type, subtype, and balance; balance is disabled for Plaid accounts with an explanatory note
 - Unlink individual accounts or revoke full institution connections with confirmation dialog
 - **Sync feedback** -- clear "Synced" or "Sync failed" status after each connection sync
 - **Click-to-filter** -- click any account row to navigate to the Transactions page pre-filtered by that account
@@ -241,7 +242,7 @@ personal-finance/
 │       ├── sidebar.test.tsx        # Nav links, branding, active state, user section
 │       ├── hooks.test.tsx          # useFormatCurrency, useFormatCurrencyPrecise, useScope
 │       ├── csv-utils.test.ts       # CSV parser, column role guessing, date normalization, row mapping
-│       ├── accounts-page.test.tsx  # Manual/Plaid account rendering, add form, import/delete actions
+│       ├── accounts-page.test.tsx  # Manual/Plaid account rendering, add form, import/delete actions, edit modal
 │       ├── csv-import-dialog.test.tsx # Upload, column mapping, debit/credit, preview, import flow
 │       ├── bulk-csv-import-dialog.test.tsx # Bulk upload, multi-account mapping, category matching
 │       ├── cashflow-bar-chart.test.tsx # Bar chart, drill-down, period switching, breadcrumbs
@@ -549,7 +550,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (314 tests across 32 files):**
+**What's tested (318 tests across 32 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -558,7 +559,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `transactions-page` | 15 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params |
 | `sidebar` | 13 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
-| `accounts-page` | 13 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs, click row navigates to filtered transactions |
+| `accounts-page` | 17 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
 | `bulk-csv-import-dialog` | 11 | Upload, preview, account detection, import flow, progress, results, errors |
 | `csv-import-dialog` | 10 | Upload, preview, import, progress, results, errors, cancel/done |

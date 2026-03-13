@@ -9,8 +9,6 @@ import {
   TrendingUp,
   CreditCard,
   Building2,
-  ChevronDown,
-  Check,
   Pencil,
   Unlink,
   EyeOff,
@@ -262,12 +260,13 @@ function AccountRow({
   const formatCurrency = useFormatCurrencyPrecise();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const [typeOpen, setTypeOpen] = useState(false);
-  const [subtypeOpen, setSubtypeOpen] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [editingBalance, setEditingBalance] = useState(false);
-  const [balanceValue, setBalanceValue] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState(account.name);
+  const [editType, setEditType] = useState(account.type);
+  const [editSubtype, setEditSubtype] = useState(account.subtype || "");
+  const [editBalance, setEditBalance] = useState(String(account.current_balance));
   const config = typeConfig(account.type);
   const Icon = config.icon;
   const isManual = isManualAccount(account);
@@ -278,68 +277,34 @@ function AccountRow({
     queryClient.invalidateQueries({ queryKey: ["plaidItems"] });
   };
 
-  const typeMutation = useMutation({
-    mutationFn: (newType: string) =>
-      api.updateAccount(account.id, { type: newType }),
+  const editMutation = useMutation({
+    mutationFn: (body: { name?: string; type?: string; subtype?: string; current_balance?: number }) =>
+      api.updateAccount(account.id, body),
     onSuccess: () => {
       invalidate();
-      setTypeOpen(false);
+      setEditOpen(false);
     },
   });
 
-  const subtypeMutation = useMutation({
-    mutationFn: (newSubtype: string) =>
-      api.updateAccount(account.id, { subtype: newSubtype }),
-    onSuccess: () => {
-      invalidate();
-      setSubtypeOpen(false);
-    },
-  });
-
-  const balanceMutation = useMutation({
-    mutationFn: (newBalance: number) =>
-      api.updateAccount(account.id, { current_balance: newBalance }),
-    onMutate: async (newBalance) => {
-      const queryKey = ["accounts", scope];
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData(queryKey);
-      queryClient.setQueryData(queryKey, (old: Account[] | undefined) => {
-        if (!old) return old;
-        return old.map((a) =>
-          a.id === account.id ? { ...a, current_balance: newBalance } : a
-        );
-      });
-      return { previous };
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.previous !== undefined) {
-        queryClient.setQueryData(["accounts", scope], context.previous);
-      }
-    },
-    onSuccess: () => {
-      setEditingBalance(false);
-    },
-    onSettled: () => {
-      invalidate();
-    },
-  });
-
-  function startEditingBalance() {
-    setBalanceValue(String(account.current_balance));
-    setEditingBalance(true);
+  function openEditModal() {
+    setEditName(account.name);
+    setEditType(account.type);
+    setEditSubtype(account.subtype || "");
+    setEditBalance(String(account.current_balance));
+    setEditOpen(true);
   }
 
-  function commitBalance() {
-    const parsed = parseFloat(balanceValue);
-    if (isNaN(parsed)) {
-      setEditingBalance(false);
-      return;
+  function saveEdit() {
+    const body: { name?: string; type?: string; subtype?: string; current_balance?: number } = {
+      name: editName,
+      type: editType,
+      subtype: editSubtype,
+    };
+    if (isManual) {
+      const parsed = parseFloat(editBalance);
+      if (!isNaN(parsed)) body.current_balance = parsed;
     }
-    if (parsed === account.current_balance) {
-      setEditingBalance(false);
-      return;
-    }
-    balanceMutation.mutate(parsed);
+    editMutation.mutate(body);
   }
 
   const unlinkMutation = useMutation({
@@ -359,7 +324,7 @@ function AccountRow({
     },
   });
 
-  const subtypeOptions = SUBTYPES[account.type] ?? [];
+  const editSubtypeOptions = SUBTYPES[editType] ?? [];
 
   return (
     <>
@@ -415,33 +380,9 @@ function AccountRow({
 
         <div className="flex items-center gap-3">
           <div className="text-right">
-            {editingBalance && isManual && editable ? (
-              <input
-                type="number"
-                step="0.01"
-                autoFocus
-                value={balanceValue}
-                onChange={(e) => setBalanceValue(e.target.value)}
-                onBlur={() => commitBalance()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitBalance();
-                  if (e.key === "Escape") setEditingBalance(false);
-                }}
-                className="w-32 rounded-md border border-accent bg-background px-2 py-1 text-right text-lg font-semibold tabular-nums outline-none focus:ring-1 focus:ring-accent"
-              />
-            ) : (
-              <p
-                className={`text-lg font-semibold ${
-                  isManual && editable
-                    ? "cursor-pointer rounded-md px-2 py-1 transition-colors hover:bg-muted"
-                    : ""
-                }`}
-                onClick={() => isManual && editable && startEditingBalance()}
-                title={isManual && editable ? "Click to edit balance" : undefined}
-              >
-                {formatCurrency(account.current_balance)}
-              </p>
-            )}
+            <p className="text-lg font-semibold">
+              {formatCurrency(account.current_balance)}
+            </p>
             {account.available_balance !== null && (
               <p className="text-[10px] text-muted-foreground">
                 {formatCurrency(account.available_balance)} available
@@ -456,73 +397,14 @@ function AccountRow({
 
           {editable && (
             <>
-              {/* Subtype dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => {
-                    setSubtypeOpen(!subtypeOpen);
-                    setTypeOpen(false);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground capitalize"
-                >
-                  {account.subtype || "subtype"}
-                  <Pencil className="h-3 w-3" />
-                </button>
-
-                {subtypeOpen && (
-                  <div className="absolute right-0 z-20 mt-1 w-44 rounded-lg border border-border bg-card py-1 shadow-xl">
-                    {subtypeOptions.map((sub) => {
-                      const selected = sub === account.subtype;
-                      return (
-                        <button
-                          key={sub}
-                          onClick={() => subtypeMutation.mutate(sub)}
-                          disabled={selected}
-                          className="flex w-full items-center justify-between px-3 py-2 text-left text-xs capitalize hover:bg-muted disabled:opacity-50"
-                        >
-                          <span>{sub}</span>
-                          {selected && <Check className="h-3 w-3 text-success" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Type dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => {
-                    setTypeOpen(!typeOpen);
-                    setSubtypeOpen(false);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {config.label}
-                  <ChevronDown className="h-3 w-3" />
-                </button>
-
-                {typeOpen && (
-                  <div className="absolute right-0 z-20 mt-1 w-44 rounded-lg border border-border bg-card py-1 shadow-xl">
-                    {ACCOUNT_TYPES.map((opt) => {
-                      const OptIcon = opt.icon;
-                      const selected = opt.value === account.type;
-                      return (
-                        <button
-                          key={opt.value}
-                          onClick={() => typeMutation.mutate(opt.value)}
-                          disabled={selected}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted disabled:opacity-50"
-                        >
-                          <OptIcon className={`h-3.5 w-3.5 ${opt.color}`} />
-                          <span className="flex-1">{opt.label}</span>
-                          {selected && <Check className="h-3 w-3 text-success" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              {/* Edit button */}
+              <button
+                onClick={openEditModal}
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/10 hover:text-accent"
+                title="Edit account"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
 
               {/* Import CSV button (manual accounts only) */}
               {isManual && (
@@ -582,6 +464,91 @@ function AccountRow({
         onConfirm={() => deleteMutation.mutate()}
         onCancel={() => setConfirmDelete(false)}
       />
+
+      {editOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setEditOpen(false); }}
+          onKeyDown={(e) => { if (e.key === "Escape") setEditOpen(false); }}
+        >
+          <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <h3 className="text-base font-semibold">Edit Account</h3>
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Type</label>
+                <select
+                  value={editType}
+                  onChange={(e) => {
+                    setEditType(e.target.value);
+                    const subs = SUBTYPES[e.target.value] ?? [];
+                    setEditSubtype(subs[0] ?? "");
+                  }}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent"
+                >
+                  {ACCOUNT_TYPES.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Subtype</label>
+                <select
+                  value={editSubtype}
+                  onChange={(e) => setEditSubtype(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm capitalize outline-none focus:ring-1 focus:ring-accent"
+                >
+                  {editSubtypeOptions.map((sub) => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Balance</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editBalance}
+                  onChange={(e) => setEditBalance(e.target.value)}
+                  disabled={!isManual}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                {!isManual && (
+                  <p className="mt-1 text-xs text-muted-foreground">Balance is synced from your bank</p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setEditOpen(false)}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEdit}
+                disabled={!editName.trim() || editMutation.isPending}
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50"
+              >
+                {editMutation.isPending ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

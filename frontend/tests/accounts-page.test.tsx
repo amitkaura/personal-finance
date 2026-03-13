@@ -236,6 +236,81 @@ describe("AccountsPage", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/transactions?account=1");
   });
 
+  // --- Edit account modal ---
+
+  it("shows Edit button on each account row", async () => {
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT, PLAID_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+    });
+    const editButtons = screen.getAllByTitle("Edit account");
+    expect(editButtons).toHaveLength(2);
+  });
+
+  it("opens edit modal with pre-filled fields when clicking edit", async () => {
+    const user = userEvent.setup();
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle("Edit account"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    expect(screen.getByDisplayValue("Manual Checking")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("5000")).toBeInTheDocument();
+  });
+
+  it("calls updateAccount with edited name on save", async () => {
+    const user = userEvent.setup();
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT]);
+    mockApi.updateAccount.mockResolvedValue({ ...MANUAL_ACCOUNT, name: "Renamed" });
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle("Edit account"));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    const nameInput = screen.getByDisplayValue("Manual Checking");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Renamed");
+
+    await user.click(screen.getByText("Save"));
+
+    await waitFor(() => {
+      expect(mockApi.updateAccount).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ name: "Renamed" }),
+      );
+    });
+  });
+
+  it("disables balance input for Plaid accounts in the edit modal", async () => {
+    const user = userEvent.setup();
+    mockApi.getAccounts.mockResolvedValue([PLAID_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("TD Savings")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle("Edit account"));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    const balanceInput = screen.getByDisplayValue("12000");
+    expect(balanceInput).toBeDisabled();
+    expect(screen.getByText(/synced from your bank/i)).toBeInTheDocument();
+  });
+
   it("opens CSV import dialog when clicking import", async () => {
     const user = userEvent.setup();
     mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT]);
