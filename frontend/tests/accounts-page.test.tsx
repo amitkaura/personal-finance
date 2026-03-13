@@ -1,0 +1,227 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import AccountsPage from "@/app/accounts/page";
+import { renderWithProviders, TEST_USER, TEST_SETTINGS } from "./helpers";
+import type { Account } from "@/lib/types";
+
+const mockApi = vi.hoisted(() => ({
+  getAccounts: vi.fn(),
+  getAccountSummary: vi.fn(),
+  getSettings: vi.fn(),
+  createAccount: vi.fn(),
+  deleteAccount: vi.fn(),
+  updateAccount: vi.fn(),
+  unlinkAccount: vi.fn(),
+  importTransactions: vi.fn(),
+}));
+
+vi.mock("@/lib/api", () => ({ api: mockApi }));
+
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({ user: TEST_USER, isLoading: false }),
+}));
+
+vi.mock("@/components/household-provider", () => ({
+  useHousehold: () => ({
+    household: null,
+    partner: null,
+    scope: "personal",
+    setScope: vi.fn(),
+    pendingInvitations: [],
+    isLoading: false,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock("@/components/link-account", () => ({
+  __esModule: true,
+  default: () => <button>Link Account</button>,
+}));
+
+const MANUAL_ACCOUNT: Account = {
+  id: 1,
+  user_id: 1,
+  name: "Manual Checking",
+  official_name: null,
+  type: "depository",
+  subtype: "checking",
+  current_balance: 5000,
+  available_balance: null,
+  credit_limit: null,
+  currency_code: "CAD",
+  plaid_account_id: "manual-abc123",
+  plaid_item_id: null,
+  is_linked: true,
+};
+
+const PLAID_ACCOUNT: Account = {
+  id: 2,
+  user_id: 1,
+  name: "TD Savings",
+  official_name: "TD Every Day Savings",
+  type: "depository",
+  subtype: "savings",
+  current_balance: 12000,
+  available_balance: 12000,
+  credit_limit: null,
+  currency_code: "CAD",
+  plaid_account_id: "plaid-xyz789",
+  plaid_item_id: 10,
+  is_linked: true,
+};
+
+describe("AccountsPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApi.getSettings.mockResolvedValue(TEST_SETTINGS);
+    mockApi.getAccounts.mockResolvedValue([]);
+    mockApi.getAccountSummary.mockResolvedValue({
+      net_worth: 0, total_balance: 0, depository_balance: 0,
+      investment_balance: 0, credit_balance: 0, loan_balance: 0,
+      credit_accounts: [], loan_accounts: [], account_count: 0,
+    });
+  });
+
+  it("renders empty state when no accounts exist", async () => {
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText(/No accounts yet|All accounts are hidden/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows Add Account button", async () => {
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Add Account")).toBeInTheDocument();
+    });
+  });
+
+  it("shows Link Account button", async () => {
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Link Account")).toBeInTheDocument();
+    });
+  });
+
+  it("renders account rows when accounts exist", async () => {
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT, PLAID_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+      expect(screen.getByText("TD Savings")).toBeInTheDocument();
+    });
+  });
+
+  it("shows Import CSV button only on manual accounts", async () => {
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT, PLAID_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+    });
+    const importButtons = screen.getAllByTitle("Import CSV");
+    expect(importButtons).toHaveLength(1);
+  });
+
+  it("shows Delete button only on manual accounts", async () => {
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT, PLAID_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+    });
+    const deleteButtons = screen.getAllByTitle("Delete account");
+    expect(deleteButtons).toHaveLength(1);
+  });
+
+  it("shows Unlink button only on Plaid accounts", async () => {
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT, PLAID_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("TD Savings")).toBeInTheDocument();
+    });
+    const unlinkButtons = screen.getAllByTitle("Unlink account");
+    expect(unlinkButtons).toHaveLength(1);
+  });
+
+  it("opens Add Account form when clicking Add Account", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AccountsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Account")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Account"));
+    expect(screen.getByText("Add Manual Account")).toBeInTheDocument();
+    expect(screen.getByText("Create Account")).toBeInTheDocument();
+  });
+
+  it("disables Create Account when name is empty", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AccountsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Account")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Account"));
+    const createBtn = screen.getByText("Create Account");
+    expect(createBtn).toBeDisabled();
+  });
+
+  it("calls createAccount on form submission", async () => {
+    const user = userEvent.setup();
+    mockApi.createAccount.mockResolvedValue({ ...MANUAL_ACCOUNT });
+    renderWithProviders(<AccountsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Account")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Account"));
+
+    const nameInput = screen.getByPlaceholderText("e.g. TD Chequing");
+    await user.type(nameInput, "New Savings");
+
+    await user.click(screen.getByText("Create Account"));
+
+    await waitFor(() => {
+      expect(mockApi.createAccount).toHaveBeenCalledWith({
+        name: "New Savings",
+        type: "depository",
+        current_balance: 0,
+      });
+    });
+  });
+
+  it("shows delete confirmation dialog when clicking delete", async () => {
+    const user = userEvent.setup();
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle("Delete account"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Delete Manual Checking?")).toBeInTheDocument();
+      expect(screen.getByText(/permanently delete this account/)).toBeInTheDocument();
+    });
+  });
+
+  it("opens CSV import dialog when clicking import", async () => {
+    const user = userEvent.setup();
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle("Import CSV"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Import Transactions")).toBeInTheDocument();
+      expect(screen.getByText("Drag & drop a CSV file here")).toBeInTheDocument();
+    });
+  });
+});
