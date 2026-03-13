@@ -136,7 +136,7 @@ def _categorize_chunk_llm(
         f"{base_url}/chat/completions",
         headers=headers,
         json=payload,
-        timeout=60.0,
+        timeout=15.0,
     )
     resp.raise_for_status()
     content = resp.json()["choices"][0]["message"]["content"]
@@ -185,6 +185,9 @@ def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[
         try:
             chunk_results = _categorize_chunk_llm(chunk, base_url, api_key, model)
             all_results.update(chunk_results)
+        except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            logger.warning("LLM unreachable (chunk %d–%d): %s — skipping remaining chunks", i, i + len(chunk), exc)
+            break
         except Exception:
             logger.exception("LLM categorization failed for chunk %d–%d", i, i + len(chunk))
 

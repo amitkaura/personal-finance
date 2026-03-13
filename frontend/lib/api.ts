@@ -104,12 +104,13 @@ async function streamNdjson<T>(
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${await res.text()}`);
   }
-
   const reader = res.body?.getReader();
   if (!reader) throw new Error("No response body");
   const decoder = new TextDecoder();
   let buffer = "";
   let result: T | null = null;
+  let lastProgressTime = 0;
+  let pendingProgress: ImportProgressEvent | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -121,11 +122,21 @@ async function streamNdjson<T>(
       if (!line.trim()) continue;
       const event = JSON.parse(line);
       if (event.type === "progress") {
-        onProgress(event as ImportProgressEvent);
+        const now = Date.now();
+        if (now - lastProgressTime >= 100) {
+          onProgress(event as ImportProgressEvent);
+          lastProgressTime = now;
+          pendingProgress = null;
+        } else {
+          pendingProgress = event as ImportProgressEvent;
+        }
       } else if (event.type === "complete") {
         result = event as T;
       }
     }
+  }
+  if (pendingProgress) {
+    onProgress(pendingProgress);
   }
 
   if (buffer.trim()) {
