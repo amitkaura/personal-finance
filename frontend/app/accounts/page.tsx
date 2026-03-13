@@ -395,8 +395,8 @@ function AccountRow({
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              {account.official_name || account.type}
+            <p className="text-xs capitalize text-muted-foreground">
+              {account.official_name || [config.label, account.subtype].filter(Boolean).join(" \u00b7 ")}
             </p>
           </div>
         </div>

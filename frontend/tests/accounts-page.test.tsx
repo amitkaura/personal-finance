@@ -126,6 +126,25 @@ describe("AccountsPage", () => {
     });
   });
 
+  it("shows friendly type label and subtype instead of raw type string", async () => {
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Cash · checking/)).toBeInTheDocument();
+    expect(screen.queryByText("depository")).not.toBeInTheDocument();
+  });
+
+  it("shows official_name for Plaid accounts", async () => {
+    mockApi.getAccounts.mockResolvedValue([PLAID_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("TD Savings")).toBeInTheDocument();
+    });
+    expect(screen.getByText("TD Every Day Savings")).toBeInTheDocument();
+  });
+
   it("shows Import CSV button only on manual accounts", async () => {
     mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT, PLAID_ACCOUNT]);
     renderWithProviders(<AccountsPage />);
