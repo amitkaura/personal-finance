@@ -72,6 +72,9 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
   }
 
   async function handleImport() {
+    // #region agent log
+    fetch('http://127.0.0.1:7496/ingest/09be9313-175a-4e04-befa-698509a2b911',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f3ebd9'},body:JSON.stringify({sessionId:'f3ebd9',location:'csv-import-dialog.tsx:handleImport',message:'handleImport called',data:{accountId,rowCount:mappedRows.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     setStep("importing");
     setError(null);
     try {
@@ -80,12 +83,18 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
         mappedRows,
         (evt) => setProgress(evt),
       );
+      // #region agent log
+      fetch('http://127.0.0.1:7496/ingest/09be9313-175a-4e04-befa-698509a2b911',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f3ebd9'},body:JSON.stringify({sessionId:'f3ebd9',location:'csv-import-dialog.tsx:handleImport',message:'import complete',data:{imported:complete.imported,skipped:complete.skipped,categorized:complete.categorized,errors:complete.errors?.length},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       setResult(complete);
       setStep("result");
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
     } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7496/ingest/09be9313-175a-4e04-befa-698509a2b911',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f3ebd9'},body:JSON.stringify({sessionId:'f3ebd9',location:'csv-import-dialog.tsx:handleImport',message:'import error',data:{error:String(err)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       setError(err instanceof Error ? err.message : "Import failed");
       setStep("preview");
     }
