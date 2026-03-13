@@ -357,6 +357,121 @@ def test_import_ndjson_streaming(auth_client, session):
     assert complete["imported"] == 1
 
 
+# -- Import LLM fallback ---------------------------------------------------
+
+def test_import_categorizes_via_llm_fallback(auth_client, session):
+    """When no rule matches, the import falls back to LLM per transaction."""
+    from unittest.mock import MagicMock
+    import json as _json
+
+    client, user = auth_client
+    acct = make_account(session, user, name="Checking")
+
+    def fake_llm_response(url, **kwargs):
+        body = kwargs.get("json", {})
+        user_msg = body["messages"][1]["content"]
+        input_txns = _json.loads(user_msg)
+        result = [{"id": t["id"], "category": "Entertainment"} for t in input_txns]
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "choices": [{"message": {"content": _json.dumps(result)}}]
+        }
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch("app.categorizer._get_llm_config", return_value=(
+        "http://fake-llm", "fake-key", "test-model",
+    )), patch("httpx.post", side_effect=fake_llm_response):
+        resp = client.post(
+            f"/api/v1/settings/import/{acct.id}",
+            json={"transactions": [
+                {"date": "2026-01-15", "amount": 12.99, "merchant_name": "Regal Cinemas"},
+            ]},
+        )
+
+    data = resp.json()
+    assert data["categorized"] == 1
+    txns = session.exec(select(Transaction).where(Transaction.account_id == acct.id)).all()
+    assert txns[0].category == "Entertainment"
+
+
+def test_import_streaming_shows_llm_category(auth_client, session):
+    """NDJSON streaming progress includes category from LLM fallback."""
+    from unittest.mock import MagicMock
+    import json as _json
+
+    client, user = auth_client
+    acct = make_account(session, user, name="Checking")
+
+    def fake_llm_response(url, **kwargs):
+        body = kwargs.get("json", {})
+        user_msg = body["messages"][1]["content"]
+        input_txns = _json.loads(user_msg)
+        result = [{"id": t["id"], "category": "Shopping"} for t in input_txns]
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "choices": [{"message": {"content": _json.dumps(result)}}]
+        }
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch("app.categorizer._get_llm_config", return_value=(
+        "http://fake-llm", "fake-key", "test-model",
+    )), patch("httpx.post", side_effect=fake_llm_response):
+        resp = client.post(
+            f"/api/v1/settings/import/{acct.id}",
+            json={"transactions": [
+                {"date": "2026-01-15", "amount": 29.99, "merchant_name": "Target"},
+            ]},
+            headers={"Accept": "application/x-ndjson"},
+        )
+
+    lines = [l for l in resp.text.strip().split("\n") if l]
+    progress = _json.loads(lines[0])
+    assert progress["status"] == "categorized"
+    assert progress["category"] == "Shopping"
+    complete = _json.loads(lines[1])
+    assert complete["categorized"] == 1
+
+
+def test_bulk_import_categorizes_via_llm_fallback(auth_client, session):
+    """Bulk import also falls back to LLM when rules don't match."""
+    from unittest.mock import MagicMock
+    import json as _json
+
+    client, user = auth_client
+
+    def fake_llm_response(url, **kwargs):
+        body = kwargs.get("json", {})
+        user_msg = body["messages"][1]["content"]
+        input_txns = _json.loads(user_msg)
+        result = [{"id": t["id"], "category": "Groceries"} for t in input_txns]
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "choices": [{"message": {"content": _json.dumps(result)}}]
+        }
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch("app.categorizer._get_llm_config", return_value=(
+        "http://fake-llm", "fake-key", "test-model",
+    )), patch("httpx.post", side_effect=fake_llm_response):
+        resp = client.post("/api/v1/settings/bulk-import", json={
+            "accounts": [],
+            "transactions": [
+                {"date": "2026-01-15", "amount": 45.00, "merchant_name": "Whole Foods"},
+            ],
+        })
+
+    data = resp.json()
+    assert data["categorized"] == 1
+    txns = session.exec(select(Transaction).where(Transaction.user_id == user.id)).all()
+    assert txns[0].category == "Groceries"
+
+
 # -- Bulk CSV import -------------------------------------------------------
 
 def test_bulk_import_creates_accounts_and_transactions(auth_client, session):

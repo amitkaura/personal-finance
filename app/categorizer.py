@@ -97,27 +97,20 @@ def _get_llm_config(user_id: int) -> tuple[str, str, str]:
     return env.llm_base_url, env.llm_api_key, env.llm_model
 
 
-def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[int, str]:
-    """Send a batch of transactions to the LLM and return {id: category} mapping."""
-    base_url, api_key, model = _get_llm_config(user_id)
-    if not api_key:
-        logger.warning("LLM API key not configured — skipping LLM categorization")
-        return {}
+_LLM_BATCH_SIZE = 25
 
-    txn_list = []
-    for t in transactions:
-        txn_list.append({
-            "id": t.id,
-            "merchant_name": t.merchant_name or "Unknown",
-            "plaid_category": t.plaid_category_code or "N/A",
-            "amount": float(t.amount),
-        })
 
-    if not txn_list:
-        return {}
-
+def _categorize_chunk_llm(
+    txn_list: list[dict],
+    base_url: str,
+    api_key: str,
+    model: str,
+) -> dict[int, str]:
+    """Send a single chunk of transactions to the LLM and return {id: category}."""
     user_message = json.dumps(txn_list, indent=2)
-    system_message = SYSTEM_PROMPT.format(categories="\n".join(f"- {c}" for c in AVAILABLE_CATEGORIES))
+    system_message = SYSTEM_PROMPT.format(
+        categories="\n".join(f"- {c}" for c in AVAILABLE_CATEGORIES)
+    )
 
     headers = {
         "Content-Type": "application/json",
@@ -132,35 +125,63 @@ def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[
         ],
     }
 
-    try:
-        resp = httpx.post(
-            f"{base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60.0,
-        )
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
+    resp = httpx.post(
+        f"{base_url}/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=60.0,
+    )
+    resp.raise_for_status()
+    content = resp.json()["choices"][0]["message"]["content"]
 
-        content = content.strip()
-        if content.startswith("```"):
-            parts = content.split("\n", 1)
-            content = parts[1] if len(parts) > 1 else ""
-        if content.endswith("```"):
-            content = content.rsplit("```", 1)[0]
-        content = content.strip()
+    content = content.strip()
+    if content.startswith("```"):
+        parts = content.split("\n", 1)
+        content = parts[1] if len(parts) > 1 else ""
+    if content.endswith("```"):
+        content = content.rsplit("```", 1)[0]
+    content = content.strip()
 
-        results = json.loads(content)
-        valid = {c.lower() for c in AVAILABLE_CATEGORIES}
-        return {
-            item["id"]: item["category"]
-            for item in results
-            if isinstance(item, dict)
-            and item.get("category", "").lower() in valid
-        }
-    except Exception:
-        logger.exception("LLM categorization failed")
+    results = json.loads(content)
+    valid = {c.lower() for c in AVAILABLE_CATEGORIES}
+    return {
+        item["id"]: item["category"]
+        for item in results
+        if isinstance(item, dict)
+        and item.get("category", "").lower() in valid
+    }
+
+
+def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[int, str]:
+    """Send transactions to the LLM in chunks of _LLM_BATCH_SIZE and return {id: category}."""
+    base_url, api_key, model = _get_llm_config(user_id)
+    if not api_key:
+        logger.warning("LLM API key not configured — skipping LLM categorization")
         return {}
+
+    txn_list = [
+        {
+            "id": t.id,
+            "merchant_name": t.merchant_name or "Unknown",
+            "plaid_category": t.plaid_category_code or "N/A",
+            "amount": float(t.amount),
+        }
+        for t in transactions
+    ]
+
+    if not txn_list:
+        return {}
+
+    all_results: dict[int, str] = {}
+    for i in range(0, len(txn_list), _LLM_BATCH_SIZE):
+        chunk = txn_list[i : i + _LLM_BATCH_SIZE]
+        try:
+            chunk_results = _categorize_chunk_llm(chunk, base_url, api_key, model)
+            all_results.update(chunk_results)
+        except Exception:
+            logger.exception("LLM categorization failed for chunk %d–%d", i, i + len(chunk))
+
+    return all_results
 
 
 def categorize_transaction(transaction: Transaction, session: Session, user_id: int) -> str | None:

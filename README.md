@@ -48,8 +48,8 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 ### Hybrid Categorization
 1. **Rule-based** -- user-defined keyword-to-category mappings checked first
-2. **LLM fallback** -- uncategorized transactions are sent to an OpenAI-compatible model for classification
-3. **Inline categorization** -- each transaction is categorized at import/creation time (rules first, then LLM)
+2. **LLM fallback** -- uncategorized transactions are sent to an OpenAI-compatible model for classification; bulk auto-categorize batches transactions in chunks of 25 for reliable output from local models (Ollama, etc.)
+3. **Inline categorization** -- each transaction is categorized at import time (rules first, then per-transaction LLM fallback) with real-time streaming progress via NDJSON
 4. Auto-categorization also runs on every Plaid sync and can be triggered manually for any remaining uncategorized transactions
 
 ### Tags
@@ -508,15 +508,15 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (265 tests across 14 files — 84% line coverage):**
+**What's tested (270 tests across 14 files — 84% line coverage):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `test_settings` | 45 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset |
+| `test_settings` | 48 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, import LLM fallback (per-account + bulk + streaming) |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
-| `test_transactions` | 27 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize, recurring, date validation, response schema |
+| `test_transactions` | 29 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize (rules, LLM batching, partial failure), recurring, date validation, response schema |
 | `test_categories` | 20 | Full CRUD, auto-seed defaults, create validation (empty/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
 | `test_accounts` | 22 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update, CSV import, cascade delete, negative amounts, inline auto-categorization |
 | `test_plaid` | 14 | Link token, exchange token (success, relink, conflict, institution name), sync, items (all Plaid calls mocked) |

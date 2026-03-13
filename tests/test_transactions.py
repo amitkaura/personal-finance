@@ -3,6 +3,8 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
+import httpx
+
 from app.main import app
 from app.auth import get_current_user
 from tests.conftest import make_account, make_category, make_transaction, make_user, make_settings
@@ -274,6 +276,91 @@ def test_auto_categorize_with_rules(auth_client, session):
     data = resp.json()
     assert data["total"] == 1
     assert data["categorized"] == 1
+
+
+# -- Auto-categorize LLM batching ------------------------------------------
+
+def test_auto_categorize_llm_batches_large_set(auth_client, session):
+    """LLM calls are chunked (_LLM_BATCH_SIZE=25) so 30 txns triggers 2 calls."""
+    from unittest.mock import patch, MagicMock
+    import json as _json
+
+    client, user = auth_client
+    acct = make_account(session, user)
+    txns = []
+    for i in range(30):
+        txns.append(make_transaction(
+            session, user, merchant=f"Merchant {i}", category=None,
+            account=acct, is_manual=False,
+        ))
+
+    def fake_llm_response(url, **kwargs):
+        body = _json.loads(kwargs["content"]) if "content" in kwargs else kwargs.get("json", {})
+        user_msg = body["messages"][1]["content"]
+        input_txns = _json.loads(user_msg)
+        result = [{"id": t["id"], "category": "Shopping"} for t in input_txns]
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "choices": [{"message": {"content": _json.dumps(result)}}]
+        }
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch("app.categorizer._get_llm_config", return_value=(
+        "http://fake-llm", "fake-key", "test-model",
+    )), patch("httpx.post", side_effect=fake_llm_response) as mock_post:
+        resp = client.post("/api/v1/transactions/auto-categorize")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 30
+    assert data["categorized"] == 30
+    assert data["skipped"] == 0
+    assert mock_post.call_count == 2  # 25 + 5
+
+
+def test_auto_categorize_llm_partial_failure(auth_client, session):
+    """If one LLM chunk fails, results from successful chunks are preserved."""
+    from unittest.mock import patch, MagicMock
+    import json as _json
+
+    client, user = auth_client
+    acct = make_account(session, user)
+    for i in range(30):
+        make_transaction(
+            session, user, merchant=f"Merchant {i}", category=None,
+            account=acct, is_manual=False,
+        )
+
+    call_count = {"n": 0}
+
+    def fake_llm_response(url, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            raise httpx.ConnectError("LLM unreachable")
+        body = kwargs.get("json", {})
+        user_msg = body["messages"][1]["content"]
+        input_txns = _json.loads(user_msg)
+        result = [{"id": t["id"], "category": "Groceries"} for t in input_txns]
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "choices": [{"message": {"content": _json.dumps(result)}}]
+        }
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch("app.categorizer._get_llm_config", return_value=(
+        "http://fake-llm", "fake-key", "test-model",
+    )), patch("httpx.post", side_effect=fake_llm_response):
+        resp = client.post("/api/v1/transactions/auto-categorize")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 30
+    assert data["categorized"] == 25  # first chunk succeeded
+    assert data["skipped"] == 5       # second chunk failed
 
 
 # -- Recurring -------------------------------------------------------------

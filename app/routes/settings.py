@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
-from app.categorizer import categorize_by_rules
+from app.categorizer import categorize_by_llm, categorize_by_rules
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
 from app.models import (
@@ -497,10 +497,11 @@ def _import_sync(
             continue
 
         category = row.category
+        auto = False
         if not category:
             category = categorize_by_rules(row.merchant_name, session, user.id)
             if category:
-                categorized += 1
+                auto = True
 
         txn = Transaction(
             plaid_transaction_id=f"csv-{uuid4().hex}",
@@ -513,6 +514,16 @@ def _import_sync(
             user_id=user.id,
         )
         session.add(txn)
+
+        if not category:
+            session.flush()
+            llm_cat = categorize_by_llm(txn, user.id)
+            if llm_cat:
+                txn.category = llm_cat
+                auto = True
+
+        if auto:
+            categorized += 1
         imported += 1
 
     session.commit()
@@ -559,11 +570,11 @@ def _import_generator(
             continue
 
         cat = row.category
+        auto = False
         if not cat:
             cat = categorize_by_rules(row.merchant_name, session, user.id)
             if cat:
-                categorized += 1
-                status = "categorized"
+                auto = True
 
         txn = Transaction(
             plaid_transaction_id=f"csv-{uuid4().hex}",
@@ -576,6 +587,18 @@ def _import_generator(
             user_id=user.id,
         )
         session.add(txn)
+
+        if not cat:
+            session.flush()
+            llm_cat = categorize_by_llm(txn, user.id)
+            if llm_cat:
+                txn.category = llm_cat
+                cat = llm_cat
+                auto = True
+
+        if auto:
+            categorized += 1
+            status = "categorized"
         imported += 1
 
         yield _ndjson({"type": "progress", "current": idx, "total": total,
@@ -746,10 +769,11 @@ def _bulk_import_sync(
             continue
 
         category = row.category
+        auto = False
         if not category:
             category = categorize_by_rules(row.merchant_name, session, user.id)  # type: ignore[arg-type]
             if category:
-                categorized += 1
+                auto = True
 
         txn = Transaction(
             plaid_transaction_id=f"csv-{uuid4().hex}",
@@ -763,6 +787,16 @@ def _bulk_import_sync(
             user_id=owner_id,
         )
         session.add(txn)
+
+        if not category:
+            session.flush()
+            llm_cat = categorize_by_llm(txn, user.id)
+            if llm_cat:
+                txn.category = llm_cat
+                auto = True
+
+        if auto:
+            categorized += 1
         imported += 1
 
     session.commit()
@@ -818,11 +852,11 @@ def _bulk_import_generator(
             continue
 
         cat = row.category
+        auto = False
         if not cat:
             cat = categorize_by_rules(row.merchant_name, session, user.id)  # type: ignore[arg-type]
             if cat:
-                categorized += 1
-                status = "categorized"
+                auto = True
 
         txn = Transaction(
             plaid_transaction_id=f"csv-{uuid4().hex}",
@@ -836,6 +870,18 @@ def _bulk_import_generator(
             user_id=owner_id,
         )
         session.add(txn)
+
+        if not cat:
+            session.flush()
+            llm_cat = categorize_by_llm(txn, user.id)
+            if llm_cat:
+                txn.category = llm_cat
+                cat = llm_cat
+                auto = True
+
+        if auto:
+            categorized += 1
+            status = "categorized"
         imported += 1
 
         yield _ndjson({"type": "progress", "current": idx, "total": total,

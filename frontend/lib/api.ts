@@ -482,6 +482,23 @@ export const api = {
     streamNdjson("/settings/bulk-import", payload, onProgress),
 
   // Categories (user-specific)
-  getUserCategories: () =>
+  getCategoryObjects: () =>
     fetcher<{ id: number; name: string }[]>("/categories"),
+
+  createCategory: (name: string) =>
+    fetcher<{ id: number; name: string }>("/categories", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+
+  updateCategory: (id: number, name: string) =>
+    fetcher<{ id: number; name: string }>(`/categories/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteCategory: (id: number, reassignTo?: number) =>
+    fetchVoid(`/categories/${id}${reassignTo != null ? `?reassign_to=${reassignTo}` : ""}`, {
+      method: "DELETE",
+    }),
 };

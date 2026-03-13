@@ -14,6 +14,7 @@ os.environ.update({
     "SECURE_COOKIES": "false",
     "PLAID_CLIENT_ID": "test-plaid-client",
     "PLAID_SECRET": "test-plaid-secret",
+    "LLM_API_KEY": "",
 })
 
 from datetime import date, datetime

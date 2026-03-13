@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useRef, useEffect } from "react";
 import Image from "next/image";
 import {
@@ -13,13 +13,11 @@ import {
   X,
   Plus,
   Trash2,
-  Pencil,
-  Tag,
   SlidersHorizontal,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
-import type { Transaction, Tag as TagType } from "@/lib/types";
+import type { Transaction } from "@/lib/types";
 import ConfirmDialog from "@/components/confirm-dialog";
 
 export default function TransactionsPage() {
@@ -27,7 +25,7 @@ export default function TransactionsPage() {
   const queryClient = useQueryClient();
   const scope = useScope();
   const isViewingOwn = scope === "personal";
-  const [filter, setFilter] = useState<"review" | "all">("review");
+  const [filter, setFilter] = useState<"review" | "all">("all");
   const [showAddForm, setShowAddForm] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
@@ -41,9 +39,11 @@ export default function TransactionsPage() {
   const [dateTo, setDateTo] = useState("");
   const [amountMin, setAmountMin] = useState("");
   const [amountMax, setAmountMax] = useState("");
-  const queryLimit = 100;
+
+  const PAGE_SIZE = 50;
 
   const [deleteConfirm, setDeleteConfirm] = useState<Transaction | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!filtersOpen) return;
@@ -56,15 +56,49 @@ export default function TransactionsPage() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [filtersOpen]);
 
-  const { data: transactions, isLoading } = useQuery({
-    queryKey: ["transactions", filter, scope, queryLimit],
-    queryFn: () =>
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["transactions", "list", filter, scope],
+    queryFn: ({ pageParam = 0 }) =>
       api.getTransactions(
         filter === "review"
-          ? { uncategorized: true, limit: queryLimit, scope }
-          : { limit: queryLimit, scope }
+          ? { uncategorized: true, limit: PAGE_SIZE, offset: pageParam, scope }
+          : { limit: PAGE_SIZE, offset: pageParam, scope }
       ),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
+      lastPage.length === PAGE_SIZE ? lastPageParam + PAGE_SIZE : undefined,
   });
+
+  const transactions = useMemo(() => {
+    const all = data?.pages.flat() ?? [];
+    const seen = new Set<number>();
+    return all.filter((txn) => {
+      if (seen.has(txn.id)) return false;
+      seen.add(txn.id);
+      return true;
+    });
+  }, [data]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const { data: categories } = useQuery({
     queryKey: ["categories"],
@@ -141,6 +175,10 @@ export default function TransactionsPage() {
     amountMin,
     amountMax,
   ]);
+
+  function handleFilterChange(newFilter: "review" | "all") {
+    setFilter(newFilter);
+  }
 
   function clearFilters() {
     setSearchQuery("");
@@ -241,17 +279,17 @@ export default function TransactionsPage() {
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <div className="flex gap-1 rounded-lg bg-muted p-0.5">
           <button
-            onClick={() => setFilter("review")}
+            onClick={() => handleFilterChange("all")}
+            className={tabClass(filter === "all")}
+          >
+            All
+          </button>
+          <button
+            onClick={() => handleFilterChange("review")}
             className={`inline-flex items-center gap-1.5 ${tabClass(filter === "review")}`}
           >
             <AlertCircle className="h-3.5 w-3.5" />
             Uncategorized
-          </button>
-          <button
-            onClick={() => setFilter("all")}
-            className={tabClass(filter === "all")}
-          >
-            All
           </button>
         </div>
 
@@ -385,10 +423,10 @@ export default function TransactionsPage() {
         )}
       </div>
 
-      {hasActiveFilters && transactions && (
+      {hasActiveFilters && transactions.length > 0 && (
         <p className="mt-3 text-xs text-muted-foreground">
           Showing {filteredTransactions.length} of {transactions.length}{" "}
-          transactions
+          loaded transactions
         </p>
       )}
 
@@ -439,6 +477,19 @@ export default function TransactionsPage() {
             />
           ))}
         </div>
+      )}
+
+      {/* Infinite scroll sentinel */}
+      <div ref={sentinelRef} className="h-1" />
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-6">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      {!isLoading && transactions.length > 0 && !hasNextPage && (
+        <p className="py-6 text-center text-xs text-muted-foreground">
+          All {transactions.length} transactions loaded
+        </p>
       )}
 
       <ConfirmDialog
