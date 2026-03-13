@@ -10,8 +10,8 @@ export default function ReviewSnippet() {
   const formatCurrency = useFormatCurrencyPrecise();
   const scope = useScope();
   const { data, isLoading } = useQuery({
-    queryKey: ["transactions", "needsReview", scope],
-    queryFn: () => api.getTransactions({ needs_review: true, limit: 5, scope }),
+    queryKey: ["transactions", "uncategorized", scope],
+    queryFn: () => api.getTransactions({ uncategorized: true, limit: 5, scope }),
   });
 
   const count = data?.length ?? 0;

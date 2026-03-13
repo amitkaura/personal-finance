@@ -316,7 +316,6 @@ def sync_transactions(plaid_item_id: int) -> None:
                         plaid_category_code=plaid_cat,
                         category=None,
                         pending_status=txn.pending,
-                        needs_review=True,
                         account_id=account.id if account else None,
                         user_id=user_id,
                     )
@@ -335,7 +334,7 @@ def sync_transactions(plaid_item_id: int) -> None:
         ).all()
         pending = session.exec(
             select(Transaction).where(
-                Transaction.needs_review == True,
+                Transaction.category == None,  # noqa: E711
                 Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
             )
         ).all()
@@ -345,7 +344,6 @@ def sync_transactions(plaid_item_id: int) -> None:
             cat = categorize_by_rules(t.merchant_name or "", session, user_id)
             if cat:
                 t.category = cat
-                t.needs_review = False
                 session.add(t)
             else:
                 llm_candidates.append(t)
@@ -356,7 +354,6 @@ def sync_transactions(plaid_item_id: int) -> None:
                 cat = llm_results.get(t.id)
                 if cat:
                     t.category = cat
-                    t.needs_review = False
                     session.add(t)
 
         session.commit()

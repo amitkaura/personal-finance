@@ -173,13 +173,13 @@ def categorize_transaction(transaction: Transaction, session: Session, user_id: 
 
 
 def auto_categorize_pending(session: Session, user_id: int) -> dict[str, int]:
-    """Batch-categorize all needs_review transactions for a given user. Returns counts."""
+    """Batch-categorize all uncategorized transactions for a given user. Returns counts."""
     user_account_ids = session.exec(
         select(Account.id).where(Account.user_id == user_id)
     ).all()
     txns = session.exec(
         select(Transaction).where(
-            Transaction.needs_review == True,
+            Transaction.category == None,  # noqa: E711
             Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
         )
     ).all()
@@ -193,7 +193,6 @@ def auto_categorize_pending(session: Session, user_id: int) -> dict[str, int]:
         cat = categorize_by_rules(txn.merchant_name or "", session, user_id)
         if cat:
             txn.category = cat
-            txn.needs_review = False
             session.add(txn)
             rule_matched.append(txn)
         else:
@@ -205,7 +204,6 @@ def auto_categorize_pending(session: Session, user_id: int) -> dict[str, int]:
         cat = llm_results.get(txn.id)
         if cat:
             txn.category = cat
-            txn.needs_review = False
             session.add(txn)
             llm_matched += 1
 

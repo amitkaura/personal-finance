@@ -147,7 +147,6 @@ def make_transaction(
     txn_date: Optional[date] = None,
     account: Optional[Account] = None,
     is_manual: bool = True,
-    needs_review: bool = False,
     **overrides,
 ) -> Transaction:
     defaults = {
@@ -156,7 +155,6 @@ def make_transaction(
         "amount": amount,
         "merchant_name": merchant,
         "category": category,
-        "needs_review": needs_review,
         "account_id": account.id if account else None,
         "is_manual": is_manual,
         "user_id": user.id,
@@ -297,6 +295,26 @@ def make_category(session: Session, user: User, name: str = "Food & Dining") -> 
     session.commit()
     session.refresh(cat)
     return cat
+
+
+def make_net_worth_snapshot(
+    session: Session,
+    user: User,
+    snapshot_date: Optional[date] = None,
+    assets: Decimal = Decimal("10000.00"),
+    liabilities: Decimal = Decimal("2000.00"),
+) -> NetWorthSnapshot:
+    snap = NetWorthSnapshot(
+        user_id=user.id,
+        date=snapshot_date or date.today(),
+        assets=assets,
+        liabilities=liabilities,
+        net_worth=assets - liabilities,
+    )
+    session.add(snap)
+    session.commit()
+    session.refresh(snap)
+    return snap
 
 
 def make_settings(session: Session, user: User, **overrides) -> UserSettings:

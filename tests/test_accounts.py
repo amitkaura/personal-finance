@@ -5,8 +5,8 @@ from uuid import uuid4
 
 from app.main import app
 from app.auth import get_current_user
-from app.models import AccountType
-from tests.conftest import make_account, make_transaction, make_user
+from app.models import AccountType, GoalAccountLink, TransactionTag
+from tests.conftest import make_account, make_goal, make_tag, make_transaction, make_user, link_goal_to_account
 
 
 # -- List ------------------------------------------------------------------
@@ -75,7 +75,7 @@ def test_create_manual_account_invalid_type(auth_client):
 
 def test_delete_manual_account(auth_client, session):
     client, user = auth_client
-    acct = make_account(session, user, plaid_account_id=f"manual-{uuid4().hex}")
+    acct = make_account(session, user, plaid_account_id=f"manual-{uuid4().hex}", is_linked=False)
     resp = client.delete(f"/api/v1/accounts/{acct.id}")
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
@@ -83,7 +83,7 @@ def test_delete_manual_account(auth_client, session):
 
 def test_delete_manual_account_cascades_transactions(auth_client, session):
     client, user = auth_client
-    acct = make_account(session, user, plaid_account_id=f"manual-{uuid4().hex}")
+    acct = make_account(session, user, plaid_account_id=f"manual-{uuid4().hex}", is_linked=False)
     make_transaction(session, user, account=acct)
     make_transaction(session, user, account=acct)
 
@@ -98,11 +98,64 @@ def test_delete_manual_account_cascades_transactions(auth_client, session):
     assert len(remaining) == 0
 
 
-def test_delete_non_manual_account_rejected(auth_client, session):
+def test_delete_manual_account_cascades_transaction_tags(auth_client, session):
     client, user = auth_client
-    acct = make_account(session, user)
+    acct = make_account(session, user, plaid_account_id=f"manual-{uuid4().hex}", is_linked=False)
+    txn = make_transaction(session, user, account=acct)
+    tag = make_tag(session, user, name="vacation")
+    link = TransactionTag(transaction_id=txn.id, tag_id=tag.id)
+    session.add(link)
+    session.commit()
+
+    resp = client.delete(f"/api/v1/accounts/{acct.id}")
+    assert resp.status_code == 200
+
+    from sqlmodel import select
+    remaining = session.exec(
+        select(TransactionTag).where(TransactionTag.tag_id == tag.id)
+    ).all()
+    assert len(remaining) == 0
+
+
+def test_delete_manual_account_cascades_goal_links(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, plaid_account_id=f"manual-{uuid4().hex}", is_linked=False)
+    goal = make_goal(session, user)
+    link_goal_to_account(session, goal, acct)
+
+    resp = client.delete(f"/api/v1/accounts/{acct.id}")
+    assert resp.status_code == 200
+
+    from sqlmodel import select
+    remaining = session.exec(
+        select(GoalAccountLink).where(GoalAccountLink.account_id == acct.id)
+    ).all()
+    assert len(remaining) == 0
+
+
+def test_delete_linked_account_rejected(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, is_linked=True)
     resp = client.delete(f"/api/v1/accounts/{acct.id}")
     assert resp.status_code == 400
+    assert "Unlink" in resp.json()["detail"]
+
+
+def test_delete_unlinked_plaid_account(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, plaid_account_id="plaid-real-abc123", is_linked=False)
+    make_transaction(session, user, account=acct)
+
+    resp = client.delete(f"/api/v1/accounts/{acct.id}")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    from sqlmodel import select
+    from app.models import Transaction
+    remaining = session.exec(
+        select(Transaction).where(Transaction.account_id == acct.id)
+    ).all()
+    assert len(remaining) == 0
 
 
 def test_delete_account_not_found(auth_client):
@@ -114,7 +167,7 @@ def test_delete_account_not_found(auth_client):
 def test_delete_other_users_account(auth_client, session):
     client, _ = auth_client
     other = make_user(session)
-    acct = make_account(session, other, plaid_account_id=f"manual-{uuid4().hex}")
+    acct = make_account(session, other, plaid_account_id=f"manual-{uuid4().hex}", is_linked=False)
     resp = client.delete(f"/api/v1/accounts/{acct.id}")
     assert resp.status_code == 404
 

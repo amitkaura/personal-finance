@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 from app.auth import get_current_user
 from app.database import get_session
 from app.household import get_scoped_user_ids
-from app.models import Account, AccountType, Transaction, User
+from app.models import Account, AccountType, GoalAccountLink, Transaction, TransactionTag, User
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -109,18 +109,33 @@ def delete_account(
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    """Delete a manual account and its transactions."""
+    """Delete a manual or unlinked account and its transactions."""
     acct = session.get(Account, account_id)
     if not acct or acct.user_id != user.id:
         raise HTTPException(status_code=404, detail="Account not found")
-    if not acct.plaid_account_id.startswith("manual-"):
-        raise HTTPException(status_code=400, detail="Only manual accounts can be deleted")
+    if acct.is_linked:
+        raise HTTPException(status_code=400, detail="Unlink the account before deleting it")
 
     txns = session.exec(
         select(Transaction).where(Transaction.account_id == account_id)
     ).all()
+    txn_ids = [t.id for t in txns]
+
+    if txn_ids:
+        tag_links = session.exec(
+            select(TransactionTag).where(TransactionTag.transaction_id.in_(txn_ids))  # type: ignore[union-attr]
+        ).all()
+        for tl in tag_links:
+            session.delete(tl)
+
     for txn in txns:
         session.delete(txn)
+
+    goal_links = session.exec(
+        select(GoalAccountLink).where(GoalAccountLink.account_id == account_id)
+    ).all()
+    for gl in goal_links:
+        session.delete(gl)
 
     session.delete(acct)
     session.commit()

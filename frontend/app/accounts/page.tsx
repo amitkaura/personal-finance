@@ -453,8 +453,8 @@ function AccountRow({
                 </button>
               )}
 
-              {/* Delete button (manual accounts only) */}
-              {isManual && (
+              {/* Delete button (manual or unlinked accounts) */}
+              {(isManual || !account.is_linked) && (
                 <button
                   onClick={() => setConfirmDelete(true)}
                   className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"

@@ -95,7 +95,6 @@ class Transaction(SQLModel, table=True):
     plaid_category_code: Optional[str] = None
     category: Optional[str] = None
     pending_status: bool = False
-    needs_review: bool = Field(default=True)
     account_id: Optional[int] = Field(default=None, foreign_key="accounts.id", index=True)
     is_manual: bool = Field(default=False)
     notes: Optional[str] = None

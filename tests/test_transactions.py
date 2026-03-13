@@ -263,7 +263,7 @@ def test_auto_categorize_with_rules(auth_client, session):
     client, user = auth_client
     acct = make_account(session, user)
     make_transaction(session, user, merchant="Starbucks Coffee", category=None,
-                     needs_review=True, account=acct, is_manual=False)
+                     account=acct, is_manual=False)
     from app.models import CategoryRule
     rule = CategoryRule(user_id=user.id, keyword="starbucks", category="Food & Dining")
     session.add(rule)

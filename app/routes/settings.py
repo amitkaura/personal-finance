@@ -22,9 +22,17 @@ from app.database import get_session
 from app.models import (
     Account,
     AccountType,
+    Budget,
     Category,
     CategoryRule,
+    Goal,
+    GoalAccountLink,
+    GoalContribution,
     HouseholdMember,
+    NetWorthSnapshot,
+    PlaidItem,
+    SpendingPreference,
+    Tag,
     Transaction,
     TransactionTag,
     User,
@@ -303,7 +311,7 @@ def export_transactions(
     writer = csv.writer(buf)
     writer.writerow([
         "Date", "Merchant", "Amount", "Category",
-        "Pending", "Needs Review", "Account ID",
+        "Pending", "Account ID",
     ])
     for t in txns:
         writer.writerow([
@@ -312,7 +320,6 @@ def export_transactions(
             float(t.amount),
             t.category or "",
             t.pending_status,
-            t.needs_review,
             t.account_id or "",
         ])
 
@@ -352,6 +359,80 @@ def clear_transactions(
             session.delete(tag_link)
     for t in txns:
         session.delete(t)
+    session.commit()
+
+
+# ── Factory Reset ──────────────────────────────────────────────
+
+
+@router.delete("/all-data", status_code=204)
+def factory_reset(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Delete ALL user financial data while preserving the User record and household membership."""
+    user_account_ids = list(
+        session.exec(select(Account.id).where(Account.user_id == user.id)).all()
+    )
+    txn_ids = list(
+        session.exec(
+            select(Transaction.id).where(
+                or_(
+                    Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+                    Transaction.user_id == user.id,
+                )
+            )
+        ).all()
+    )
+
+    if txn_ids:
+        for tl in session.exec(select(TransactionTag).where(TransactionTag.transaction_id.in_(txn_ids))).all():  # type: ignore[union-attr]
+            session.delete(tl)
+    for t in session.exec(select(Transaction).where(Transaction.id.in_(txn_ids))).all():  # type: ignore[union-attr]
+        session.delete(t)
+
+    goal_ids = list(
+        session.exec(select(Goal.id).where(Goal.user_id == user.id)).all()
+    )
+    if goal_ids:
+        for gl in session.exec(select(GoalAccountLink).where(GoalAccountLink.goal_id.in_(goal_ids))).all():  # type: ignore[union-attr]
+            session.delete(gl)
+        for gc in session.exec(select(GoalContribution).where(GoalContribution.goal_id.in_(goal_ids))).all():  # type: ignore[union-attr]
+            session.delete(gc)
+    for g in session.exec(select(Goal).where(Goal.user_id == user.id)).all():
+        session.delete(g)
+
+    for sp in session.exec(select(SpendingPreference).where(SpendingPreference.user_id == user.id)).all():
+        session.delete(sp)
+    for b in session.exec(select(Budget).where(Budget.user_id == user.id)).all():
+        session.delete(b)
+    for nw in session.exec(select(NetWorthSnapshot).where(NetWorthSnapshot.user_id == user.id)).all():
+        session.delete(nw)
+    for tag in session.exec(select(Tag).where(Tag.user_id == user.id)).all():
+        session.delete(tag)
+    for rule in session.exec(select(CategoryRule).where(CategoryRule.user_id == user.id)).all():
+        session.delete(rule)
+    for cat in session.exec(select(Category).where(Category.user_id == user.id)).all():
+        session.delete(cat)
+    for acct in session.exec(select(Account).where(Account.user_id == user.id)).all():
+        session.delete(acct)
+
+    for item in session.exec(select(PlaidItem).where(PlaidItem.user_id == user.id)).all():
+        try:
+            from app.crypto import decrypt_token
+            from app.plaid_client import get_plaid_client
+            from plaid.model.item_remove_request import ItemRemoveRequest
+            client = get_plaid_client()
+            access_token = decrypt_token(item.encrypted_access_token)
+            client.item_remove(ItemRemoveRequest(access_token=access_token))
+        except Exception:
+            pass
+        session.delete(item)
+
+    settings = session.exec(select(UserSettings).where(UserSettings.user_id == user.id)).first()
+    if settings:
+        session.delete(settings)
+
     session.commit()
 
 
@@ -427,7 +508,6 @@ def _import_sync(
             amount=Decimal(str(row.amount)),
             merchant_name=row.merchant_name,
             category=category,
-            needs_review=not bool(category),
             account_id=acct.id,
             is_manual=True,
             user_id=user.id,
@@ -491,7 +571,6 @@ def _import_generator(
             amount=Decimal(str(row.amount)),
             merchant_name=row.merchant_name,
             category=cat,
-            needs_review=not bool(cat),
             account_id=acct.id,
             is_manual=True,
             user_id=user.id,
@@ -678,7 +757,6 @@ def _bulk_import_sync(
             amount=Decimal(str(row.amount)),
             merchant_name=row.merchant_name,
             category=category,
-            needs_review=not bool(category),
             account_id=acct_id,
             is_manual=True,
             notes=row.notes,
@@ -752,7 +830,6 @@ def _bulk_import_generator(
             amount=Decimal(str(row.amount)),
             merchant_name=row.merchant_name,
             category=cat,
-            needs_review=not bool(cat),
             account_id=acct_id,
             is_manual=True,
             notes=row.notes,

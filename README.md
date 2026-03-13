@@ -27,7 +27,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Accounts page hides unlinked accounts by default (toggle to show all)
 - **Manual accounts** -- create accounts without Plaid (all types: depository, credit, loan, investment)
 - Manually adjust balances on manual accounts at any time
-- Delete manual accounts (cascades associated transactions and goal links)
+- Delete manual or unlinked accounts (cascades associated transactions and goal links)
 
 ### Transaction Management
 - Automatic transaction sync from all linked Plaid items
@@ -138,7 +138,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Sync Schedule** -- enable/disable auto-sync, pick hour, minute, and timezone
 - **Category Rules** -- CRUD for keyword-to-category mappings
 - **AI Categorization** -- configure LLM base URL, model, and API key
-- **Data Management** -- CSV export of all transactions, bulk delete
+- **Data Management** -- CSV export of all transactions, bulk delete, factory reset (wipes all financial data while preserving login and household)
 
 ### Dashboard
 - Net worth hero card with total assets, liabilities, and net worth
@@ -259,13 +259,13 @@ personal-finance/
 │   ├── test_health.py              # Health/readiness endpoints
 │   ├── test_auth.py                # Google OAuth login, session, /me
 │   ├── test_transactions.py        # CRUD, filters, search, pagination
-│   ├── test_accounts.py            # List, create, update, delete, unlink, summary
+│   ├── test_accounts.py            # List, create, update, delete (manual + unlinked), unlink, summary
 │   ├── test_categories.py          # Full CRUD, auto-seed, cascading renames/deletes
 │   ├── test_budgets.py             # CRUD, copy, summary
 │   ├── test_goals.py               # CRUD, ownership
 │   ├── test_tags.py                # CRUD, transaction tagging
 │   ├── test_household.py           # Invite, accept, decline, leave, scope
-│   ├── test_settings.py            # Profile, rules, export, clear
+│   ├── test_settings.py            # Profile, rules, export, clear, factory reset
 │   ├── test_reports.py             # Spending, trends, merchants
 │   ├── test_net_worth.py           # Snapshots, history
 │   └── test_plaid.py               # Link token, exchange token, sync (mocked)
@@ -337,7 +337,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | GET | `/` | List all accounts (supports `?scope=`) |
 | POST | `/` | Create a manual account (no Plaid required) |
 | PATCH | `/:id` | Update account name, type, subtype, or balance |
-| DELETE | `/:id` | Delete a manual account (cascades transactions/goal links) |
+| DELETE | `/:id` | Delete a manual or unlinked account (cascades transactions/goal links) |
 | POST | `/:id/unlink` | Unlink a single Plaid-linked account |
 | POST | `/:id/import` | Bulk import transactions from mapped CSV data |
 | GET | `/summary` | Aggregated balances by type for dashboard |
@@ -366,6 +366,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | DELETE | `/rules/:id` | Delete a category rule |
 | GET | `/export` | Export transactions as CSV |
 | DELETE | `/transactions` | Delete all user transactions |
+| DELETE | `/all-data` | Factory reset -- delete all financial data (preserves user and household) |
 
 ### Budgets (`/budgets`)
 | Method | Path | Description |
@@ -499,17 +500,17 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (260 tests across 15 files — 84% line coverage):**
+**What's tested (265 tests across 14 files — 84% line coverage):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `test_settings` | 43 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation |
+| `test_settings` | 45 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
 | `test_transactions` | 27 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize, recurring, date validation, response schema |
 | `test_categories` | 20 | Full CRUD, auto-seed defaults, create validation (empty/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
-| `test_accounts` | 19 | List, update, unlink, summary, manual create/delete, balance update, CSV import, cascade delete, negative amounts, inline auto-categorization |
+| `test_accounts` | 22 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update, CSV import, cascade delete, negative amounts, inline auto-categorization |
 | `test_plaid` | 14 | Link token, exchange token (success, relink, conflict, institution name), sync, items (all Plaid calls mocked) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
@@ -524,28 +525,29 @@ python3 -m pytest tests/test_auth.py  # run a single file
 |--------|-------|---------------|----------|
 | `app/routes/categories.py` | 90 | 90 | 100% |
 | `app/routes/net_worth.py` | 54 | 54 | 100% |
-| `app/models.py` | 186 | 186 | 100% |
+| `app/models.py` | 185 | 185 | 100% |
 | `app/config.py` | 44 | 44 | 100% |
 | `app/routes/auth.py` | 63 | 62 | 98% |
 | `app/email.py` | 42 | 41 | 98% |
 | `app/routes/household.py` | 200 | 193 | 96% |
 | `app/household.py` | 19 | 18 | 95% |
-| `app/routes/settings.py` | 365 | 342 | 94% |
 | `app/routes/goals.py` | 218 | 202 | 93% |
+| `app/routes/settings.py` | 411 | 378 | 92% |
 | `app/routes/reports.py` | 116 | 106 | 91% |
 | `app/routes/transactions.py` | 215 | 187 | 87% |
-| `app/routes/accounts.py` | 136 | 116 | 85% |
+| `app/routes/accounts.py` | 144 | 124 | 86% |
 | `app/routes/tags.py` | 111 | 94 | 85% |
-| `app/categorizer.py` | 102 | 78 | 76% |
+| `app/crypto.py` | 12 | 10 | 83% |
+| `app/categorizer.py` | 100 | 77 | 77% |
 | `app/routes/budgets.py` | 271 | 189 | 70% |
-| `app/routes/plaid.py` | 247 | 147 | 60% |
-| **Total** | **2775** | **2324** | **84%** |
+| `app/routes/plaid.py` | 245 | 147 | 60% |
+| **Total** | **2824** | **2366** | **84%** |
 
 **Test infrastructure:**
 - In-memory SQLite with per-test isolation (fresh tables for each test)
 - Google OAuth ID token verification is mocked
 - `get_current_user` dependency is overridden to inject a test user
-- Factory helpers for creating users, accounts, transactions, households, budgets, goals, tags, and settings
+- Factory helpers for creating users, accounts, transactions, households, budgets, goals, tags, settings, and net worth snapshots
 - No network calls — all external services (Plaid, Google) are mocked
 
 ### Frontend (Vitest + React Testing Library)
@@ -560,7 +562,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (301 tests across 32 files — 73% line coverage):**
+**What's tested (300 tests across 32 files — 73% line coverage):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -569,7 +571,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `cashflow-bar-chart` | 17 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `settings-page` | 14 | All sections: profile, household, general, data management |
 | `csv-import-dialog` | 14 | Upload step, auto-detection, debit/credit mapping, preview, import, results, errors, navigation |
-| `transactions-page` | 12 | Title, add form, search, filter tabs, category/type filters, loading, empty states, approve, delete, badges, auto-categorize |
+| `transactions-page` | 11 | Title, add form, search, filter tabs, category/type filters, loading, empty states, delete, badges, auto-categorize |
 | `accounts-page` | 12 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
 | `budgets-page` | 10 | Title, month navigation, copy from last month, add form, loading, totals, empty state |

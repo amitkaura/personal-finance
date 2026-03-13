@@ -26,19 +26,19 @@ vi.mock("@/components/household-provider", () => ({
 
 const TXN_REVIEW = {
   id: 1, merchant_name: "Starbucks", amount: -5.50, date: "2025-01-15",
-  category: null, needs_review: true, is_manual: false, pending_status: false,
+  category: null, is_manual: false, pending_status: false,
   notes: null, owner_name: null, tags: [],
 };
 
 const TXN_CATEGORIZED = {
   id: 2, merchant_name: "Loblaws", amount: -85.00, date: "2025-01-14",
-  category: "Groceries", needs_review: false, is_manual: false, pending_status: false,
+  category: "Groceries", is_manual: false, pending_status: false,
   notes: null, owner_name: null, tags: [],
 };
 
 const TXN_MANUAL = {
   id: 3, merchant_name: "Cash Deposit", amount: 200, date: "2025-01-13",
-  category: "Income", needs_review: false, is_manual: true, pending_status: false,
+  category: "Income", is_manual: true, pending_status: false,
   notes: null, owner_name: null, tags: [],
 };
 
@@ -133,19 +133,6 @@ describe("TransactionsPage", () => {
       expect(screen.getByText("Cash Deposit")).toBeInTheDocument();
       expect(screen.getByText("MANUAL")).toBeInTheDocument();
     });
-  });
-
-  it("approve button calls update API", async () => {
-    const user = userEvent.setup();
-    mockApi.getTransactions.mockResolvedValue([TXN_REVIEW]);
-    mockApi.updateTransaction.mockResolvedValue({});
-    renderWithProviders(<TransactionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Starbucks")).toBeInTheDocument();
-    });
-    const approveBtn = screen.getByText("Approve");
-    await user.click(approveBtn);
-    expect(mockApi.updateTransaction).toHaveBeenCalledWith(1, { needs_review: false });
   });
 
   it("delete button visible only on manual transactions", async () => {

@@ -1,16 +1,38 @@
-"""Profile, user settings, category rules, export, clear, and CSV import tests."""
+"""Profile, user settings, category rules, export, clear, CSV import, and factory reset tests."""
 
 from decimal import Decimal
+from datetime import date
 from unittest.mock import patch
 
-from app.models import Account, Category, CategoryRule, Transaction
+from app.models import (
+    Account,
+    Budget,
+    Category,
+    CategoryRule,
+    Goal,
+    GoalAccountLink,
+    GoalContribution,
+    NetWorthSnapshot,
+    SpendingPreference,
+    Tag,
+    Transaction,
+    TransactionTag,
+    User,
+    UserSettings,
+)
 from sqlmodel import select
 from tests.conftest import (
     add_household_member,
+    link_goal_to_account,
     make_account,
+    make_budget,
     make_category,
+    make_contribution,
+    make_goal,
     make_household,
+    make_invitation,
     make_settings,
+    make_spending_preference,
     make_tag,
     make_transaction,
     make_user,
@@ -551,7 +573,7 @@ def test_bulk_import_preserves_csv_category(auth_client, session):
     assert txns[0].category == "Groceries"
 
 
-def test_bulk_import_sets_needs_review_when_uncategorized(auth_client, session):
+def test_bulk_import_leaves_category_null_when_uncategorized(auth_client, session):
     client, user = auth_client
     resp = client.post("/api/v1/settings/bulk-import", json={
         "accounts": [],
@@ -562,5 +584,75 @@ def test_bulk_import_sets_needs_review_when_uncategorized(auth_client, session):
     assert resp.json()["imported"] == 1
     assert resp.json()["categorized"] == 0
     txns = session.exec(select(Transaction).where(Transaction.user_id == user.id)).all()
-    assert txns[0].needs_review is True
     assert txns[0].category is None
+
+
+# -- Factory Reset ---------------------------------------------------------
+
+def test_factory_reset_clears_all_data(auth_client, session):
+    from tests.conftest import make_net_worth_snapshot
+    client, user = auth_client
+
+    acct = make_account(session, user, name="Checking", is_linked=False)
+    txn = make_transaction(session, user, account=acct)
+    tag = make_tag(session, user, name="vacation")
+    session.add(TransactionTag(transaction_id=txn.id, tag_id=tag.id))
+    session.commit()
+
+    budget = make_budget(session, user)
+    goal = make_goal(session, user)
+    link_goal_to_account(session, goal, acct)
+    make_contribution(session, goal, user)
+    make_spending_preference(session, user)
+    make_net_worth_snapshot(session, user)
+    cat = make_category(session, user, name="Groceries")
+    rule = CategoryRule(user_id=user.id, keyword="store", category="Groceries")
+    session.add(rule)
+    session.commit()
+    make_settings(session, user)
+
+    resp = client.delete("/api/v1/settings/all-data")
+    assert resp.status_code == 204
+
+    assert session.exec(select(Transaction).where(Transaction.user_id == user.id)).all() == []
+    assert session.exec(select(Account).where(Account.user_id == user.id)).all() == []
+    assert session.exec(select(Budget).where(Budget.user_id == user.id)).all() == []
+    assert session.exec(select(Goal).where(Goal.user_id == user.id)).all() == []
+    assert session.exec(select(Tag).where(Tag.user_id == user.id)).all() == []
+    assert session.exec(select(CategoryRule).where(CategoryRule.user_id == user.id)).all() == []
+    assert session.exec(select(Category).where(Category.user_id == user.id)).all() == []
+    assert session.exec(select(NetWorthSnapshot).where(NetWorthSnapshot.user_id == user.id)).all() == []
+    assert session.exec(select(SpendingPreference).where(SpendingPreference.user_id == user.id)).all() == []
+    assert session.exec(select(UserSettings).where(UserSettings.user_id == user.id)).all() == []
+    assert session.exec(select(TransactionTag)).all() == []
+    assert session.exec(select(GoalAccountLink)).all() == []
+    assert session.exec(select(GoalContribution)).all() == []
+
+    assert session.get(User, user.id) is not None
+
+
+def test_factory_reset_preserves_household(auth_client, session):
+    from tests.conftest import make_net_worth_snapshot
+    client, user = auth_client
+
+    partner = make_user(session, name="Partner")
+    household = make_household(session, user)
+    add_household_member(session, household, partner)
+    make_invitation(session, household, user, "someone@example.com")
+
+    make_account(session, user, name="Checking", is_linked=False)
+    make_transaction(session, user)
+
+    resp = client.delete("/api/v1/settings/all-data")
+    assert resp.status_code == 204
+
+    from app.models import HouseholdMember, Household, HouseholdInvitation
+    assert session.get(Household, household.id) is not None
+    members = session.exec(
+        select(HouseholdMember).where(HouseholdMember.household_id == household.id)
+    ).all()
+    assert len(members) == 2
+    invitations = session.exec(
+        select(HouseholdInvitation).where(HouseholdInvitation.household_id == household.id)
+    ).all()
+    assert len(invitations) == 1

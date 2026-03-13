@@ -44,7 +44,7 @@ export default function TransactionsPage() {
     queryFn: () =>
       api.getTransactions(
         filter === "review"
-          ? { needs_review: true, limit: queryLimit, scope }
+          ? { uncategorized: true, limit: queryLimit, scope }
           : { limit: queryLimit, scope }
       ),
   });
@@ -52,13 +52,6 @@ export default function TransactionsPage() {
   const { data: categories } = useQuery({
     queryKey: ["categories"],
     queryFn: api.getCategories,
-  });
-
-  const approveMutation = useMutation({
-    mutationFn: (id: number) => api.updateTransaction(id, { needs_review: false }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-    },
   });
 
   const autoCatMutation = useMutation({
@@ -70,7 +63,7 @@ export default function TransactionsPage() {
 
   const recategorizeMutation = useMutation({
     mutationFn: ({ id, category }: { id: number; category: string }) =>
-      api.updateTransaction(id, { category, needs_review: false }),
+      api.updateTransaction(id, { category }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
     },
@@ -360,7 +353,6 @@ export default function TransactionsPage() {
               txn={txn}
               categories={categories ?? []}
               formatCurrency={formatCurrency}
-              onApprove={(id) => approveMutation.mutate(id)}
               onRecategorize={(id, cat) =>
                 recategorizeMutation.mutate({ id, category: cat })
               }
@@ -379,7 +371,6 @@ function TransactionRow({
   txn,
   categories,
   formatCurrency,
-  onApprove,
   onRecategorize,
   onDelete,
   editable = true,
@@ -388,7 +379,6 @@ function TransactionRow({
   txn: Transaction;
   categories: string[];
   formatCurrency: (n: number) => string;
-  onApprove: (id: number) => void;
   onRecategorize: (id: number, category: string) => void;
   onDelete: (id: number) => void;
   editable?: boolean;
@@ -464,7 +454,7 @@ function TransactionRow({
         {formatCurrency(Math.abs(txn.amount))}
       </span>
 
-      {txn.needs_review && editable && (
+      {!txn.category && editable && (
         <div className="flex items-center gap-2">
           <div className="relative">
             <button
@@ -491,13 +481,6 @@ function TransactionRow({
               </div>
             )}
           </div>
-          <button
-            onClick={() => onApprove(txn.id)}
-            className="inline-flex items-center gap-1 rounded-lg bg-success/15 px-3 py-1.5 text-xs font-medium text-success transition-colors hover:bg-success/25"
-          >
-            <Check className="h-3 w-3" />
-            Approve
-          </button>
         </div>
       )}
 

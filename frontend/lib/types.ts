@@ -79,7 +79,6 @@ export interface Transaction {
   merchant_name: string | null;
   category: string | null;
   pending_status: boolean;
-  needs_review: boolean;
   account_id: number | null;
   plaid_transaction_id: string;
   owner_name?: string;

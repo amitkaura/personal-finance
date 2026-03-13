@@ -160,11 +160,12 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  getTransactions: (params?: { needs_review?: boolean; limit?: number; scope?: ViewScope }) => {
+  getTransactions: (params?: { limit?: number; offset?: number; scope?: ViewScope; uncategorized?: boolean }) => {
     const query = new URLSearchParams();
-    if (params?.needs_review !== undefined)
-      query.set("needs_review", String(params.needs_review));
+    if (params?.uncategorized)
+      query.set("uncategorized", "true");
     if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.offset) query.set("offset", String(params.offset));
     if (params?.scope && params.scope !== "personal")
       query.set("scope", params.scope);
     const qs = query.toString();
@@ -196,7 +197,7 @@ export const api = {
     }),
 
   updateTransaction: (id: number, body: {
-    needs_review?: boolean; category?: string; merchant_name?: string;
+    category?: string; merchant_name?: string;
     amount?: number; date?: string; notes?: string;
   }) =>
     fetcher<Transaction>(`/transactions/${id}`, {
@@ -294,6 +295,9 @@ export const api = {
 
   clearTransactions: () =>
     fetchVoid("/settings/transactions", { method: "DELETE" }),
+
+  factoryReset: () =>
+    fetchVoid("/settings/all-data", { method: "DELETE" }),
 
   // Household
   getHousehold: () => fetcher<Household | null>("/household"),

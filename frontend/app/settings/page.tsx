@@ -1140,6 +1140,8 @@ function DataSection() {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
@@ -1152,6 +1154,17 @@ function DataSection() {
       setConfirmOpen(false);
     } finally {
       setClearing(false);
+    }
+  }
+
+  async function handleFactoryReset() {
+    setResetting(true);
+    try {
+      await api.factoryReset();
+      queryClient.invalidateQueries();
+      setConfirmResetOpen(false);
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -1214,16 +1227,32 @@ function DataSection() {
 
       <div className="mt-6 rounded-lg border border-red-500/30 bg-red-500/5 p-4">
         <h3 className="text-sm font-semibold text-red-400">Danger Zone</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Permanently delete all transaction records. This cannot be undone.
-        </p>
-        <button
-          onClick={() => setConfirmOpen(true)}
-          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
-        >
-          <Trash2 className="h-4 w-4" />
-          Clear All Transactions
-        </button>
+        <div className="mt-3 space-y-4">
+          <div>
+            <p className="text-xs text-muted-foreground">
+              Permanently delete all transaction records. Accounts and rules will remain.
+            </p>
+            <button
+              onClick={() => setConfirmOpen(true)}
+              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
+            >
+              <Trash2 className="h-4 w-4" />
+              Clear All Transactions
+            </button>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">
+              Delete all financial data: accounts, transactions, budgets, goals, categories, rules, tags, and net worth history. Your login and household membership will be preserved.
+            </p>
+            <button
+              onClick={() => setConfirmResetOpen(true)}
+              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Factory Reset
+            </button>
+          </div>
+        </div>
       </div>
 
       <ConfirmDialog
@@ -1235,6 +1264,17 @@ function DataSection() {
         loading={clearing}
         onConfirm={handleClear}
         onCancel={() => setConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmResetOpen}
+        title="Factory reset?"
+        description="This will permanently delete ALL your financial data — accounts, transactions, budgets, goals, categories, rules, tags, and net worth history. Your login and household membership will be preserved. This action cannot be undone."
+        confirmLabel="Reset Everything"
+        destructive
+        loading={resetting}
+        onConfirm={handleFactoryReset}
+        onCancel={() => setConfirmResetOpen(false)}
       />
     </div>
   );
