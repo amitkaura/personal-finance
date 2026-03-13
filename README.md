@@ -231,13 +231,36 @@ personal-finance/
 │       ├── hooks.test.tsx          # useFormatCurrency, useFormatCurrencyPrecise, useScope
 │       ├── csv-utils.test.ts       # CSV parser, column role guessing, date normalization, row mapping
 │       ├── accounts-page.test.tsx  # Manual/Plaid account rendering, add form, import/delete actions
-│       └── csv-import-dialog.test.tsx # Upload, column mapping, debit/credit, preview, import flow
+│       ├── csv-import-dialog.test.tsx # Upload, column mapping, debit/credit, preview, import flow
+│       ├── bulk-csv-import-dialog.test.tsx # Bulk upload, multi-account mapping, category matching
+│       ├── cashflow-bar-chart.test.tsx # Bar chart, drill-down, period switching, breadcrumbs
+│       ├── confirm-dialog.test.tsx # Rendering, variants, ARIA attributes, dismiss
+│       ├── transactions-page.test.tsx # Filters, search, add/approve/delete, badges
+│       ├── budgets-page.test.tsx   # Month navigation, copy, add form, totals, empty state
+│       ├── goals-page.test.tsx     # Active/completed, create dialog, progress, shared summary
+│       ├── reports-page.test.tsx   # Period selector, summary cards, category bars, merchants
+│       ├── recurring-page.test.tsx # Frequency tabs, sort, consistent/varies badges
+│       ├── connections-page.test.tsx # Connection cards, sync, disconnect, confirm
+│       ├── login-page.test.tsx     # Hero, trust badges, Google sign-in flow
+│       ├── net-worth-card.test.tsx  # Loading, data display, asset/liability breakdown
+│       ├── net-worth-history.test.tsx # Empty state, snapshot, chart, change indicator
+│       ├── credit-cards-widget.test.tsx # Card list, utilization bars, total owed
+│       ├── loans-widget.test.tsx   # Loan list, total remaining
+│       ├── recurring-widget.test.tsx # Recurring detection, max 6, sort by amount
+│       ├── top-movers.test.tsx     # Investment filter, trend icons
+│       ├── sync-button.test.tsx    # Click, syncing state, idle after delay
+│       ├── review-snippet.test.tsx # Transaction list, "all caught up", view all link
+│       ├── budget-snippet.test.tsx # Personal/shared bars, top 3, "Create one" link
+│       ├── goals-snippet.test.tsx  # Personal goals, shared summary, "Set one" link
+│       ├── link-account.test.tsx   # Token fetch, Plaid link, success message
+│       └── auth-gate.test.tsx      # Loading, unauthenticated, authenticated layout
 ├── tests/                          # Backend test suite (pytest)
 │   ├── conftest.py                 # Fixtures, in-memory SQLite, auth mocks
 │   ├── test_health.py              # Health/readiness endpoints
 │   ├── test_auth.py                # Google OAuth login, session, /me
 │   ├── test_transactions.py        # CRUD, filters, search, pagination
-│   ├── test_accounts.py            # List, update, unlink, summary
+│   ├── test_accounts.py            # List, create, update, delete, unlink, summary
+│   ├── test_categories.py          # Full CRUD, auto-seed, cascading renames/deletes
 │   ├── test_budgets.py             # CRUD, copy, summary
 │   ├── test_goals.py               # CRUD, ownership
 │   ├── test_tags.py                # CRUD, transaction tagging
@@ -245,7 +268,7 @@ personal-finance/
 │   ├── test_settings.py            # Profile, rules, export, clear
 │   ├── test_reports.py             # Spending, trends, merchants
 │   ├── test_net_worth.py           # Snapshots, history
-│   └── test_plaid.py               # Link token, exchange, sync (mocked)
+│   └── test_plaid.py               # Link token, exchange token, sync (mocked)
 ├── docker-compose.yml              # Postgres + Redis + API services
 ├── Dockerfile                      # Python 3.12-slim, uvicorn
 ├── requirements.txt                # Python dependencies
@@ -476,7 +499,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (260 tests across 14 files — 82% line coverage):**
+**What's tested (260 tests across 15 files — 84% line coverage):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -485,15 +508,38 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
 | `test_transactions` | 27 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize, recurring, date validation, response schema |
-| `test_categories` | 20 | Category listing, rule-based categorization, LLM fallback |
+| `test_categories` | 20 | Full CRUD, auto-seed defaults, create validation (empty/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
 | `test_accounts` | 19 | List, update, unlink, summary, manual create/delete, balance update, CSV import, cascade delete, negative amounts, inline auto-categorization |
-| `test_plaid` | 14 | Link token, exchange, sync, items (all Plaid calls mocked) |
+| `test_plaid` | 14 | Link token, exchange token (success, relink, conflict, institution name), sync, items (all Plaid calls mocked) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 6 | SMTP service, invitation template, send/skip/fail handling, port-465 SSL |
 | `test_auth` | 6 | Google OAuth login (mocked), session, `/me`, logout |
 | `test_net_worth` | 5 | Snapshots, history |
 | `test_health` | 2 | Liveness and readiness endpoints |
+
+**Coverage by module:**
+
+| Module | Stmts | Lines covered | Coverage |
+|--------|-------|---------------|----------|
+| `app/routes/categories.py` | 90 | 90 | 100% |
+| `app/routes/net_worth.py` | 54 | 54 | 100% |
+| `app/models.py` | 186 | 186 | 100% |
+| `app/config.py` | 44 | 44 | 100% |
+| `app/routes/auth.py` | 63 | 62 | 98% |
+| `app/email.py` | 42 | 41 | 98% |
+| `app/routes/household.py` | 200 | 193 | 96% |
+| `app/household.py` | 19 | 18 | 95% |
+| `app/routes/settings.py` | 365 | 342 | 94% |
+| `app/routes/goals.py` | 218 | 202 | 93% |
+| `app/routes/reports.py` | 116 | 106 | 91% |
+| `app/routes/transactions.py` | 215 | 187 | 87% |
+| `app/routes/accounts.py` | 136 | 116 | 85% |
+| `app/routes/tags.py` | 111 | 94 | 85% |
+| `app/categorizer.py` | 102 | 78 | 76% |
+| `app/routes/budgets.py` | 271 | 189 | 70% |
+| `app/routes/plaid.py` | 247 | 147 | 60% |
+| **Total** | **2775** | **2324** | **84%** |
 
 **Test infrastructure:**
 - In-memory SQLite with per-test isolation (fresh tables for each test)
@@ -514,7 +560,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (183 tests across 13 files):**
+**What's tested (301 tests across 32 files — 73% line coverage):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -523,14 +569,50 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `cashflow-bar-chart` | 17 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `settings-page` | 14 | All sections: profile, household, general, data management |
 | `csv-import-dialog` | 14 | Upload step, auto-detection, debit/credit mapping, preview, import, results, errors, navigation |
+| `transactions-page` | 12 | Title, add form, search, filter tabs, category/type filters, loading, empty states, approve, delete, badges, auto-categorize |
 | `accounts-page` | 12 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs |
-| `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss |
+| `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
+| `budgets-page` | 10 | Title, month navigation, copy from last month, add form, loading, totals, empty state |
+| `goals-page` | 10 | Title, empty state, active/completed sections, progress bar, target date, create dialog, shared summary, delete confirm |
 | `sidebar` | 10 | Brand, nav links, active state, user avatar, logout, hrefs |
 | `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
+| `reports-page` | 8 | Title, period selector, loading, summary cards, category bars, empty states, top merchants |
 | `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
+| `recurring-page` | 7 | Title, loading, empty state, recurring cards, summary, consistent/varies badges, sort dropdown |
+| `connections-page` | 7 | Title, empty state, loading, connection cards, sync/disconnect buttons, confirm dialog, link account |
+| `net-worth-history` | 6 | Loading, empty state with snapshot, chart rendering, change indicator, period selector |
+| `credit-cards-widget` | 6 | Loading, empty, card list, total owed, utilization bar colors, no-limit handling |
+| `recurring-widget` | 6 | Loading, empty, recurring detection, max 6 items, null merchant handling, sort by amount |
 | `household-provider` | 6 | Load household/partner, scope persistence per user in localStorage, reset |
 | `hooks` | 6 | `useFormatCurrency`, `useFormatCurrencyPrecise`, `useScope` |
 | `auth-provider` | 6 | Loading state, login/logout, cache clearing, default context |
+| `goals-snippet` | 6 | Loading, empty with "Set one" link, personal goals (max 3), shared summary, singular/plural, view all link |
+| `net-worth-card` | 5 | Loading skeleton, net worth display, asset/liability breakdown, account count pluralization |
+| `top-movers` | 5 | Loading, empty, investment+linked filter, trend icons, official name fallback |
+| `budget-snippet` | 5 | Loading, empty with "Create one" link, personal mini bar, top 3 sort, view all link |
+| `login-page` | 5 | Hero section, trust badges, feature cards, Google sign-in flow |
+| `loans-widget` | 4 | Loading, empty, loan list, total remaining |
+| `sync-button` | 4 | Idle state, click triggers API, syncing state (disabled), returns to idle after delay |
+| `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
+| `link-account` | 4 | Idle button, token fetch on click, success message, pluralization |
+| `auth-gate` | 4 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, layout classes |
+
+**Coverage by area:**
+
+| Area | Statements | Lines | Branches |
+|------|-----------|-------|----------|
+| `components/` | 85% | 84% | 80% |
+| `lib/` | 98% | 99% | 90% |
+| `app/cashflow/` | 100% | 100% | 100% |
+| `app/reports/` | 80% | 81% | 77% |
+| `app/recurring/` | 78% | 77% | 68% |
+| `app/login/` | 76% | 76% | 50% |
+| `app/connections/` | 68% | 69% | 57% |
+| `app/accounts/` | 61% | 61% | 63% |
+| `app/transactions/` | 59% | 62% | 65% |
+| `app/budgets/` | 53% | 55% | 45% |
+| `app/goals/` | 41% | 43% | 45% |
+| **Overall** | **73%** | **73%** | **71%** |
 
 **Test infrastructure:**
 - jsdom environment with global mocks for `next/image`, `next/link`, `next/navigation`
