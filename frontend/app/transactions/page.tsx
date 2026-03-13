@@ -15,6 +15,7 @@ import {
   Trash2,
   SlidersHorizontal,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 import type { Account, Transaction } from "@/lib/types";
@@ -24,6 +25,7 @@ export default function TransactionsPage() {
   const formatCurrency = useFormatCurrencyPrecise();
   const queryClient = useQueryClient();
   const scope = useScope();
+  const searchParams = useSearchParams();
   const isViewingOwn = scope === "personal";
   const [filter, setFilter] = useState<"review" | "all">("all");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -39,7 +41,9 @@ export default function TransactionsPage() {
   const [dateTo, setDateTo] = useState("");
   const [amountMin, setAmountMin] = useState("");
   const [amountMax, setAmountMax] = useState("");
-  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [selectedAccountId, setSelectedAccountId] = useState(
+    () => searchParams.get("account") ?? "",
+  );
 
   const PAGE_SIZE = 50;
 

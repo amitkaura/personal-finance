@@ -24,6 +24,18 @@ vi.mock("@/lib/api", () => ({
 }));
 
 const mockScope = vi.hoisted(() => ({ value: "personal" as ViewScope }));
+const mockSearchParams = vi.hoisted(() => ({ value: new URLSearchParams() }));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  usePathname: () => "/transactions",
+  useSearchParams: () => mockSearchParams.value,
+}));
 
 vi.mock("@/lib/hooks", () => ({
   useFormatCurrencyPrecise: () => (n: number) =>
@@ -191,6 +203,30 @@ describe("TransactionsPage", () => {
     const btn = screen.getByRole("button", { name: /auto-categorize/i });
     expect(btn).toHaveAttribute("title");
     expect(btn.getAttribute("title")).toMatch(/rules|ai|categoriz/i);
+  });
+
+  // --- Account filter from URL param ---
+
+  it("pre-selects account filter when ?account query param is present", async () => {
+    const testAccount = { id: 1, name: "Checking", type: "depository" };
+    mockApi.getAccounts.mockResolvedValue([testAccount]);
+    mockSearchParams.value = new URLSearchParams("account=1");
+
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /filters/i }));
+
+    await waitFor(() => {
+      const select = screen.getByDisplayValue("Checking");
+      expect(select).toBeInTheDocument();
+    });
+
+    mockSearchParams.value = new URLSearchParams();
   });
 
   // --- Basic functionality ---

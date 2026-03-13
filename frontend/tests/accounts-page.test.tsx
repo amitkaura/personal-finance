@@ -39,6 +39,19 @@ vi.mock("@/components/link-account", () => ({
   default: () => <button>Link Account</button>,
 }));
 
+const mockRouterPush = vi.hoisted(() => vi.fn());
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockRouterPush,
+    replace: vi.fn(),
+    back: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  usePathname: () => "/accounts",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const MANUAL_ACCOUNT: Account = {
   id: 1,
   user_id: 1,
@@ -206,6 +219,21 @@ describe("AccountsPage", () => {
       expect(screen.getByText("Delete Manual Checking?")).toBeInTheDocument();
       expect(screen.getByText(/permanently delete this account/)).toBeInTheDocument();
     });
+  });
+
+  it("navigates to transactions page filtered by account when clicking a row", async () => {
+    mockRouterPush.mockClear();
+    const user = userEvent.setup();
+    mockApi.getAccounts.mockResolvedValue([MANUAL_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Manual Checking"));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/transactions?account=1");
   });
 
   it("opens CSV import dialog when clicking import", async () => {

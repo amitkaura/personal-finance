@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   Landmark,
   TrendingUp,
@@ -85,7 +86,7 @@ export default function AccountsPage() {
   });
 
   const unlinkedCount = useMemo(
-    () => accounts?.filter((a) => !a.is_linked).length ?? 0,
+    () => accounts?.filter((a) => !a.is_linked && !isManualAccount(a)).length ?? 0,
     [accounts],
   );
 
@@ -260,6 +261,7 @@ function AccountRow({
 }) {
   const formatCurrency = useFormatCurrencyPrecise();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [typeOpen, setTypeOpen] = useState(false);
   const [subtypeOpen, setSubtypeOpen] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
@@ -368,7 +370,11 @@ function AccountRow({
             : "border-border/50 bg-card/50 opacity-70"
         }`}
       >
-        <div className="flex items-center gap-4">
+        <div
+          className="flex flex-1 cursor-pointer items-center gap-4 rounded-xl transition-colors hover:bg-muted/50"
+          onClick={() => router.push(`/transactions?account=${account.id}`)}
+          role="link"
+        >
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
             <Icon className={`h-5 w-5 ${config.color}`} />
           </div>

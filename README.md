@@ -25,6 +25,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Account type classification (depository, credit, loan, investment) with editable subtypes
 - Unlink individual accounts or revoke full institution connections with confirmation dialog
 - **Sync feedback** -- clear "Synced" or "Sync failed" status after each connection sync
+- **Click-to-filter** -- click any account row to navigate to the Transactions page pre-filtered by that account
 - Accounts page hides unlinked accounts by default (toggle to show all)
 - **Manual accounts** -- create accounts without Plaid (all types: depository, credit, loan, investment)
 - Manually adjust balances on manual accounts at any time
@@ -547,16 +548,16 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (295 tests across 32 files):**
+**What's tested (312 tests across 32 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
 | `settings-page` | 17 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
-| `transactions-page` | 13 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close |
+| `transactions-page` | 14 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param |
 | `sidebar` | 13 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
-| `accounts-page` | 12 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs |
+| `accounts-page` | 13 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs, click row navigates to filtered transactions |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
 | `bulk-csv-import-dialog` | 11 | Upload, preview, account detection, import flow, progress, results, errors |
 | `csv-import-dialog` | 10 | Upload, preview, import, progress, results, errors, cancel/done |
