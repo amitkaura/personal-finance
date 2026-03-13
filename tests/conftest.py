@@ -263,6 +263,33 @@ def make_tag(session: Session, user: User, name: str = "important", color: str =
     return tag
 
 
+def make_contribution(
+    session: Session,
+    goal: Goal,
+    user: User,
+    amount: Decimal = Decimal("100.00"),
+    note: Optional[str] = None,
+) -> GoalContribution:
+    c = GoalContribution(goal_id=goal.id, user_id=user.id, amount=amount, note=note)
+    session.add(c)
+    session.commit()
+    session.refresh(c)
+    return c
+
+
+def make_spending_preference(
+    session: Session,
+    user: User,
+    category: str = "Food & Dining",
+    target: str = "personal",
+) -> SpendingPreference:
+    pref = SpendingPreference(user_id=user.id, category=category, target=target)
+    session.add(pref)
+    session.commit()
+    session.refresh(pref)
+    return pref
+
+
 def make_settings(session: Session, user: User, **overrides) -> UserSettings:
     defaults = {"user_id": user.id}
     defaults.update(overrides)

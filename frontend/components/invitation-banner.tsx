@@ -7,6 +7,17 @@ import { Users, Check, X, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useHousehold } from "@/components/household-provider";
 
+function extractDetail(err: Error): string | null {
+  const match = err.message.match(/API error \d+: (.+)/);
+  if (!match) return null;
+  try {
+    const body = JSON.parse(match[1]);
+    return body.detail ?? null;
+  } catch {
+    return match[1];
+  }
+}
+
 export default function InvitationBanner() {
   const { pendingInvitations, refetch } = useHousehold();
   const queryClient = useQueryClient();
@@ -20,7 +31,10 @@ export default function InvitationBanner() {
       queryClient.invalidateQueries();
       refetch();
     },
-    onError: () => setError("Failed to accept invitation. Please try again."),
+    onError: (err: Error) => {
+      const detail = extractDetail(err);
+      setError(detail || "Failed to accept invitation. Please try again.");
+    },
   });
 
   const declineMutation = useMutation({
@@ -31,7 +45,10 @@ export default function InvitationBanner() {
       queryClient.invalidateQueries({ queryKey: ["pendingInvitations"] });
       refetch();
     },
-    onError: () => setError("Failed to decline invitation. Please try again."),
+    onError: (err: Error) => {
+      const detail = extractDetail(err);
+      setError(detail || "Failed to decline invitation. Please try again.");
+    },
   });
 
   const visible = pendingInvitations.filter((inv) => !dismissed.has(inv.token));

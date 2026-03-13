@@ -12,6 +12,7 @@ from app.auth import get_current_user
 from app.database import get_session
 from app.email import send_invitation_email
 from app.models import (
+    Account,
     Budget,
     Goal,
     GoalAccountLink,
@@ -283,7 +284,8 @@ def accept_invitation(
     ).first()
     if existing_member:
         raise HTTPException(
-            status_code=400, detail="You already belong to a household"
+            status_code=400,
+            detail="You already belong to a household. Leave your current household first, then accept.",
         )
 
     new_member = HouseholdMember(
@@ -331,7 +333,16 @@ def leave_household(
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    """Leave the current household. If you're the last member, the household is deleted."""
+    """Leave the current household.
+
+    When another member remains, shared budgets and goals are cloned to
+    personal copies for both members (contributions recalculated), spending
+    preferences reset, and pending invitations cancelled.  The household
+    itself is kept so the remaining member can re-invite someone.
+
+    When the last member leaves, the household and all associated data are
+    deleted outright.
+    """
     member = session.exec(
         select(HouseholdMember).where(HouseholdMember.user_id == user.id)
     ).first()
@@ -339,43 +350,161 @@ def leave_household(
         raise HTTPException(status_code=404, detail="Not in a household")
 
     household_id = member.household_id
-    session.delete(member)
-    session.commit()
 
-    remaining = session.exec(
+    other_members = session.exec(
         select(HouseholdMember).where(
-            HouseholdMember.household_id == household_id
+            HouseholdMember.household_id == household_id,
+            HouseholdMember.user_id != user.id,
         )
     ).all()
 
-    if not remaining:
-        shared_goals = session.exec(
-            select(Goal).where(Goal.household_id == household_id)
-        ).all()
-        for g in shared_goals:
-            for link in session.exec(select(GoalAccountLink).where(GoalAccountLink.goal_id == g.id)).all():
-                session.delete(link)
-            for c in session.exec(select(GoalContribution).where(GoalContribution.goal_id == g.id)).all():
-                session.delete(c)
-            session.delete(g)
-
-        shared_budgets = session.exec(
-            select(Budget).where(Budget.household_id == household_id)
-        ).all()
-        for b in shared_budgets:
-            session.delete(b)
-
-        all_invitations = session.exec(
-            select(HouseholdInvitation).where(
-                HouseholdInvitation.household_id == household_id,
-            )
-        ).all()
-        for inv in all_invitations:
-            session.delete(inv)
-
-        household = session.get(Household, household_id)
-        if household:
-            session.delete(household)
+    if other_members:
+        all_user_ids = [user.id] + [m.user_id for m in other_members]
+        _clone_shared_budgets(session, household_id, all_user_ids)
+        _clone_shared_goals(session, household_id, all_user_ids)
+        _reset_spending_preferences(session, all_user_ids)
+        _cancel_pending_invitations(session, household_id)
+        session.delete(member)
         session.commit()
+    else:
+        session.delete(member)
+        session.commit()
+        _destroy_household(session, household_id)
 
     return {"status": "left"}
+
+
+def _clone_shared_budgets(
+    session: Session, household_id: int, user_ids: list[int],
+) -> None:
+    """Clone each shared budget to a personal copy for every member."""
+    shared = session.exec(
+        select(Budget).where(Budget.household_id == household_id)
+    ).all()
+    for b in shared:
+        for uid in user_ids:
+            clone = Budget(
+                user_id=uid,
+                category=b.category,
+                amount=b.amount,
+                month=b.month,
+                rollover=b.rollover,
+                household_id=None,
+            )
+            session.add(clone)
+        session.delete(b)
+
+
+def _clone_shared_goals(
+    session: Session, household_id: int, user_ids: list[int],
+) -> None:
+    """Clone each shared goal to a personal copy for every member.
+
+    GoalAccountLinks are assigned to the copy whose owner matches the
+    account owner.  GoalContributions are moved to the matching copy
+    based on ``user_id``, and each copy's ``current_amount`` is
+    recalculated from its contributions.
+    """
+    from decimal import Decimal
+
+    shared = session.exec(
+        select(Goal).where(Goal.household_id == household_id)
+    ).all()
+
+    for g in shared:
+        copies: dict[int, Goal] = {}
+        for uid in user_ids:
+            clone = Goal(
+                user_id=uid,
+                name=g.name,
+                target_amount=g.target_amount,
+                current_amount=Decimal("0"),
+                target_date=g.target_date,
+                icon=g.icon,
+                color=g.color,
+                is_completed=g.is_completed,
+                household_id=None,
+            )
+            session.add(clone)
+            session.flush()
+            copies[uid] = clone
+
+        links = session.exec(
+            select(GoalAccountLink).where(GoalAccountLink.goal_id == g.id)
+        ).all()
+        for link in links:
+            acct = session.get(Account, link.account_id)
+            if acct and acct.user_id in copies:
+                new_link = GoalAccountLink(
+                    goal_id=copies[acct.user_id].id,
+                    account_id=link.account_id,
+                )
+                session.add(new_link)
+            session.delete(link)
+
+        contribs = session.exec(
+            select(GoalContribution).where(GoalContribution.goal_id == g.id)
+        ).all()
+        for c in contribs:
+            if c.user_id in copies:
+                c.goal_id = copies[c.user_id].id
+            session.add(c)
+
+        for uid, clone in copies.items():
+            total = sum(
+                (c.amount for c in contribs if c.user_id == uid),
+                Decimal("0"),
+            )
+            clone.current_amount = total
+            session.add(clone)
+
+        session.delete(g)
+
+
+def _reset_spending_preferences(
+    session: Session, user_ids: list[int],
+) -> None:
+    """Set any 'shared' spending preferences back to 'personal'."""
+    for uid in user_ids:
+        prefs = session.exec(
+            select(SpendingPreference).where(
+                SpendingPreference.user_id == uid,
+                SpendingPreference.target == "shared",
+            )
+        ).all()
+        for p in prefs:
+            p.target = "personal"
+            session.add(p)
+
+
+def _cancel_pending_invitations(session: Session, household_id: int) -> None:
+    pending = session.exec(
+        select(HouseholdInvitation).where(
+            HouseholdInvitation.household_id == household_id,
+            HouseholdInvitation.status == "pending",
+        )
+    ).all()
+    for inv in pending:
+        inv.status = "cancelled"
+        session.add(inv)
+
+
+def _destroy_household(session: Session, household_id: int) -> None:
+    """Delete a household and all its associated data (no members remain)."""
+    for g in session.exec(select(Goal).where(Goal.household_id == household_id)).all():
+        for link in session.exec(select(GoalAccountLink).where(GoalAccountLink.goal_id == g.id)).all():
+            session.delete(link)
+        for c in session.exec(select(GoalContribution).where(GoalContribution.goal_id == g.id)).all():
+            session.delete(c)
+        session.delete(g)
+
+    for b in session.exec(select(Budget).where(Budget.household_id == household_id)).all():
+        session.delete(b)
+
+    for inv in session.exec(select(HouseholdInvitation).where(HouseholdInvitation.household_id == household_id)).all():
+        session.delete(inv)
+
+    household = session.get(Household, household_id)
+    if household:
+        session.delete(household)
+    session.commit()
