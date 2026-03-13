@@ -199,8 +199,31 @@ describe("AccountsPage", () => {
       expect(mockApi.createAccount).toHaveBeenCalledWith({
         name: "New Savings",
         type: "depository",
+        subtype: "checking",
         current_balance: 0,
       });
+    });
+  });
+
+  it("includes default subtype when creating an account", async () => {
+    const user = userEvent.setup();
+    mockApi.createAccount.mockResolvedValue({ ...MANUAL_ACCOUNT });
+    renderWithProviders(<AccountsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Account")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Account"));
+
+    const nameInput = screen.getByPlaceholderText("e.g. TD Chequing");
+    await user.type(nameInput, "My Checking");
+
+    await user.click(screen.getByText("Create Account"));
+
+    await waitFor(() => {
+      expect(mockApi.createAccount).toHaveBeenCalledWith(
+        expect.objectContaining({ subtype: "checking" }),
+      );
     });
   });
 

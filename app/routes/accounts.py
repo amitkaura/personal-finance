@@ -71,6 +71,7 @@ def _acct_to_dict(a: Account, owner_names: dict[int, dict] | None = None) -> dic
 class AccountCreate(BaseModel):
     name: str = Field(max_length=200)
     type: str = "depository"
+    subtype: Optional[str] = None
     current_balance: float = 0
 
 
@@ -92,6 +93,7 @@ def create_account(
         user_id=user.id,
         name=body.name,
         type=AccountType(body.type),
+        subtype=body.subtype,
         current_balance=Decimal(str(body.current_balance)),
         plaid_account_id=f"manual-{uuid4().hex}",
         plaid_item_id=None,

@@ -1,7 +1,7 @@
 ---
 description: Treat existing tests as the source of truth -- fix code to pass tests, not the other way around
 globs: "**/tests/**,**/test_*"
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Tests Are the Source of Truth

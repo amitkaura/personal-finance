@@ -65,6 +65,18 @@ def test_create_manual_account_all_fields(auth_client):
     assert data["current_balance"] == 1500.50
 
 
+def test_create_manual_account_with_subtype(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/accounts", json={
+        "name": "Savings",
+        "type": "depository",
+        "subtype": "savings",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["subtype"] == "savings"
+
+
 def test_create_manual_account_invalid_type(auth_client):
     client, _ = auth_client
     resp = client.post("/api/v1/accounts", json={"name": "Bad", "type": "magic"})

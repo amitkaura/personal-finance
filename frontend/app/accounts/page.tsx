@@ -61,6 +61,7 @@ export default function AccountsPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("depository");
+  const [newSubtype, setNewSubtype] = useState("checking");
   const [newBalance, setNewBalance] = useState("0");
   const [importAccount, setImportAccount] = useState<Account | null>(null);
 
@@ -69,6 +70,7 @@ export default function AccountsPage() {
       api.createAccount({
         name: newName,
         type: newType,
+        subtype: newSubtype,
         current_balance: parseFloat(newBalance) || 0,
       }),
     onSuccess: (created) => {
@@ -78,6 +80,7 @@ export default function AccountsPage() {
       setShowAddForm(false);
       setNewName("");
       setNewType("depository");
+      setNewSubtype("checking");
       setNewBalance("0");
       setImportAccount(created);
     },
@@ -159,12 +162,32 @@ export default function AccountsPage() {
               </label>
               <select
                 value={newType}
-                onChange={(e) => setNewType(e.target.value)}
+                onChange={(e) => {
+                  setNewType(e.target.value);
+                  const subs = SUBTYPES[e.target.value] ?? [];
+                  setNewSubtype(subs[0] ?? "");
+                }}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent"
               >
                 {ACCOUNT_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-40">
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Subtype
+              </label>
+              <select
+                value={newSubtype}
+                onChange={(e) => setNewSubtype(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm capitalize outline-none focus:border-accent"
+              >
+                {(SUBTYPES[newType] ?? []).map((sub) => (
+                  <option key={sub} value={sub}>
+                    {sub}
                   </option>
                 ))}
               </select>
