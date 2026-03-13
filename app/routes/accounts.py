@@ -7,7 +7,7 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
@@ -69,7 +69,7 @@ def _acct_to_dict(a: Account, owner_names: dict[int, dict] | None = None) -> dic
 
 
 class AccountCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=200)
     type: str = "depository"
     current_balance: float = 0
 

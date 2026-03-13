@@ -44,6 +44,7 @@ export default function ViewSwitcher() {
             <button
               key={value}
               onClick={() => setScope(value)}
+              aria-pressed={active}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
                 active
                   ? "bg-accent text-accent-foreground shadow-sm"

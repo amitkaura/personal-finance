@@ -56,7 +56,7 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col bg-sidebar border-r border-border transition-transform lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-60 max-w-[calc(100vw-2rem)] min-w-0 flex-col bg-sidebar border-r border-border transition-transform lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
@@ -85,6 +85,7 @@ export default function Sidebar({
                 key={href}
                 href={href}
                 onClick={onClose}
+                aria-current={active ? "page" : undefined}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                   active
                     ? "bg-accent/15 text-accent"

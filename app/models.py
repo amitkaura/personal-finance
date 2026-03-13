@@ -85,7 +85,11 @@ class Transaction(SQLModel, table=True):
     """Financial transactions synced from Plaid or added manually."""
 
     __tablename__ = "transactions"
-    __table_args__ = (sa.Index("ix_transactions_date", "date"),)
+    __table_args__ = (
+        sa.Index("ix_transactions_date", "date"),
+        sa.Index("ix_transactions_account_date", "account_id", "date"),
+        sa.Index("ix_transactions_user_date", "user_id", "date"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     plaid_transaction_id: str = Field(unique=True, index=True)

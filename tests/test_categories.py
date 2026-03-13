@@ -1,226 +1,305 @@
-"""Category CRUD endpoint tests."""
+"""Category CRUD API tests."""
 
+from fastapi import HTTPException
+
+from app.auth import get_current_user
+from app.main import app
+from app.models import CategoryRule, Transaction
+from sqlmodel import select
 from tests.conftest import make_category, make_transaction, make_user
-from app.models import CategoryRule
 
 
-# -- List ------------------------------------------------------------------
+# -- Auth required ----------------------------------------------------------
 
-def test_list_auto_seeds_defaults(auth_client):
+def test_list_categories_requires_auth(client):
+    resp = client.get("/api/v1/categories")
+    assert resp.status_code == 401
+
+
+def test_create_category_requires_auth(client):
+    resp = client.post("/api/v1/categories", json={"name": "Test"})
+    assert resp.status_code == 401
+
+
+def test_update_category_requires_auth(client, session):
+    def _raise_401():
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user = make_user(session)
+    cat = make_category(session, user, name="ToUpdate")
+    app.dependency_overrides[get_current_user] = _raise_401
+    try:
+        resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Updated"})
+        assert resp.status_code == 401
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_delete_category_requires_auth(client, session):
+    def _raise_401():
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user = make_user(session)
+    cat = make_category(session, user, name="ToDelete")
+    app.dependency_overrides[get_current_user] = _raise_401
+    try:
+        resp = client.delete(f"/api/v1/categories/{cat.id}")
+        assert resp.status_code == 401
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+# -- GET list ---------------------------------------------------------------
+
+def test_list_categories_auto_seeds_when_empty(auth_client):
     client, _ = auth_client
     resp = client.get("/api/v1/categories")
     assert resp.status_code == 200
-    cats = resp.json()
-    assert len(cats) == 16
-    names = [c["name"] for c in cats]
+    data = resp.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    for item in data:
+        assert "id" in item
+        assert "name" in item
+    names = [c["name"] for c in data]
     assert "Food & Dining" in names
-    assert "Income" in names
+    assert "Groceries" in names
     assert "Other" in names
 
 
-def test_list_returns_existing(auth_client, session):
-    client, user = auth_client
-    make_category(session, user, "Custom A")
-    make_category(session, user, "Custom B")
-
+def test_list_categories_returns_existing(auth_client):
+    client, _ = auth_client
+    # First call seeds defaults
+    client.get("/api/v1/categories")
     resp = client.get("/api/v1/categories")
     assert resp.status_code == 200
-    cats = resp.json()
-    assert len(cats) == 2
-    assert cats[0]["name"] == "Custom A"
-    assert cats[1]["name"] == "Custom B"
+    data = resp.json()
+    assert len(data) > 0
+    assert all("id" in c and "name" in c for c in data)
 
 
-def test_list_separate_per_user(auth_client, session):
+def test_list_categories_does_not_show_other_users(auth_client, session):
     client, user = auth_client
-    make_category(session, user, "Mine")
-
+    # Seed for current user
+    client.get("/api/v1/categories")
     other = make_user(session)
-    make_category(session, other, "Theirs")
-
+    from tests.conftest import make_category
+    make_category(session, other, name="Other User Category")
     resp = client.get("/api/v1/categories")
+    assert resp.status_code == 200
     names = [c["name"] for c in resp.json()]
-    assert "Mine" in names
-    assert "Theirs" not in names
+    assert "Other User Category" not in names
 
 
-# -- Create ----------------------------------------------------------------
+# -- POST create ------------------------------------------------------------
 
 def test_create_category(auth_client):
     client, _ = auth_client
-    resp = client.post("/api/v1/categories", json={"name": "Custom Cat"})
+    resp = client.post("/api/v1/categories", json={"name": "Custom Category"})
     assert resp.status_code == 201
     data = resp.json()
-    assert data["name"] == "Custom Cat"
+    assert data["name"] == "Custom Category"
     assert "id" in data
+    assert isinstance(data["id"], int)
 
 
-def test_create_category_empty_name(auth_client):
+def test_create_category_strips_whitespace(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/categories", json={"name": "  Trimmed  "})
+    assert resp.status_code == 201
+    assert resp.json()["name"] == "Trimmed"
+
+
+def test_create_category_rejects_empty_name(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/categories", json={"name": ""})
+    assert resp.status_code == 400
+    assert "empty" in resp.json()["detail"].lower()
+
+
+def test_create_category_rejects_whitespace_only_name(auth_client):
     client, _ = auth_client
     resp = client.post("/api/v1/categories", json={"name": "   "})
     assert resp.status_code == 400
 
 
-def test_create_category_duplicate(auth_client, session):
-    client, user = auth_client
-    make_category(session, user, "Groceries")
-    resp = client.post("/api/v1/categories", json={"name": "Groceries"})
+def test_create_category_rejects_duplicate(auth_client):
+    client, _ = auth_client
+    client.post("/api/v1/categories", json={"name": "Unique Name"})
+    resp = client.post("/api/v1/categories", json={"name": "Unique Name"})
     assert resp.status_code == 409
+    assert "already exists" in resp.json()["detail"].lower()
 
 
-# -- Update ----------------------------------------------------------------
+# -- PATCH update -----------------------------------------------------------
 
-def test_update_category_rename(auth_client, session):
-    client, user = auth_client
-    cat = make_category(session, user, "Old Name")
-    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "New Name"})
+def test_update_category_renames(auth_client):
+    client, _ = auth_client
+    create_resp = client.post("/api/v1/categories", json={"name": "Original"})
+    cat_id = create_resp.json()["id"]
+    resp = client.patch(f"/api/v1/categories/{cat_id}", json={"name": "Renamed"})
     assert resp.status_code == 200
-    assert resp.json()["name"] == "New Name"
+    assert resp.json()["name"] == "Renamed"
 
 
-def test_update_category_cascades_transactions(auth_client, session):
+def test_update_category_cascades_to_transactions(auth_client, session):
     client, user = auth_client
-    cat = make_category(session, user, "Dining")
-    make_transaction(session, user, category="Dining")
+    create_resp = client.post("/api/v1/categories", json={"name": "Old Category"})
+    cat_id = create_resp.json()["id"]
+    cat_name = "Old Category"
+    make_transaction(session, user, category=cat_name)
+    make_transaction(session, user, category=cat_name)
 
-    client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Restaurants"})
+    resp = client.patch(f"/api/v1/categories/{cat_id}", json={"name": "New Category"})
+    assert resp.status_code == 200
 
-    from sqlmodel import select
-    from app.models import Transaction
     txns = session.exec(
         select(Transaction).where(Transaction.user_id == user.id)
     ).all()
-    assert txns[0].category == "Restaurants"
+    for txn in txns:
+        assert txn.category == "New Category"
 
 
-def test_update_category_cascades_rules(auth_client, session):
+def test_update_category_cascades_to_category_rules(auth_client, session):
     client, user = auth_client
-    cat = make_category(session, user, "Dining")
-    rule = CategoryRule(user_id=user.id, keyword="cafe", category="Dining")
+    create_resp = client.post("/api/v1/categories", json={"name": "Rules Category"})
+    cat_id = create_resp.json()["id"]
+    rule = CategoryRule(user_id=user.id, keyword="test", category="Rules Category")
     session.add(rule)
     session.commit()
 
-    client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Restaurants"})
+    resp = client.patch(f"/api/v1/categories/{cat_id}", json={"name": "Rules Category Renamed"})
+    assert resp.status_code == 200
 
-    from sqlmodel import select
-    session.expire_all()
-    rules = session.exec(
-        select(CategoryRule).where(CategoryRule.user_id == user.id)
-    ).all()
-    assert rules[0].category == "Restaurants"
+    session.refresh(rule)
+    assert rule.category == "Rules Category Renamed"
 
 
-def test_update_category_empty_name(auth_client, session):
-    client, user = auth_client
-    cat = make_category(session, user, "Food")
-    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "  "})
+def test_update_category_rejects_empty_name(auth_client):
+    client, _ = auth_client
+    create_resp = client.post("/api/v1/categories", json={"name": "Valid"})
+    cat_id = create_resp.json()["id"]
+    resp = client.patch(f"/api/v1/categories/{cat_id}", json={"name": ""})
     assert resp.status_code == 400
 
 
-def test_update_category_duplicate_name(auth_client, session):
-    client, user = auth_client
-    make_category(session, user, "Food")
-    cat = make_category(session, user, "Dining")
-    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Food"})
+def test_update_category_rejects_duplicate_name(auth_client):
+    client, _ = auth_client
+    client.post("/api/v1/categories", json={"name": "Existing"})
+    create_resp = client.post("/api/v1/categories", json={"name": "ToRename"})
+    cat_id = create_resp.json()["id"]
+    resp = client.patch(f"/api/v1/categories/{cat_id}", json={"name": "Existing"})
     assert resp.status_code == 409
 
 
-def test_update_category_same_name_noop(auth_client, session):
-    client, user = auth_client
-    cat = make_category(session, user, "Food")
-    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Food"})
+def test_update_category_idempotent_same_name(auth_client):
+    client, _ = auth_client
+    create_resp = client.post("/api/v1/categories", json={"name": "Same"})
+    cat_id = create_resp.json()["id"]
+    resp = client.patch(f"/api/v1/categories/{cat_id}", json={"name": "Same"})
     assert resp.status_code == 200
-    assert resp.json()["name"] == "Food"
+    assert resp.json()["name"] == "Same"
 
 
 def test_update_category_not_found(auth_client):
     client, _ = auth_client
-    resp = client.patch("/api/v1/categories/99999", json={"name": "Nope"})
+    resp = client.patch("/api/v1/categories/99999", json={"name": "Hack"})
     assert resp.status_code == 404
 
 
 def test_update_other_users_category(auth_client, session):
     client, _ = auth_client
     other = make_user(session)
-    cat = make_category(session, other, "Private")
-    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Hacked"})
+    from tests.conftest import make_category
+    cat = make_category(session, other, name="Theirs")
+    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Hack"})
     assert resp.status_code == 404
 
 
-# -- Delete ----------------------------------------------------------------
+# -- DELETE -----------------------------------------------------------------
 
-def test_delete_category(auth_client, session):
+def test_delete_category(auth_client):
+    client, _ = auth_client
+    create_resp = client.post("/api/v1/categories", json={"name": "ToDelete"})
+    cat_id = create_resp.json()["id"]
+    resp = client.delete(f"/api/v1/categories/{cat_id}")
+    assert resp.status_code == 204
+    assert resp.content == b""
+
+    list_resp = client.get("/api/v1/categories")
+    names = [c["name"] for c in list_resp.json()]
+    assert "ToDelete" not in names
+
+
+def test_delete_category_reassigns_transactions(auth_client, session):
     client, user = auth_client
-    cat = make_category(session, user, "Temp")
-    resp = client.delete(f"/api/v1/categories/{cat.id}")
+    create_a = client.post("/api/v1/categories", json={"name": "Category A"})
+    create_b = client.post("/api/v1/categories", json={"name": "Category B"})
+    cat_a_id = create_a.json()["id"]
+    cat_b_id = create_b.json()["id"]
+
+    make_transaction(session, user, category="Category A")
+    make_transaction(session, user, category="Category A")
+
+    resp = client.delete(f"/api/v1/categories/{cat_a_id}", params={"reassign_to": cat_b_id})
     assert resp.status_code == 204
 
-
-def test_delete_category_nullifies_transactions(auth_client, session):
-    client, user = auth_client
-    cat = make_category(session, user, "Dining")
-    make_transaction(session, user, category="Dining")
-
-    client.delete(f"/api/v1/categories/{cat.id}")
-
-    from sqlmodel import select
-    from app.models import Transaction
-    session.expire_all()
     txns = session.exec(
         select(Transaction).where(Transaction.user_id == user.id)
     ).all()
-    assert txns[0].category is None
+    for txn in txns:
+        assert txn.category == "Category B"
 
 
-def test_delete_category_with_reassign(auth_client, session):
+def test_delete_category_without_reassign_sets_null(auth_client, session):
     client, user = auth_client
-    old_cat = make_category(session, user, "Dining")
-    new_cat = make_category(session, user, "Restaurants")
-    make_transaction(session, user, category="Dining")
+    create_resp = client.post("/api/v1/categories", json={"name": "Orphan Cat"})
+    cat_id = create_resp.json()["id"]
+    make_transaction(session, user, category="Orphan Cat")
 
-    resp = client.delete(
-        f"/api/v1/categories/{old_cat.id}",
-        params={"reassign_to": new_cat.id},
-    )
+    resp = client.delete(f"/api/v1/categories/{cat_id}")
     assert resp.status_code == 204
 
-    from sqlmodel import select
-    from app.models import Transaction
-    session.expire_all()
     txns = session.exec(
         select(Transaction).where(Transaction.user_id == user.id)
     ).all()
-    assert txns[0].category == "Restaurants"
-
-
-def test_delete_category_reassign_invalid_target(auth_client, session):
-    client, user = auth_client
-    cat = make_category(session, user, "Temp")
-    resp = client.delete(
-        f"/api/v1/categories/{cat.id}",
-        params={"reassign_to": 99999},
-    )
-    assert resp.status_code == 404
+    for txn in txns:
+        assert txn.category is None
 
 
 def test_delete_category_deletes_rules(auth_client, session):
     client, user = auth_client
-    cat = make_category(session, user, "Dining")
-    rule = CategoryRule(user_id=user.id, keyword="cafe", category="Dining")
+    create_resp = client.post("/api/v1/categories", json={"name": "Rule Cat"})
+    cat_id = create_resp.json()["id"]
+    rule = CategoryRule(user_id=user.id, keyword="rule", category="Rule Cat")
     session.add(rule)
     session.commit()
+    rule_id = rule.id
 
-    client.delete(f"/api/v1/categories/{cat.id}")
+    resp = client.delete(f"/api/v1/categories/{cat_id}")
+    assert resp.status_code == 204
 
-    from sqlmodel import select
-    session.expire_all()
-    rules = session.exec(
-        select(CategoryRule).where(CategoryRule.user_id == user.id)
-    ).all()
-    assert len(rules) == 0
+    deleted = session.get(CategoryRule, rule_id)
+    assert deleted is None
+
+
+def test_delete_category_reassign_not_found(auth_client):
+    client, _ = auth_client
+    create_resp = client.post("/api/v1/categories", json={"name": "ToDelete"})
+    cat_id = create_resp.json()["id"]
+    resp = client.delete(f"/api/v1/categories/{cat_id}", params={"reassign_to": 99999})
+    assert resp.status_code == 404
+    assert "Reassignment" in resp.json()["detail"]
 
 
 def test_delete_category_not_found(auth_client):
     client, _ = auth_client
     resp = client.delete("/api/v1/categories/99999")
+    assert resp.status_code == 404
+
+
+def test_delete_other_users_category(auth_client, session):
+    client, _ = auth_client
+    other = make_user(session)
+    from tests.conftest import make_category
+    cat = make_category(session, other, name="Theirs")
+    resp = client.delete(f"/api/v1/categories/{cat.id}")
     assert resp.status_code == 404

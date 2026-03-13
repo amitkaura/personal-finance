@@ -17,6 +17,10 @@ from app.models import Account, Transaction, User
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
+_MAX_TRANSACTIONS = 10_000
+_MAX_MONTHS = 60
+
+
 def _get_user_transactions(
     session: Session,
     user_ids: list[int],
@@ -33,6 +37,7 @@ def _get_user_transactions(
         stmt = stmt.where(Transaction.date >= start)
     if end:
         stmt = stmt.where(Transaction.date <= end)
+    stmt = stmt.limit(_MAX_TRANSACTIONS)
     txns = list(session.exec(stmt).all())
 
     manual_stmt = select(Transaction).where(
@@ -43,6 +48,7 @@ def _get_user_transactions(
         manual_stmt = manual_stmt.where(Transaction.date >= start)
     if end:
         manual_stmt = manual_stmt.where(Transaction.date <= end)
+    manual_stmt = manual_stmt.limit(_MAX_TRANSACTIONS)
     manual_txns = session.exec(manual_stmt).all()
     seen_ids = {t.id for t in txns}
     txns.extend(t for t in manual_txns if t.id not in seen_ids)
@@ -51,7 +57,7 @@ def _get_user_transactions(
 
 @router.get("/spending-by-category")
 def spending_by_category(
-    months: int = Query(1, ge=1, le=24),
+    months: int = Query(1, ge=1, le=_MAX_MONTHS),
     scope: str = Query("personal"),
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
@@ -100,7 +106,7 @@ def spending_by_category(
 
 @router.get("/monthly-trends")
 def monthly_trends(
-    months: int = Query(6, ge=1, le=24),
+    months: int = Query(6, ge=1, le=_MAX_MONTHS),
     scope: str = Query("personal"),
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
@@ -143,7 +149,7 @@ def monthly_trends(
 @router.get("/category-trends")
 def category_trends(
     category: str = Query(...),
-    months: int = Query(6, ge=1, le=24),
+    months: int = Query(6, ge=1, le=_MAX_MONTHS),
     scope: str = Query("personal"),
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
@@ -184,7 +190,7 @@ def category_trends(
 
 @router.get("/top-merchants")
 def top_merchants(
-    months: int = Query(3, ge=1, le=24),
+    months: int = Query(3, ge=1, le=_MAX_MONTHS),
     limit: int = Query(10, ge=1, le=50),
     scope: str = Query("personal"),
     session: Session = Depends(get_session),

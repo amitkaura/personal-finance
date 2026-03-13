@@ -167,7 +167,7 @@ def _client_ip(request: Request) -> str:
     if settings.rate_limit_trust_proxy:
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            return forwarded.split(",")[-1].strip()
     client = request.client.host if request.client else None
     return client or "unknown"
 

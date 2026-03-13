@@ -8,17 +8,29 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
-async function fetcher<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    cache: "no-store",
-    ...init,
-  });
-  if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${await res.text()}`);
+async function fetcher<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      cache: "no-store",
+      ...init,
+    });
+    if (!res.ok) {
+      if (res.status >= 500 && !retried) {
+        await new Promise((r) => setTimeout(r, 1000));
+        return fetcher<T>(path, init, true);
+      }
+      throw new Error(`API error ${res.status}: ${await res.text()}`);
+    }
+    return res.json();
+  } catch (err) {
+    if (!retried && err instanceof TypeError) {
+      await new Promise((r) => setTimeout(r, 1000));
+      return fetcher<T>(path, init, true);
+    }
+    throw err;
   }
-  return res.json();
 }
 
 async function fetchVoid(path: string, init?: RequestInit): Promise<void> {

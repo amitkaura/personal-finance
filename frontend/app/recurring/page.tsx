@@ -76,7 +76,7 @@ export default function RecurringPage() {
   const [frequencyFilter, setFrequencyFilter] = useState<FrequencyTab>("all");
   const [sortBy, setSortBy] = useState<SortKey>("amount");
 
-  const { data: recurring, isLoading } = useQuery({
+  const { data: recurring, isLoading, isError, refetch } = useQuery({
     queryKey: ["recurring", scope],
     queryFn: () => api.getRecurring({ scope }),
   });
@@ -149,7 +149,18 @@ export default function RecurringPage() {
       </div>
 
       {/* Summary cards */}
-      {isLoading ? (
+      {isError ? (
+        <div className="mt-12 text-center">
+          <AlertCircle className="mx-auto h-10 w-10 text-red-400" />
+          <p className="mt-3 text-muted-foreground">Something went wrong loading data.</p>
+          <button
+            onClick={() => refetch()}
+            className="mt-2 text-sm text-accent hover:underline"
+          >
+            Try again
+          </button>
+        </div>
+      ) : isLoading ? (
         <div className="mt-6 grid gap-4 sm:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <div
@@ -204,7 +215,8 @@ export default function RecurringPage() {
         </div>
       ) : null}
 
-      {/* Filter tabs */}
+      {!isError && (
+      <>
       <div className="mt-6 flex flex-wrap items-center gap-2">
         <div className="flex gap-1 rounded-lg bg-muted p-0.5">
           {FREQUENCY_TABS.map((tab) => (
@@ -285,6 +297,8 @@ export default function RecurringPage() {
             />
           ))}
         </div>
+      )}
+      </>
       )}
     </>
   );

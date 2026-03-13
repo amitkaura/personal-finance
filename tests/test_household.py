@@ -95,12 +95,13 @@ def test_accept_invitation(auth_client, session):
     household = make_household(session, user)
     inv = make_invitation(session, household, user, "partner@test.com")
 
-    app.dependency_overrides[get_current_user] = lambda: partner
-    resp = client.post(f"/api/v1/household/invitations/{inv.token}/accept")
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "accepted"
-
-    app.dependency_overrides[get_current_user] = lambda: user
+    try:
+        app.dependency_overrides[get_current_user] = lambda: partner
+        resp = client.post(f"/api/v1/household/invitations/{inv.token}/accept")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "accepted"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 def test_accept_wrong_email_rejected(auth_client, session):
@@ -126,12 +127,13 @@ def test_decline_invitation(auth_client, session):
     household = make_household(session, user)
     inv = make_invitation(session, household, user, "decliner@test.com")
 
-    app.dependency_overrides[get_current_user] = lambda: partner
-    resp = client.post(f"/api/v1/household/invitations/{inv.token}/decline")
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "declined"
-
-    app.dependency_overrides[get_current_user] = lambda: user
+    try:
+        app.dependency_overrides[get_current_user] = lambda: partner
+        resp = client.post(f"/api/v1/household/invitations/{inv.token}/decline")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "declined"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 # -- Cancel ----------------------------------------------------------------

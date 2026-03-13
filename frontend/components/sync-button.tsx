@@ -22,6 +22,12 @@ export default function SyncButton() {
         queryClient.invalidateQueries({ queryKey: ["accounts"] });
         queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
         queryClient.invalidateQueries({ queryKey: ["transactions"] });
+        queryClient.invalidateQueries({ queryKey: ["netWorthHistory"] });
+        queryClient.invalidateQueries({ queryKey: ["budgetSummary"] });
+        queryClient.invalidateQueries({ queryKey: ["recurring"] });
+        queryClient.invalidateQueries({ queryKey: ["spendingByCategory"] });
+        queryClient.invalidateQueries({ queryKey: ["monthlyTrends"] });
+        queryClient.invalidateQueries({ queryKey: ["topMerchants"] });
       }, 5000);
     },
   });

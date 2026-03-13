@@ -9,7 +9,7 @@ import { useFormatCurrency, useScope } from "@/lib/hooks";
 export default function GoalsSnippet() {
   const formatCurrency = useFormatCurrency();
   const scope = useScope();
-  const { data: goalsResponse, isLoading } = useQuery({
+  const { data: goalsResponse, isLoading, isError, refetch } = useQuery({
     queryKey: ["goals", scope],
     queryFn: () => api.getGoals(scope),
   });
@@ -19,6 +19,18 @@ export default function GoalsSnippet() {
   const activeGoals = goals.filter((g) => !g.is_completed);
   const personalGoals = activeGoals.filter((g) => !g.household_id);
   const sharedGoals = activeGoals.filter((g) => !!g.household_id);
+
+  if (isError)
+    return (
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <p className="text-sm text-red-400">
+          Failed to load.{" "}
+          <button onClick={() => refetch()} className="text-accent hover:underline">
+            Retry
+          </button>
+        </p>
+      </div>
+    );
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">

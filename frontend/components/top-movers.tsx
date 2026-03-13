@@ -9,12 +9,24 @@ import type { Account } from "@/lib/types";
 export default function TopMovers() {
   const formatCurrency = useFormatCurrencyPrecise();
   const scope = useScope();
-  const { data: accounts, isLoading } = useQuery({
+  const { data: accounts, isLoading, isError, refetch } = useQuery({
     queryKey: ["accounts", scope],
     queryFn: () => api.getAccounts(scope),
   });
 
   const investments = (accounts ?? []).filter((a: Account) => a.type === "investment" && a.is_linked);
+
+  if (isError)
+    return (
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <p className="text-sm text-red-400">
+          Failed to load.{" "}
+          <button onClick={() => refetch()} className="text-accent hover:underline">
+            Retry
+          </button>
+        </p>
+      </div>
+    );
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">

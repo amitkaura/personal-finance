@@ -8,7 +8,7 @@ import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.auth import get_current_user
@@ -30,15 +30,15 @@ def _validate_month(month: str) -> str:
 
 
 class BudgetCreate(BaseModel):
-    category: str
-    amount: float
+    category: str = Field(max_length=100)
+    amount: float = Field(ge=0)
     month: Optional[str] = None
     rollover: bool = False
     household_id: Optional[int] = None
 
 
 class BudgetUpdate(BaseModel):
-    amount: Optional[float] = None
+    amount: Optional[float] = Field(default=None, ge=0)
     rollover: Optional[bool] = None
 
 
@@ -352,13 +352,47 @@ def _get_spending_per_user(
     month_end: date,
 ) -> dict[int, dict[str, float]]:
     """Compute per-user category->spent mapping."""
+    if not user_ids:
+        return {}
+
+    accounts = list(session.exec(
+        select(Account).where(Account.user_id.in_(user_ids))  # type: ignore[union-attr]
+    ).all())
+    all_acct_ids = [a.id for a in accounts if a.id is not None]
+
+    txns = list(session.exec(
+        select(Transaction).where(
+            Transaction.account_id.in_(all_acct_ids),  # type: ignore[union-attr]
+            Transaction.date >= month_start,
+            Transaction.date < month_end,
+        )
+    ).all()) if all_acct_ids else []
+    manual_txns = list(session.exec(
+        select(Transaction).where(
+            Transaction.user_id.in_(user_ids),  # type: ignore[union-attr]
+            Transaction.is_manual == True,  # noqa: E712
+            Transaction.date >= month_start,
+            Transaction.date < month_end,
+        )
+    ).all())
+
+    acct_to_user: dict[int, int] = {}
+    for a in accounts:
+        if a.id is not None and a.user_id is not None:
+            acct_to_user[a.id] = a.user_id
+
+    seen_ids = {t.id for t in txns}
     result: dict[int, dict[str, float]] = {uid: {} for uid in user_ids}
-    for uid in user_ids:
-        acct_ids = list(session.exec(
-            select(Account.id).where(Account.user_id == uid)
-        ).all())
-        spent = _get_spending_by_category(session, acct_ids, [uid], month_start, month_end)
-        result[uid] = spent
+    for t in txns:
+        if t.category and t.amount > 0 and t.account_id is not None:
+            uid = acct_to_user.get(t.account_id)
+            if uid is not None:
+                result[uid][t.category] = result[uid].get(t.category, 0) + float(t.amount)
+    for t in manual_txns:
+        if t.id in seen_ids:
+            continue
+        if t.category and t.amount > 0 and t.user_id is not None:
+            result[t.user_id][t.category] = result[t.user_id].get(t.category, 0) + float(t.amount)
     return result
 
 

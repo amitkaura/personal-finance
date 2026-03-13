@@ -205,6 +205,32 @@ def test_update_other_users_account(auth_client, session):
     assert resp.status_code == 404
 
 
+def test_update_manual_account_current_balance(auth_client, session):
+    client, user = auth_client
+    acct = make_account(
+        session, user,
+        plaid_account_id=f"manual-{uuid4().hex}",
+        is_linked=False,
+        balance=Decimal("100.00"),
+    )
+    resp = client.patch(f"/api/v1/accounts/{acct.id}", json={"current_balance": 250.75})
+    assert resp.status_code == 200
+    assert resp.json()["current_balance"] == 250.75
+
+
+def test_update_non_manual_account_current_balance_rejected(auth_client, session):
+    client, user = auth_client
+    acct = make_account(
+        session, user,
+        plaid_account_id="plaid-acct-abc123",
+        is_linked=True,
+        balance=Decimal("500.00"),
+    )
+    resp = client.patch(f"/api/v1/accounts/{acct.id}", json={"current_balance": 1000.00})
+    assert resp.status_code == 400
+    assert "manual" in resp.json()["detail"].lower()
+
+
 # -- Unlink ----------------------------------------------------------------
 
 def test_unlink_account(auth_client, session):

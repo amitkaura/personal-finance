@@ -1,13 +1,37 @@
-import NetWorthCard from "@/components/net-worth-card";
-import NetWorthHistory from "@/components/net-worth-history";
-import RecurringWidget from "@/components/recurring-widget";
-import TopMovers from "@/components/top-movers";
-import CreditCardsWidget from "@/components/credit-cards-widget";
-import LoansWidget from "@/components/loans-widget";
+import dynamic from "next/dynamic";
 import SyncButton from "@/components/sync-button";
-import ReviewSnippet from "@/components/review-snippet";
-import BudgetSnippet from "@/components/budget-snippet";
-import GoalsSnippet from "@/components/goals-snippet";
+
+const skeleton = () => (
+  <div className="rounded-2xl border border-border bg-card p-6 animate-pulse h-32" />
+);
+
+const NetWorthCard = dynamic(() => import("@/components/net-worth-card"), {
+  loading: skeleton,
+});
+const NetWorthHistory = dynamic(() => import("@/components/net-worth-history"), {
+  loading: skeleton,
+});
+const RecurringWidget = dynamic(() => import("@/components/recurring-widget"), {
+  loading: skeleton,
+});
+const TopMovers = dynamic(() => import("@/components/top-movers"), {
+  loading: skeleton,
+});
+const CreditCardsWidget = dynamic(() => import("@/components/credit-cards-widget"), {
+  loading: skeleton,
+});
+const LoansWidget = dynamic(() => import("@/components/loans-widget"), {
+  loading: skeleton,
+});
+const ReviewSnippet = dynamic(() => import("@/components/review-snippet"), {
+  loading: skeleton,
+});
+const BudgetSnippet = dynamic(() => import("@/components/budget-snippet"), {
+  loading: skeleton,
+});
+const GoalsSnippet = dynamic(() => import("@/components/goals-snippet"), {
+  loading: skeleton,
+});
 
 export default function DashboardPage() {
   return (

@@ -30,12 +30,24 @@ function detectRecurring(transactions: Transaction[]): Transaction[] {
 export default function RecurringWidget() {
   const formatCurrency = useFormatCurrencyPrecise();
   const scope = useScope();
-  const { data: transactions, isLoading } = useQuery({
+  const { data: transactions, isLoading, isError, refetch } = useQuery({
     queryKey: ["transactions", "all", scope],
     queryFn: () => api.getAllTransactions(scope),
   });
 
   const recurring = transactions ? detectRecurring(transactions) : [];
+
+  if (isError)
+    return (
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <p className="text-sm text-red-400">
+          Failed to load.{" "}
+          <button onClick={() => refetch()} className="text-accent hover:underline">
+            Retry
+          </button>
+        </p>
+      </div>
+    );
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">

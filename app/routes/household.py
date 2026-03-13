@@ -491,11 +491,20 @@ def _cancel_pending_invitations(session: Session, household_id: int) -> None:
 
 def _destroy_household(session: Session, household_id: int) -> None:
     """Delete a household and all its associated data (no members remain)."""
-    for g in session.exec(select(Goal).where(Goal.household_id == household_id)).all():
-        for link in session.exec(select(GoalAccountLink).where(GoalAccountLink.goal_id == g.id)).all():
+    goals = list(session.exec(select(Goal).where(Goal.household_id == household_id)).all())
+    goal_ids = [g.id for g in goals if g.id is not None]
+    if goal_ids:
+        links = session.exec(
+            select(GoalAccountLink).where(GoalAccountLink.goal_id.in_(goal_ids))  # type: ignore[union-attr]
+        ).all()
+        for link in links:
             session.delete(link)
-        for c in session.exec(select(GoalContribution).where(GoalContribution.goal_id == g.id)).all():
+        contribs = session.exec(
+            select(GoalContribution).where(GoalContribution.goal_id.in_(goal_ids))  # type: ignore[union-attr]
+        ).all()
+        for c in contribs:
             session.delete(c)
+    for g in goals:
         session.delete(g)
 
     for b in session.exec(select(Budget).where(Budget.household_id == household_id)).all():

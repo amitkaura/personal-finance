@@ -17,7 +17,7 @@ import {
 import { api } from "@/lib/api";
 import { useFormatCurrency, useScope } from "@/lib/hooks";
 import { useHousehold } from "@/components/household-provider";
-import type { BudgetSummary, BudgetSummaryItem, BudgetSectionSummary } from "@/lib/types";
+import type { Budget, BudgetSummary, BudgetSummaryItem, BudgetSectionSummary } from "@/lib/types";
 import ConfirmDialog from "@/components/confirm-dialog";
 
 const MONTH_NAMES = [
@@ -133,7 +133,77 @@ export default function BudgetsPage() {
   const updateMutation = useMutation({
     mutationFn: ({ id, rollover, amount }: { id: number; rollover?: boolean; amount?: number }) =>
       api.updateBudget(id, { ...(rollover !== undefined && { rollover }), ...(amount !== undefined && { amount }) }),
-    onSuccess: invalidate,
+    onMutate: async (variables) => {
+      const budgetSummaryKey = ["budgetSummary", month, scope];
+      const budgetsKey = ["budgets", month, scope];
+      await queryClient.cancelQueries({ queryKey: budgetSummaryKey });
+      await queryClient.cancelQueries({ queryKey: budgetsKey });
+      const previousSummary = queryClient.getQueryData(budgetSummaryKey);
+      const previousBudgets = queryClient.getQueryData(budgetsKey);
+      queryClient.setQueryData(budgetsKey, (old: Budget[] | undefined) => {
+        if (!old) return old;
+        return old.map((b) =>
+          b.id === variables.id
+            ? {
+                ...b,
+                ...(variables.amount !== undefined && { amount: variables.amount }),
+                ...(variables.rollover !== undefined && { rollover: variables.rollover }),
+              }
+            : b
+        );
+      });
+      queryClient.setQueryData(budgetSummaryKey, (old: BudgetSummary | undefined) => {
+        if (!old) return old;
+        const updateItem = (item: BudgetSummaryItem): BudgetSummaryItem => {
+          if (item.id !== variables.id) return item;
+          const newBudgeted = variables.amount !== undefined ? variables.amount : item.budgeted;
+          const rolloverEnabled = variables.rollover !== undefined ? variables.rollover : (rolloverByBudgetId.get(item.id) ?? false);
+          const newEffectiveBudget = rolloverEnabled ? newBudgeted + item.rollover : newBudgeted;
+          const newRemaining = newEffectiveBudget - item.spent;
+          const newPercentUsed = newEffectiveBudget > 0 ? Math.min((item.spent / newEffectiveBudget) * 100, 100) : 0;
+          return {
+            ...item,
+            budgeted: newBudgeted,
+            effective_budget: newEffectiveBudget,
+            remaining: newRemaining,
+            percent_used: newPercentUsed,
+          };
+        };
+        const updateItems = (items: BudgetSummaryItem[]) => items.map(updateItem);
+        const newItems = updateItems(old.items);
+        const recalcTotals = (items: BudgetSummaryItem[]) => ({
+          total_budgeted: items.reduce((s, i) => s + i.effective_budget, 0),
+          total_spent: items.reduce((s, i) => s + i.spent, 0),
+          total_remaining: items.reduce((s, i) => s + i.remaining, 0),
+        });
+        const totals = recalcTotals(newItems);
+        return {
+          ...old,
+          items: newItems,
+          ...totals,
+          sections: old.sections
+            ? {
+                personal: { ...old.sections.personal, items: updateItems(old.sections.personal.items), ...recalcTotals(updateItems(old.sections.personal.items)) },
+                partner: { ...old.sections.partner, items: updateItems(old.sections.partner.items), ...recalcTotals(updateItems(old.sections.partner.items)) },
+                shared: { ...old.sections.shared, items: updateItems(old.sections.shared.items), ...recalcTotals(updateItems(old.sections.shared.items)) },
+              }
+            : undefined,
+          shared_summary: old.shared_summary
+            ? { ...old.shared_summary, items: updateItems(old.shared_summary.items), ...recalcTotals(updateItems(old.shared_summary.items)) }
+            : undefined,
+        };
+      });
+      return { previousSummary, previousBudgets };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousSummary !== undefined) {
+        queryClient.setQueryData(["budgetSummary", month, scope], context.previousSummary);
+      }
+      if (context?.previousBudgets !== undefined) {
+        queryClient.setQueryData(["budgets", month, scope], context.previousBudgets);
+      }
+    },
+    onSettled: invalidate,
   });
 
   const deleteMutation = useMutation({
@@ -428,7 +498,7 @@ export default function BudgetsPage() {
                         updateMutation.mutate({ id: item.id, rollover: enabled })
                       }
                       onUpdateAmount={(amount) =>
-                        updateMutation.mutate({ id: item.id, amount } as any)
+                        updateMutation.mutate({ id: item.id, amount })
                       }
                       onDelete={() => setDeleteConfirm(item)}
                       isUpdating={updateMutation.isPending}

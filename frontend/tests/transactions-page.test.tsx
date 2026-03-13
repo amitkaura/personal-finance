@@ -12,6 +12,7 @@ import type { ViewScope } from "@/lib/types";
 const mockApi = vi.hoisted(() => ({
   getTransactions: vi.fn(),
   getCategories: vi.fn(),
+  getAccounts: vi.fn(),
   autoCategorize: vi.fn(),
   updateTransaction: vi.fn(),
   deleteTransaction: vi.fn(),
@@ -36,6 +37,7 @@ describe("TransactionsPage", () => {
     mockScope.value = "personal";
     mockApi.getTransactions.mockResolvedValue(TEST_TRANSACTIONS);
     mockApi.getCategories.mockResolvedValue(TEST_CATEGORIES);
+    mockApi.getAccounts.mockResolvedValue([]);
     mockApi.autoCategorize.mockResolvedValue({
       total: 5,
       categorized: 3,

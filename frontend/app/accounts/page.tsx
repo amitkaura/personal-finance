@@ -75,6 +75,7 @@ export default function AccountsPage() {
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
+      queryClient.invalidateQueries({ queryKey: ["plaidItems"] });
       setShowAddForm(false);
       setNewName("");
       setNewType("depository");
@@ -224,6 +225,7 @@ export default function AccountsPage() {
             <AccountRow
               key={acct.id}
               account={acct}
+              scope={scope}
               editable={acct.user_id === user?.id}
               showOwner={scope !== "personal"}
               onImport={() => setImportAccount(acct)}
@@ -245,11 +247,13 @@ export default function AccountsPage() {
 
 function AccountRow({
   account,
+  scope,
   editable = true,
   showOwner = false,
   onImport,
 }: {
   account: Account;
+  scope: "personal" | "partner" | "household";
   editable?: boolean;
   showOwner?: boolean;
   onImport: () => void;
@@ -293,9 +297,28 @@ function AccountRow({
   const balanceMutation = useMutation({
     mutationFn: (newBalance: number) =>
       api.updateAccount(account.id, { current_balance: newBalance }),
+    onMutate: async (newBalance) => {
+      const queryKey = ["accounts", scope];
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData(queryKey);
+      queryClient.setQueryData(queryKey, (old: Account[] | undefined) => {
+        if (!old) return old;
+        return old.map((a) =>
+          a.id === account.id ? { ...a, current_balance: newBalance } : a
+        );
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(["accounts", scope], context.previous);
+      }
+    },
     onSuccess: () => {
-      invalidate();
       setEditingBalance(false);
+    },
+    onSettled: () => {
+      invalidate();
     },
   });
 

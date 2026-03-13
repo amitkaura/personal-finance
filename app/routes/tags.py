@@ -10,9 +10,24 @@ from sqlmodel import Session, select
 
 from app.auth import get_current_user
 from app.database import get_session
+from app.household import get_scoped_user_ids
 from app.models import Account, Tag, Transaction, TransactionTag, User
 
 router = APIRouter(prefix="/tags", tags=["tags"])
+
+
+def _check_txn_access(txn: Transaction, session: Session, user: User) -> None:
+    """Raise 404 if the user cannot access this transaction (direct or household)."""
+    allowed = set(get_scoped_user_ids(session, user, "household"))
+    owner_id: int | None = None
+    if txn.account_id:
+        acct = session.get(Account, txn.account_id)
+        if acct:
+            owner_id = acct.user_id
+    if owner_id is None:
+        owner_id = txn.user_id
+    if owner_id not in allowed:
+        raise HTTPException(status_code=404, detail="Transaction not found")
 
 
 class TagCreate(BaseModel):
@@ -114,12 +129,7 @@ def add_tag_to_transaction(
     txn = session.get(Transaction, transaction_id)
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    if txn.account_id:
-        acct = session.get(Account, txn.account_id)
-        if not acct or acct.user_id != user.id:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-    elif not txn.user_id or txn.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    _check_txn_access(txn, session, user)
 
     existing = session.exec(
         select(TransactionTag).where(
@@ -150,12 +160,7 @@ def remove_tag_from_transaction(
     txn = session.get(Transaction, transaction_id)
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    if txn.account_id:
-        acct = session.get(Account, txn.account_id)
-        if not acct or acct.user_id != user.id:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-    elif not txn.user_id or txn.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    _check_txn_access(txn, session, user)
 
     link = session.exec(
         select(TransactionTag).where(
@@ -177,12 +182,7 @@ def get_transaction_tags(
     txn = session.get(Transaction, transaction_id)
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    if txn.account_id:
-        acct = session.get(Account, txn.account_id)
-        if not acct or acct.user_id != user.id:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-    elif not txn.user_id or txn.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    _check_txn_access(txn, session, user)
 
     links = session.exec(
         select(TransactionTag).where(TransactionTag.transaction_id == transaction_id)

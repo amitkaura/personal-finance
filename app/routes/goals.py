@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.auth import get_current_user
@@ -19,9 +19,9 @@ router = APIRouter(prefix="/goals", tags=["goals"])
 
 
 class GoalCreate(BaseModel):
-    name: str
-    target_amount: float
-    current_amount: float = 0
+    name: str = Field(max_length=200)
+    target_amount: float = Field(gt=0)
+    current_amount: float = Field(default=0, ge=0)
     target_date: Optional[str] = None
     icon: str = "target"
     color: str = "#6d28d9"
@@ -30,9 +30,9 @@ class GoalCreate(BaseModel):
 
 
 class GoalUpdate(BaseModel):
-    name: Optional[str] = None
-    target_amount: Optional[float] = None
-    current_amount: Optional[float] = None
+    name: Optional[str] = Field(default=None, max_length=200)
+    target_amount: Optional[float] = Field(default=None, gt=0)
+    current_amount: Optional[float] = Field(default=None, ge=0)
     target_date: Optional[str] = None
     icon: Optional[str] = None
     color: Optional[str] = None

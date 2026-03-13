@@ -220,8 +220,8 @@ describe("AccountsPage", () => {
     await user.click(screen.getByTitle("Import CSV"));
 
     await waitFor(() => {
-      expect(screen.getByText("Import Transactions")).toBeInTheDocument();
-      expect(screen.getByText("Drag & drop a CSV file here")).toBeInTheDocument();
+      expect(screen.getByText(/Import CSV to Manual Checking/)).toBeInTheDocument();
+      expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
     });
   });
 });

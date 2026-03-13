@@ -53,7 +53,7 @@ export default function BudgetSnippet() {
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["budgetSummary", month, scope],
     queryFn: () => api.getBudgetSummary(month, scope),
   });
@@ -61,6 +61,18 @@ export default function BudgetSnippet() {
   const hasPersonal = data && data.items.length > 0;
   const hasShared = data?.shared_summary && data.shared_summary.items.length > 0;
   const isEmpty = !hasPersonal && !hasShared;
+
+  if (isError)
+    return (
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <p className="text-sm text-red-400">
+          Failed to load.{" "}
+          <button onClick={() => refetch()} className="text-accent hover:underline">
+            Retry
+          </button>
+        </p>
+      </div>
+    );
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">

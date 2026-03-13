@@ -53,7 +53,8 @@ def test_me_unauthenticated(client):
     assert resp.status_code == 401
 
 
-def test_logout(client):
+def test_logout(auth_client):
+    client, _user = auth_client
     resp = client.post("/api/v1/auth/logout")
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}

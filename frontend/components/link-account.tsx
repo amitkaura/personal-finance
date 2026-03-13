@@ -35,6 +35,7 @@ export default function LinkAccount() {
       queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["plaidItems"] });
+      queryClient.invalidateQueries({ queryKey: ["netWorthHistory"] });
     },
     onError: () => {
       setStatus("idle");

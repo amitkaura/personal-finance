@@ -9,12 +9,24 @@ import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 export default function ReviewSnippet() {
   const formatCurrency = useFormatCurrencyPrecise();
   const scope = useScope();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["transactions", "uncategorized", scope],
     queryFn: () => api.getTransactions({ uncategorized: true, limit: 5, scope }),
   });
 
   const count = data?.length ?? 0;
+
+  if (isError)
+    return (
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <p className="text-sm text-red-400">
+          Failed to load.{" "}
+          <button onClick={() => refetch()} className="text-accent hover:underline">
+            Retry
+          </button>
+        </p>
+      </div>
+    );
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">

@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
-from app.categorizer import categorize_by_llm, categorize_by_rules
+from app.categorizer import categorize_batch_llm, categorize_by_rules
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
 from app.models import (
@@ -40,6 +40,30 @@ from app.models import (
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+_ALLOWED_LLM_HOSTS = {
+    "localhost", "127.0.0.1", "::1",
+    "api.openai.com", "api.anthropic.com", "api.groq.com",
+    "generativelanguage.googleapis.com",
+}
+
+
+def _validate_llm_base_url(url: str) -> None:
+    """Reject LLM base URLs that point to non-allowlisted hosts to prevent SSRF."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise HTTPException(status_code=400, detail="Invalid LLM base URL")
+    if host in _ALLOWED_LLM_HOSTS:
+        return
+    if host.endswith(".openai.com") or host.endswith(".anthropic.com"):
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=f"LLM host '{host}' is not allowed. Use localhost or a supported provider.",
+    )
 
 
 def _get_or_create_settings(session: Session, user_id: int) -> UserSettings:
@@ -184,6 +208,8 @@ def update_settings(
     if "sync_minute" in data and data["sync_minute"] is not None:
         if not (0 <= data["sync_minute"] <= 59):
             raise HTTPException(status_code=400, detail="sync_minute must be 0-59")
+    if "llm_base_url" in data and data["llm_base_url"]:
+        _validate_llm_base_url(data["llm_base_url"])
 
     for field, value in data.items():
         if field == "llm_api_key" and value:
@@ -287,45 +313,66 @@ def delete_rule(
 # ── Data Export & Management ───────────────────────────────────
 
 
-@router.get("/export")
-def export_transactions(
-    session: Session = Depends(get_session),
-    user: User = Depends(get_current_user),
-):
-    """Export all transactions as a CSV download."""
-    user_account_ids = session.exec(
-        select(Account.id).where(Account.user_id == user.id)
-    ).all()
-    txns = session.exec(
-        select(Transaction)
-        .where(
-            or_(
-                Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
-                Transaction.user_id == user.id,
-            )
-        )
-        .order_by(Transaction.date.desc())
-    ).all()
+_EXPORT_CHUNK_SIZE = 1000
 
+
+def _export_transactions_generator(
+    session: Session,
+    user_account_ids: list[int],
+    user_id: int,
+):
+    """Yield CSV rows in chunks to avoid loading all transactions into memory."""
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
         "Date", "Merchant", "Amount", "Category",
         "Pending", "Account ID",
     ])
-    for t in txns:
-        writer.writerow([
-            t.date.isoformat(),
-            t.merchant_name or "",
-            float(t.amount),
-            t.category or "",
-            t.pending_status,
-            t.account_id or "",
-        ])
+    yield buf.getvalue()
 
-    buf.seek(0)
+    offset = 0
+    while True:
+        stmt = (
+            select(Transaction)
+            .where(
+                or_(
+                    Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+                    Transaction.user_id == user_id,
+                )
+            )
+            .order_by(Transaction.date.desc())
+            .offset(offset)
+            .limit(_EXPORT_CHUNK_SIZE)
+        )
+        txns = list(session.exec(stmt).all())
+        if not txns:
+            break
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        for t in txns:
+            writer.writerow([
+                t.date.isoformat(),
+                t.merchant_name or "",
+                float(t.amount),
+                t.category or "",
+                t.pending_status,
+                t.account_id or "",
+            ])
+        yield buf.getvalue()
+        offset += _EXPORT_CHUNK_SIZE
+
+
+@router.get("/export")
+def export_transactions(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Export all transactions as a CSV download (streamed in chunks)."""
+    user_account_ids = list(
+        session.exec(select(Account.id).where(Account.user_id == user.id)).all()
+    )
     return StreamingResponse(
-        buf,
+        _export_transactions_generator(session, user_account_ids, user.id),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=transactions.csv"},
     )
@@ -476,6 +523,7 @@ def _import_sync(
 ) -> dict:
     imported = skipped = categorized = 0
     errors: list[str] = []
+    uncategorized: list[Transaction] = []
 
     for row in rows:
         try:
@@ -516,15 +564,19 @@ def _import_sync(
         session.add(txn)
 
         if not category:
-            session.flush()
-            llm_cat = categorize_by_llm(txn, user.id)
-            if llm_cat:
-                txn.category = llm_cat
-                auto = True
-
+            uncategorized.append(txn)
         if auto:
             categorized += 1
         imported += 1
+
+    if uncategorized:
+        session.flush()
+        llm_results = categorize_batch_llm(uncategorized, user.id)
+        for txn in uncategorized:
+            llm_cat = llm_results.get(txn.id) if txn.id else None
+            if llm_cat:
+                txn.category = llm_cat
+                categorized += 1
 
     session.commit()
     return {
@@ -542,6 +594,7 @@ def _import_generator(
     imported = skipped = categorized = 0
     errors: list[str] = []
     total = len(rows)
+    uncategorized: list[Transaction] = []
 
     for idx, row in enumerate(rows, 1):
         status = "imported"
@@ -589,13 +642,7 @@ def _import_generator(
         session.add(txn)
 
         if not cat:
-            session.flush()
-            llm_cat = categorize_by_llm(txn, user.id)
-            if llm_cat:
-                txn.category = llm_cat
-                cat = llm_cat
-                auto = True
-
+            uncategorized.append(txn)
         if auto:
             categorized += 1
             status = "categorized"
@@ -603,6 +650,15 @@ def _import_generator(
 
         yield _ndjson({"type": "progress", "current": idx, "total": total,
                        "merchant": row.merchant_name, "status": status, "category": cat})
+
+    if uncategorized:
+        session.flush()
+        llm_results = categorize_batch_llm(uncategorized, user.id)
+        for txn in uncategorized:
+            llm_cat = llm_results.get(txn.id) if txn.id else None
+            if llm_cat:
+                txn.category = llm_cat
+                categorized += 1
 
     session.commit()
     yield _ndjson({
@@ -674,10 +730,12 @@ def _resolve_accounts(
         key = entry.name.lower()
         if key in name_map:
             continue
+        valid_types = {t.value for t in AccountType}
+        acct_type = entry.type if entry.type in valid_types else "depository"
         acct = Account(
             user_id=user.id,
             name=entry.name,
-            type=AccountType(entry.type),
+            type=AccountType(acct_type),
             plaid_account_id=f"manual-{uuid4().hex}",
             is_linked=False,
         )
@@ -743,6 +801,7 @@ def _bulk_import_sync(
 ) -> dict:
     imported = skipped = categorized = 0
     errors: list[str] = []
+    uncategorized: list[Transaction] = []
 
     for row in rows:
         try:
@@ -789,15 +848,19 @@ def _bulk_import_sync(
         session.add(txn)
 
         if not category:
-            session.flush()
-            llm_cat = categorize_by_llm(txn, user.id)
-            if llm_cat:
-                txn.category = llm_cat
-                auto = True
-
+            uncategorized.append(txn)
         if auto:
             categorized += 1
         imported += 1
+
+    if uncategorized:
+        session.flush()
+        llm_results = categorize_batch_llm(uncategorized, user.id)
+        for txn in uncategorized:
+            llm_cat = llm_results.get(txn.id) if txn.id else None
+            if llm_cat:
+                txn.category = llm_cat
+                categorized += 1
 
     session.commit()
     return {
@@ -819,6 +882,7 @@ def _bulk_import_generator(
     imported = skipped = categorized = 0
     errors: list[str] = []
     total = len(rows)
+    uncategorized: list[Transaction] = []
 
     for idx, row in enumerate(rows, 1):
         status = "imported"
@@ -872,13 +936,7 @@ def _bulk_import_generator(
         session.add(txn)
 
         if not cat:
-            session.flush()
-            llm_cat = categorize_by_llm(txn, user.id)
-            if llm_cat:
-                txn.category = llm_cat
-                cat = llm_cat
-                auto = True
-
+            uncategorized.append(txn)
         if auto:
             categorized += 1
             status = "categorized"
@@ -886,6 +944,15 @@ def _bulk_import_generator(
 
         yield _ndjson({"type": "progress", "current": idx, "total": total,
                        "merchant": row.merchant_name, "status": status, "category": cat})
+
+    if uncategorized:
+        session.flush()
+        llm_results = categorize_batch_llm(uncategorized, user.id)
+        for txn in uncategorized:
+            llm_cat = llm_results.get(txn.id) if txn.id else None
+            if llm_cat:
+                txn.category = llm_cat
+                categorized += 1
 
     session.commit()
     yield _ndjson({

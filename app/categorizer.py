@@ -56,7 +56,14 @@ Rules:
 
 
 def categorize_by_rules(merchant_name: str, session: Session, user_id: int) -> str | None:
-    """Return a category if the merchant matches any user-defined keyword rule."""
+    """Return a category if the merchant matches any user-defined keyword rule.
+
+    Uses word-boundary matching to avoid false positives (e.g. "net" won't
+    match "internet").  Multi-word keywords still match as substrings so that
+    "whole foods" matches "Whole Foods Market".
+    """
+    import re
+
     if not merchant_name:
         return None
 
@@ -64,9 +71,9 @@ def categorize_by_rules(merchant_name: str, session: Session, user_id: int) -> s
         select(CategoryRule).where(CategoryRule.user_id == user_id)
     ).all()
     for rule in rules:
-        keyword = rule.keyword if rule.case_sensitive else rule.keyword.lower()
-        name = merchant_name if rule.case_sensitive else merchant_name.lower()
-        if keyword in name:
+        flags = 0 if rule.case_sensitive else re.IGNORECASE
+        pattern = r"\b" + re.escape(rule.keyword) + r"\b"
+        if re.search(pattern, merchant_name, flags):
             return rule.category
 
     return None
@@ -230,8 +237,10 @@ def auto_categorize_pending(session: Session, user_id: int) -> dict[str, int]:
 
     session.commit()
 
+    llm_failed = len(llm_candidates) - llm_matched
     return {
         "total": len(txns),
         "categorized": len(rule_matched) + llm_matched,
         "skipped": len(txns) - len(rule_matched) - llm_matched,
+        "failed": llm_failed,
     }

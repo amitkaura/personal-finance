@@ -1,5 +1,16 @@
 import "@testing-library/jest-dom/vitest";
 
+globalThis.IntersectionObserver = class IntersectionObserver {
+  readonly root: Element | null = null;
+  readonly rootMargin: string = "";
+  readonly thresholds: ReadonlyArray<number> = [];
+  constructor(private cb: IntersectionObserverCallback, _opts?: IntersectionObserverInit) {}
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords(): IntersectionObserverEntry[] { return []; }
+} as unknown as typeof IntersectionObserver;
+
 vi.mock("next/image", () => ({
   __esModule: true,
   default: (props: Record<string, unknown>) => {

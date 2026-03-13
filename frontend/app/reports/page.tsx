@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import {
+  AlertCircle,
   BarChart3,
   TrendingUp,
   TrendingDown,
@@ -110,17 +111,17 @@ export default function ReportsPage() {
   const scope = useScope();
   const [months, setMonths] = useState(6);
 
-  const { data: spending, isLoading: spendingLoading } = useQuery({
+  const { data: spending, isLoading: spendingLoading, isError: spendingError, refetch: refetchSpending } = useQuery({
     queryKey: ["spendingByCategory", months, scope],
     queryFn: () => api.getSpendingByCategory(months, scope),
   });
 
-  const { data: trends, isLoading: trendsLoading } = useQuery({
+  const { data: trends, isLoading: trendsLoading, isError: trendsError, refetch: refetchTrends } = useQuery({
     queryKey: ["monthlyTrends", months, scope],
     queryFn: () => api.getMonthlyTrends(months, scope),
   });
 
-  const { data: topMerchants, isLoading: merchantsLoading } = useQuery({
+  const { data: topMerchants, isLoading: merchantsLoading, isError: merchantsError, refetch: refetchMerchants } = useQuery({
     queryKey: ["topMerchants", months, scope],
     queryFn: () => api.getTopMerchants(months, 10, scope),
   });
@@ -144,6 +145,12 @@ export default function ReportsPage() {
   }, [spending]);
 
   const isLoading = spendingLoading || trendsLoading || merchantsLoading;
+  const hasError = spendingError || trendsError || merchantsError;
+  const refetchAll = () => {
+    refetchSpending();
+    refetchTrends();
+    refetchMerchants();
+  };
 
   return (
     <div className="space-y-8">
@@ -172,6 +179,19 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {hasError ? (
+        <div className="mt-8 text-center">
+          <AlertCircle className="mx-auto h-10 w-10 text-red-400" />
+          <p className="mt-3 text-muted-foreground">Something went wrong loading data.</p>
+          <button
+            onClick={() => refetchAll()}
+            className="mt-2 text-sm text-accent hover:underline"
+          >
+            Try again
+          </button>
+        </div>
+      ) : (
+      <>
       {/* Summary cards */}
       <div className="grid gap-4 sm:grid-cols-3">
         {isLoading ? (
@@ -372,6 +392,8 @@ export default function ReportsPage() {
           </p>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

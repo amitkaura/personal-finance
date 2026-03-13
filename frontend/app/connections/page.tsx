@@ -1,9 +1,10 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import {
+  AlertCircle,
   Building2,
   Landmark,
   TrendingUp,
@@ -37,7 +38,7 @@ const TYPE_COLORS: Record<string, string> = {
 export default function ConnectionsPage() {
   const formatCurrency = useFormatCurrencyPrecise();
   const scope = useScope();
-  const { data: connections, isLoading } = useQuery({
+  const { data: connections, isLoading, isError, refetch } = useQuery({
     queryKey: ["plaidItems", scope],
     queryFn: () => api.getPlaidItems(scope),
   });
@@ -56,7 +57,18 @@ export default function ConnectionsPage() {
         <LinkAccount />
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <div className="mt-12 text-center">
+          <AlertCircle className="mx-auto h-10 w-10 text-red-400" />
+          <p className="mt-3 text-muted-foreground">Something went wrong loading data.</p>
+          <button
+            onClick={() => refetch()}
+            className="mt-2 text-sm text-accent hover:underline"
+          >
+            Try again
+          </button>
+        </div>
+      ) : isLoading ? (
         <div className="mt-8 space-y-4">
           {[1, 2].map((i) => (
             <div
@@ -115,6 +127,7 @@ function ConnectionCard({
   });
 
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "success" | "error">("idle");
+  const syncStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const syncMutation = useMutation({
     mutationFn: () => api.triggerSync(connection.id),
@@ -132,9 +145,17 @@ function ConnectionCard({
 
   useEffect(() => {
     if (syncStatus === "success" || syncStatus === "error") {
-      const timer = setTimeout(() => setSyncStatus("idle"), 5000);
-      return () => clearTimeout(timer);
+      if (syncStatusTimerRef.current) {
+        clearTimeout(syncStatusTimerRef.current);
+      }
+      syncStatusTimerRef.current = setTimeout(() => setSyncStatus("idle"), 5000);
     }
+    return () => {
+      if (syncStatusTimerRef.current) {
+        clearTimeout(syncStatusTimerRef.current);
+        syncStatusTimerRef.current = null;
+      }
+    };
   }, [syncStatus]);
 
   return (

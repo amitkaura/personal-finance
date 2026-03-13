@@ -102,13 +102,14 @@ def me(user: User = Depends(get_current_user)):
 
 
 @router.post("/logout")
-def logout():
+def logout(_user: User = Depends(get_current_user)):
     settings = get_settings()
     secure_cookie = settings.secure_cookies and not settings.debug
     resp = JSONResponse(content={"ok": True})
     resp.delete_cookie(
         key=_COOKIE_NAME,
         path="/",
+        httponly=True,
         secure=secure_cookie,
         samesite="lax",
     )

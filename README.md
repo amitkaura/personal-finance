@@ -6,10 +6,10 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 | Layer | Technology |
 |-------|-----------|
-| **Backend** | Python 3.14, FastAPI, SQLModel (SQLAlchemy + Pydantic) |
+| **Backend** | Python 3.12, FastAPI, SQLModel (SQLAlchemy + Pydantic) |
 | **Database** | PostgreSQL 16 |
 | **Frontend** | Next.js 16 (App Router), React 19, Tailwind CSS 4 |
-| **Bank Integration** | Plaid (sandbox / development / production) |
+| **Bank Integration** | Plaid (sandbox / production) |
 | **Auth** | Google OAuth 2.0, JWT session cookies |
 | **AI Categorization** | OpenAI-compatible API (GPT, Ollama, Azure, etc.) |
 | **Charts** | Nivo (bar) |
@@ -220,7 +220,8 @@ personal-finance/
 │   │   ├── goals-snippet.tsx       # Goals progress summary
 │   │   ├── top-movers.tsx          # Top spending category changes
 │   │   ├── cashflow-bar-chart.tsx  # Income vs expenses bar chart with drill-down
-│   │   ├── csv-import-dialog.tsx   # Multi-step CSV import with column mapper
+│   │   ├── csv-import-dialog.tsx   # CSV import for a single account
+│   │   ├── bulk-csv-import-dialog.tsx # Bulk CSV import across accounts
 │   │   └── confirm-dialog.tsx      # Reusable confirmation modal
 │   ├── lib/
 │   │   ├── api.ts                  # API client (fetch with credentials)
@@ -427,7 +428,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 ## Getting Started
 
 ### Prerequisites
-- Python 3.14+
+- Python 3.12+
 - Node.js 20+
 - PostgreSQL 16 (or Docker)
 - A [Plaid](https://dashboard.plaid.com/) account (free sandbox)
@@ -508,7 +509,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (270 tests across 14 files — 84% line coverage):**
+**What's tested (279 tests across 15 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -517,8 +518,8 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
 | `test_transactions` | 29 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize (rules, LLM batching, partial failure), recurring, date validation, response schema |
-| `test_categories` | 20 | Full CRUD, auto-seed defaults, create validation (empty/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
-| `test_accounts` | 22 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update, CSV import, cascade delete, negative amounts, inline auto-categorization |
+| `test_categories` | 27 | Full CRUD, auto-seed defaults, create validation (empty/whitespace/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
+| `test_accounts` | 24 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization |
 | `test_plaid` | 14 | Link token, exchange token (success, relink, conflict, institution name), sync, items (all Plaid calls mocked) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
@@ -526,30 +527,6 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_auth` | 6 | Google OAuth login (mocked), session, `/me`, logout |
 | `test_net_worth` | 5 | Snapshots, history |
 | `test_health` | 2 | Liveness and readiness endpoints |
-
-**Coverage by module:**
-
-| Module | Stmts | Lines covered | Coverage |
-|--------|-------|---------------|----------|
-| `app/routes/categories.py` | 90 | 90 | 100% |
-| `app/routes/net_worth.py` | 54 | 54 | 100% |
-| `app/models.py` | 185 | 185 | 100% |
-| `app/config.py` | 44 | 44 | 100% |
-| `app/routes/auth.py` | 63 | 62 | 98% |
-| `app/email.py` | 42 | 41 | 98% |
-| `app/routes/household.py` | 200 | 193 | 96% |
-| `app/household.py` | 19 | 18 | 95% |
-| `app/routes/goals.py` | 218 | 202 | 93% |
-| `app/routes/settings.py` | 411 | 378 | 92% |
-| `app/routes/reports.py` | 116 | 106 | 91% |
-| `app/routes/transactions.py` | 215 | 187 | 87% |
-| `app/routes/accounts.py` | 144 | 124 | 86% |
-| `app/routes/tags.py` | 111 | 94 | 85% |
-| `app/crypto.py` | 12 | 10 | 83% |
-| `app/categorizer.py` | 100 | 77 | 77% |
-| `app/routes/budgets.py` | 271 | 189 | 70% |
-| `app/routes/plaid.py` | 245 | 147 | 60% |
-| **Total** | **2824** | **2366** | **84%** |
 
 **Test infrastructure:**
 - In-memory SQLite with per-test isolation (fresh tables for each test)
@@ -570,23 +547,23 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (307 tests across 32 files — 73% line coverage):**
+**What's tested (295 tests across 32 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
-| `bulk-csv-import-dialog` | 19 | Bulk upload, multi-account mapping, preview, import flow |
-| `cashflow-bar-chart` | 17 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `settings-page` | 17 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management |
-| `csv-import-dialog` | 14 | Upload step, auto-detection, debit/credit mapping, preview, import, results, errors, navigation |
+| `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `transactions-page` | 13 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close |
+| `sidebar` | 13 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
 | `accounts-page` | 12 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
-| `budgets-page` | 8 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes |
+| `bulk-csv-import-dialog` | 11 | Upload, preview, account detection, import flow, progress, results, errors |
+| `csv-import-dialog` | 10 | Upload, preview, import, progress, results, errors, cancel/done |
 | `goals-page` | 10 | Title, empty state, active/completed sections, progress bar, target date, create dialog, shared summary, delete confirm |
-| `sidebar` | 13 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
 | `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
 | `reports-page` | 8 | Title, period selector, loading, summary cards, category bars, empty states, top merchants |
+| `budgets-page` | 8 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes |
 | `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
 | `recurring-page` | 7 | Title, loading, empty state, recurring cards, summary, consistent/varies badges, sort dropdown |
 | `connections-page` | 6 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync |
@@ -597,6 +574,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `hooks` | 6 | `useFormatCurrency`, `useFormatCurrencyPrecise`, `useScope` |
 | `auth-provider` | 6 | Loading state, login/logout, cache clearing, default context |
 | `goals-snippet` | 6 | Loading, empty with "Set one" link, personal goals (max 3), shared summary, singular/plural, view all link |
+| `auth-gate` | 6 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, hamburger menu button, toggle sidebar open, responsive margin classes |
 | `net-worth-card` | 5 | Loading skeleton, net worth display, asset/liability breakdown, account count pluralization |
 | `top-movers` | 5 | Loading, empty, investment+linked filter, trend icons, official name fallback |
 | `budget-snippet` | 5 | Loading, empty with "Create one" link, personal mini bar, top 3 sort, view all link |
@@ -605,25 +583,6 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `sync-button` | 4 | Idle state, click triggers API, syncing state (disabled), returns to idle after delay |
 | `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
 | `link-account` | 4 | Idle button, token fetch on click, success message, pluralization |
-| `auth-gate` | 6 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, hamburger menu button, toggle sidebar open, responsive margin classes |
-
-**Coverage by area:**
-
-| Area | Statements | Lines | Branches |
-|------|-----------|-------|----------|
-| `components/` | 85% | 84% | 79% |
-| `lib/` | 98% | 99% | 90% |
-| `app/cashflow/` | 100% | 100% | 100% |
-| `app/reports/` | 80% | 81% | 77% |
-| `app/connections/` | 77% | 79% | 65% |
-| `app/recurring/` | 78% | 77% | 68% |
-| `app/login/` | 76% | 76% | 50% |
-| `app/accounts/` | 61% | 61% | 63% |
-| `app/transactions/` | 59% | 60% | 48% |
-| `app/budgets/` | 53% | 55% | 32% |
-| `app/settings/` | 49% | 50% | 32% |
-| `app/goals/` | 41% | 43% | 26% |
-| **Overall** | **72%** | **73%** | **70%** |
 
 **Test infrastructure:**
 - jsdom environment with global mocks for `next/image`, `next/link`, `next/navigation`
@@ -640,7 +599,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `DB_MAX_OVERFLOW` | No | SQLAlchemy pool overflow limit (default: `10`) |
 | `PLAID_CLIENT_ID` | Yes | Plaid API client ID |
 | `PLAID_SECRET` | Yes | Plaid API secret |
-| `PLAID_ENV` | No | `sandbox` (default), `development`, or `production` |
+| `PLAID_ENV` | No | `sandbox` (default) or `production` |
 | `ENCRYPTION_KEY` | Yes | Fernet key for encrypting Plaid access tokens |
 | `GOOGLE_CLIENT_ID` | Yes | Google OAuth 2.0 client ID |
 | `JWT_SECRET` | Yes | Secret for signing JWT session tokens |

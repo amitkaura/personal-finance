@@ -10,7 +10,7 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
@@ -20,6 +20,24 @@ from app.household import get_scoped_user_ids
 from app.models import Account, Category, Tag, Transaction, TransactionTag, User
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+def _check_txn_access(
+    txn: Transaction,
+    session: Session,
+    user: User,
+) -> None:
+    """Raise 404 if the user cannot access this transaction (direct or household)."""
+    allowed_user_ids = set(get_scoped_user_ids(session, user, "household"))
+    owner_id: int | None = None
+    if txn.account_id:
+        acct = session.get(Account, txn.account_id)
+        if acct:
+            owner_id = acct.user_id
+    if owner_id is None:
+        owner_id = txn.user_id
+    if owner_id not in allowed_user_ids:
+        raise HTTPException(status_code=404, detail="Transaction not found")
 
 
 @router.get("")
@@ -106,18 +124,18 @@ def get_categories(
 class TransactionCreate(BaseModel):
     date: str
     amount: float
-    merchant_name: str
-    category: Optional[str] = None
-    notes: Optional[str] = None
+    merchant_name: str = Field(max_length=500)
+    category: Optional[str] = Field(default=None, max_length=100)
+    notes: Optional[str] = Field(default=None, max_length=1000)
     account_id: Optional[int] = None
 
 
 class TransactionUpdate(BaseModel):
-    category: Optional[str] = None
-    merchant_name: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=100)
+    merchant_name: Optional[str] = Field(default=None, max_length=500)
     amount: Optional[float] = None
     date: Optional[str] = None
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=1000)
 
 
 @router.post("", status_code=201)
@@ -178,13 +196,7 @@ def update_transaction(
     txn = session.get(Transaction, transaction_id)
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
-
-    if txn.account_id:
-        acct = session.get(Account, txn.account_id)
-        if not acct or acct.user_id != user.id:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-    elif not txn.user_id or txn.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    _check_txn_access(txn, session, user)
 
     if body.category is not None:
         valid = session.exec(
@@ -223,8 +235,7 @@ def delete_transaction(
         raise HTTPException(status_code=404, detail="Transaction not found")
     if not txn.is_manual:
         raise HTTPException(status_code=400, detail="Only manual transactions can be deleted")
-    if not txn.user_id or txn.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    _check_txn_access(txn, session, user)
     tag_links = session.exec(
         select(TransactionTag).where(TransactionTag.transaction_id == transaction_id)
     ).all()

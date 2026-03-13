@@ -12,7 +12,7 @@ export default function NetWorthHistory() {
   const queryClient = useQueryClient();
   const [months, setMonths] = useState(12);
 
-  const { data: snapshots, isLoading } = useQuery({
+  const { data: snapshots, isLoading, isError, refetch } = useQuery({
     queryKey: ["netWorthHistory", months, scope],
     queryFn: () => api.getNetWorthHistory(months, scope),
   });
@@ -22,6 +22,18 @@ export default function NetWorthHistory() {
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["netWorthHistory"] }),
   });
+
+  if (isError)
+    return (
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <p className="text-sm text-red-400">
+          Failed to load.{" "}
+          <button onClick={() => refetch()} className="text-accent hover:underline">
+            Retry
+          </button>
+        </p>
+      </div>
+    );
 
   if (isLoading) {
     return (

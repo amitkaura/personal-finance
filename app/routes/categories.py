@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
-from sqlmodel import Session, select
+from pydantic import BaseModel, Field
+from sqlmodel import Session, select, or_
 
 from app.auth import get_current_user
 from app.database import get_session
-from app.models import Category, CategoryRule, Transaction, User
+from app.models import Account, Category, CategoryRule, Transaction, User
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -61,7 +61,7 @@ def list_categories(
 
 
 class CategoryCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=100)
 
 
 @router.post("", status_code=201)
@@ -119,10 +119,17 @@ def update_category(
     cat.name = new_name
     session.add(cat)
 
-    # Cascade rename to transactions
+    # Cascade rename to transactions (user-owned or in user's accounts)
+    user_account_ids = session.exec(
+        select(Account.id).where(Account.user_id == user.id)
+    ).all()
+    txn_conditions = [Transaction.user_id == user.id]
+    if user_account_ids:
+        txn_conditions.append(Transaction.account_id.in_(user_account_ids))
     txns = session.exec(
         select(Transaction).where(
-            Transaction.user_id == user.id, Transaction.category == old_name
+            Transaction.category == old_name,
+            or_(*txn_conditions),
         )
     ).all()
     for txn in txns:
