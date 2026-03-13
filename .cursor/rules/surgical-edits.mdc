@@ -1,0 +1,51 @@
+---
+description: Protect existing features from accidental removal. Make minimal, surgical edits — never rewrite files or sections you weren't asked to change.
+alwaysApply: true
+---
+
+# Surgical Edits — Protect Existing Features
+
+Each chat session has NO memory of prior sessions. Features built in previous
+chats WILL be silently destroyed if you rewrite files carelessly. Treat every
+existing line as intentional.
+
+## Core Rules
+
+1. **Only touch what was requested.** If the user asks to fix the delete
+   button, do not rewrite the rest of the component. Leave unrelated code
+   exactly as-is.
+
+2. **Never rewrite an entire file or function.** Use the smallest possible
+   replacement. Replace specific lines, not whole blocks.
+
+3. **Never remove code you didn't add.** If you see code whose purpose is
+   unclear, leave it alone. It was likely added in a prior session.
+
+4. **Read before editing.** Always read the full file (or the relevant section
+   of large files) before making any edit. Understand what's there first.
+
+## Before Committing
+
+1. Run `git diff` and scan for any **red (removed) lines** you did not
+   intend to remove. Unintended deletions are the #1 cause of lost features.
+
+2. If you see unexpected removals, restore them before committing.
+
+3. Call out to the user: "I noticed these existing lines would be removed —
+   should I keep them?" when in doubt.
+
+## High-Risk Patterns to Avoid
+
+- Regenerating a full component to "clean it up" — this always drops subtle
+  features (tooltips, ARIA attributes, confirmation dialogs, filter badges).
+- Replacing an entire return/JSX block when only one element needs changing.
+- Rewriting a function body when only one branch needs updating.
+- Removing imports "because they look unused" — they may be used in code
+  you haven't read yet.
+
+## Commit Hygiene
+
+- Always commit (or confirm the user has committed) before starting a new
+  task that touches the same files.
+- Prefer working on a feature branch when changes span multiple files.
+- Keep commits small and focused — one logical change per commit.

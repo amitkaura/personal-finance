@@ -1,0 +1,78 @@
+---
+description: Ensure database schema stays in sync when SQLModel models change. Covers ALTER statements, type mappings, backfills, and verification for any model modification.
+alwaysApply: true
+---
+
+# Database Schema Migration
+
+## The Problem
+
+This project uses SQLModel with `create_db_and_tables()` on startup. That call
+creates **new** tables but does **not** alter existing ones. When you add a
+column to an existing model, the Python code works but the database column
+doesn't exist, causing runtime `UndefinedColumn` errors.
+
+## After Modifying an Existing Model
+
+Whenever you add, remove, or rename a field on a model whose table already
+exists, you **must** also apply the change to the live database.
+
+### Step 1 — Generate the ALTER statement
+
+For each changed field, determine the SQL:
+
+| Change | SQL |
+|--------|-----|
+| Add nullable column | `ALTER TABLE <table> ADD COLUMN IF NOT EXISTS <col> <type>;` |
+| Add non-null column | `ALTER TABLE <table> ADD COLUMN IF NOT EXISTS <col> <type> NOT NULL DEFAULT <default>;` |
+| Add indexed column | Also run `CREATE INDEX IF NOT EXISTS ix_<table>_<col> ON <table>(<col>);` |
+| Add FK column | Also add `REFERENCES <parent_table>(id)` |
+| Remove column | `ALTER TABLE <table> DROP COLUMN IF EXISTS <col>;` |
+| Rename column | `ALTER TABLE <table> RENAME COLUMN <old> TO <new>;` |
+
+### Step 2 — Map Python types to PostgreSQL types
+
+| Python / SQLModel type | PostgreSQL type |
+|------------------------|-----------------|
+| `str` | `varchar` |
+| `int` | `integer` |
+| `bool` | `boolean` |
+| `float` | `double precision` |
+| `Decimal` with `max_digits=M, decimal_places=D` | `numeric(M,D)` |
+| `date` | `date` |
+| `datetime` | `timestamp without time zone` |
+| `Optional[T]` | nullable (no `NOT NULL`) |
+
+### Step 3 — Run the migration
+
+```bash
+psql -d finance -c "<ALTER statements>"
+```
+
+### Step 4 — Backfill if needed
+
+If the new column can be derived from existing data (e.g., `user_id` on
+transactions can be copied from the linked account's `user_id`), run an
+UPDATE to backfill:
+
+```sql
+UPDATE <table> t
+SET <new_col> = <source_expression>
+WHERE t.<new_col> IS NULL;
+```
+
+### Step 5 — Verify
+
+```bash
+psql -d finance -c "\d <table>"
+```
+
+## Checklist
+
+Before considering a model change complete:
+
+- [ ] ALTER TABLE executed for every added/removed/renamed column
+- [ ] Indexes created for any `index=True` fields
+- [ ] Foreign key constraints added for any FK fields
+- [ ] Existing rows backfilled where applicable
+- [ ] Schema verified with `\d <table>`

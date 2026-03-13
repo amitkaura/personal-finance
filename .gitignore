@@ -1,8 +1,8 @@
 .env
 .env.*
 !.env.example
-.cursor/
-**/.cursor/
+.cursor/*
+!.cursor/rules/
 Users/
 __pycache__/
 *.pyc

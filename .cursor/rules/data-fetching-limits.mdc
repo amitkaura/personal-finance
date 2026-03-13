@@ -1,0 +1,79 @@
+---
+description: Prevents silent data truncation when fetching records from paginated API endpoints. Ensures full-dataset components use paginated getAll* helpers instead of fixed-limit calls.
+alwaysApply: true
+---
+
+# Data Fetching Limits
+
+## The Rule
+
+**If a component needs ALL records (to aggregate, group, chart, or analyze), it
+MUST use a paginated `getAll*` helper — never a single `getTransactions({ limit: N })` call.**
+
+A fixed `limit` silently drops data when the dataset grows past `N`. The
+component appears to work but produces incorrect results.
+
+## When to use each pattern
+
+### `getAllTransactions(scope)` — full dataset
+
+Use when the component processes every record: summing, grouping by category,
+detecting recurring patterns, building charts, or any analytics.
+
+```tsx
+const { data } = useQuery({
+  queryKey: ["transactions", "all", scope],
+  queryFn: () => api.getAllTransactions(scope),
+});
+```
+
+Current users: `cashflow-bar-chart.tsx`, `recurring-widget.tsx`.
+
+### `getTransactions({ limit, offset, ... })` — paginated UI or preview
+
+Use only when the UI itself is paginated (infinite scroll, "load more") or
+shows a small preview (e.g., 5 most recent).
+
+```tsx
+// Paginated view (transactions page)
+useInfiniteQuery({
+  queryFn: ({ pageParam = 0 }) =>
+    api.getTransactions({ limit: 50, offset: pageParam, scope }),
+  ...
+});
+
+// Small preview (review snippet)
+api.getTransactions({ limit: 5, uncategorized: true, scope });
+```
+
+## Adding a new `getAll*` helper
+
+If a new endpoint also paginates, follow this pattern from `lib/api.ts`:
+
+```ts
+getAllFoos: async (scope?: ViewScope): Promise<Foo[]> => {
+  const pageSize = 200;
+  let offset = 0;
+  const all: Foo[] = [];
+  for (;;) {
+    const page = await api.getFoos({ limit: pageSize, offset, scope });
+    all.push(...page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+  return all;
+},
+```
+
+## Backend limits
+
+The backend enforces `le=200` on `GET /transactions`. This is the per-page
+ceiling and is intentional — it prevents a single request from returning an
+unbounded result set. Do NOT raise or remove it; paginate on the frontend
+instead.
+
+## Checklist for new data-fetching code
+
+1. Does this component need the full dataset? → use `getAll*`
+2. Is this a paginated list or small preview? → use `get*` with a limit
+3. Never hardcode a limit like `200` and assume "that's enough"

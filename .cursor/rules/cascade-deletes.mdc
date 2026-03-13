@@ -1,0 +1,50 @@
+---
+description: Ensure all FK-dependent rows are deleted before the parent entity when writing delete endpoints
+globs: app/routes/*.py
+alwaysApply: false
+---
+
+# Cascade Deletes in Route Handlers
+
+PostgreSQL enforces foreign key constraints strictly. When deleting any entity, you **must** delete all rows in child tables that reference it first.
+
+## Checklist before deleting a record
+
+1. Identify every table with a foreign key pointing to the target table
+2. Delete child rows **before** the parent row, working from the deepest dependency up
+3. For transitive dependencies (e.g. Transaction → TransactionTag), walk the full chain
+
+## Current FK dependency graph
+
+```
+Account
+ ├── Transaction → TransactionTag
+ └── GoalAccountLink
+
+Goal
+ ├── GoalAccountLink
+ └── GoalContribution
+
+Transaction → TransactionTag
+
+Tag → TransactionTag
+
+Household
+ ├── HouseholdMember
+ ├── HouseholdInvitation
+ ├── Budget
+ └── Goal (→ see Goal above)
+```
+
+## Example — deleting an Account
+
+```python
+# 1. Remove tag links on the account's transactions
+# 2. Remove transactions
+# 3. Remove goal-account links
+# 4. Remove the account
+```
+
+## Testing
+
+SQLite (used in tests) does **not** enforce FK constraints by default. Always add explicit tests that create child rows (tags, goal links, etc.) before asserting a successful delete.

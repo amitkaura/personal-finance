@@ -1,0 +1,114 @@
+---
+description: Enforces test-driven development for all code changes. Tests must be written before implementation, and coverage reports must be run at the end of every turn.
+alwaysApply: true
+---
+
+# Test-Driven Development
+
+Every code change MUST follow the TDD workflow below. No exceptions.
+
+## Project Setup
+
+The backend uses a Python venv at `.venv/`. Always activate it before running pytest:
+
+```bash
+source .venv/bin/activate
+```
+
+Coverage tools are already installed:
+- **Backend**: `pytest-cov` (in `requirements.txt`)
+- **Frontend**: `@vitest/coverage-v8` (in `frontend/package.json` devDependencies)
+
+## TDD Workflow
+
+### 1. Write Tests First
+
+Before writing ANY implementation code:
+
+1. Identify which test file(s) to add to (or create):
+   - **Backend**: `tests/test_<module>.py` (pytest)
+   - **Frontend**: `frontend/tests/<component>.test.tsx` (Vitest + RTL)
+2. Write failing tests that define the expected behavior of the change.
+3. Run the new tests to confirm they FAIL (red phase):
+   - Backend: `source .venv/bin/activate && python3 -m pytest tests/test_<module>.py -x -v`
+   - Frontend: `cd frontend && npx vitest run tests/<file>.test.tsx`
+
+### 2. Implement the Code
+
+Write the minimum code needed to make the failing tests pass. Nothing more.
+
+### 3. Verify Tests Pass
+
+Run the relevant tests to confirm they PASS (green phase) using the same commands above.
+
+### 4. Refactor (if needed)
+
+Refactor while keeping tests green. Re-run after any refactor.
+
+## End-of-Turn Coverage Report
+
+At the END of every turn (after all code changes are complete), you MUST:
+
+### Step 1: Run Full Test Suites with Coverage
+
+**Backend:**
+```bash
+source .venv/bin/activate && python3 -m pytest --cov=app --cov-report=term-missing --tb=short -q
+```
+
+**Frontend:**
+```bash
+cd frontend && npx vitest run --coverage
+```
+
+### Step 2: Update the README
+
+Update `README.md` to reflect ALL changes made during this turn. Review each section below and update any that are affected:
+
+1. **Features** -- if new user-facing functionality was added, add or update bullet points under the relevant subsection in `## Features`.
+2. **Project Structure** -- if files or directories were added, removed, or renamed, update the tree in `## Project Structure`.
+3. **Data Models** -- if models were added or changed, update the table in `## Data Models`.
+4. **API Reference** -- if endpoints were added, removed, or changed, update the relevant table in `## API Reference`.
+5. **Testing (backend)** -- update the per-file test count table, headline totals (e.g. "What's tested (N tests across M files)"), and line coverage percentage.
+6. **Testing (frontend)** -- same as above for the frontend table.
+
+Only update sections that were actually affected by this turn's changes. Do not rewrite prose that hasn't changed.
+
+## Change-Specific Rules
+
+### New API Endpoint
+Write test(s) in `tests/test_<route>.py` covering success, auth, validation, and edge cases BEFORE writing the route handler.
+
+### New Frontend Component/Page
+Write test(s) in `frontend/tests/<component>.test.tsx` covering rendering, user interactions, and error states BEFORE building the component.
+
+### Bug Fix
+Write a test that reproduces the bug (confirms it fails) BEFORE writing the fix.
+
+### Refactor
+Ensure existing tests still pass. Add tests for any behavior not yet covered.
+
+### Model/Schema Change
+Add tests for new fields, constraints, and relationships BEFORE modifying models.
+
+## Test Conventions
+
+### Backend (pytest)
+- Use fixtures from `tests/conftest.py` (client, db session, test user, factories).
+- Mock external services (Plaid, Google, SMTP) -- never make real network calls.
+- Each test gets a fresh in-memory SQLite database.
+- Use `TestClient` from FastAPI for endpoint tests.
+
+### Frontend (Vitest + RTL)
+- Use helpers from `frontend/tests/helpers.tsx` (`renderWithProviders`, fixtures, mock API).
+- Mock API calls with `vi.hoisted()` + `vi.mock`.
+- Use `@testing-library/user-event` for interactions.
+- Use `@testing-library/jest-dom` matchers.
+
+## Checklist (verify before ending turn)
+
+- [ ] Tests written BEFORE implementation
+- [ ] All new tests pass
+- [ ] Full backend test suite passes
+- [ ] Full frontend test suite passes (if frontend was touched)
+- [ ] README updated: test counts, coverage, and any affected sections (features, structure, models, API)
