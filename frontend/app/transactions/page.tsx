@@ -265,30 +265,29 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {/* Search bar */}
-      <div className="relative mt-6">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Search by merchant name..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          aria-label="Search transactions"
-          className="w-full rounded-lg bg-muted py-2.5 pl-10 pr-10 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery("")}
-            aria-label="Clear search"
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
+      {/* Search + toggle + filters — single row */}
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search by merchant name..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label="Search transactions"
+            className="w-full rounded-lg bg-muted py-2 pl-10 pr-10 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              aria-label="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
 
-      {/* Primary filter row */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
         <div className="flex gap-1 rounded-lg bg-muted p-0.5">
           <button
             onClick={() => handleFilterChange("all")}

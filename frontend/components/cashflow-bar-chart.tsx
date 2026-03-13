@@ -78,7 +78,7 @@ function buildChartData(transactions: Transaction[], granularity: Granularity): 
       period: periodLabel(key, granularity),
       _periodKey: key,
       Income: Math.round(income * 100) / 100,
-      Expenses: Math.round(-expenses * 100) / 100,
+      Expenses: Math.round(expenses * 100) / 100,
     }));
 }
 
@@ -367,10 +367,10 @@ export default function CashFlowBarChart() {
               data={displayData}
               keys={["Income", "Expenses"]}
               indexBy="period"
-              groupMode="stacked"
-              margin={{ top: 10, right: 20, bottom: 40, left: 70 }}
+              groupMode="grouped"
+              margin={{ top: 10, right: 20, bottom: displayData.length > 8 ? 70 : 40, left: 80 }}
               padding={0.3}
-              valueScale={{ type: "symlog" }}
+              valueScale={{ type: "linear" }}
               colors={["#22c55e", "#ef4444"]}
               borderRadius={4}
               axisBottom={{
@@ -381,7 +381,8 @@ export default function CashFlowBarChart() {
               axisLeft={{
                 tickSize: 0,
                 tickPadding: 8,
-                format: (v) => formatCurrency(Math.abs(v as number)),
+                tickValues: 5,
+                format: (v) => formatCurrency(v as number),
               }}
               enableGridX={false}
               gridYValues={5}
@@ -394,7 +395,7 @@ export default function CashFlowBarChart() {
                     style={{ background: color }}
                   />
                   <span className="font-medium">{id}:</span>{" "}
-                  {formatCurrency(Math.abs(value as number))}
+                  {formatCurrency(value as number)}
                 </div>
               )}
               theme={{
@@ -402,13 +403,7 @@ export default function CashFlowBarChart() {
                 grid: { line: { stroke: "#27272a" } },
                 axis: { ticks: { text: { fill: "#71717a" } } },
               }}
-              markers={[
-                {
-                  axis: "y",
-                  value: 0,
-                  lineStyle: { stroke: "#3f3f46", strokeWidth: 1 },
-                },
-              ]}
+              markers={[]}
             />
           </div>
         )
