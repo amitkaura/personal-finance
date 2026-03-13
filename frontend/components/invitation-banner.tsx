@@ -11,22 +11,27 @@ export default function InvitationBanner() {
   const { pendingInvitations, refetch } = useHousehold();
   const queryClient = useQueryClient();
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
 
   const acceptMutation = useMutation({
     mutationFn: api.acceptInvitation,
     onSuccess: () => {
+      setError(null);
       queryClient.invalidateQueries();
       refetch();
     },
+    onError: () => setError("Failed to accept invitation. Please try again."),
   });
 
   const declineMutation = useMutation({
     mutationFn: api.declineInvitation,
     onSuccess: (_data, token) => {
+      setError(null);
       setDismissed((prev) => new Set(prev).add(token));
       queryClient.invalidateQueries({ queryKey: ["pendingInvitations"] });
       refetch();
     },
+    onError: () => setError("Failed to decline invitation. Please try again."),
   });
 
   const visible = pendingInvitations.filter((inv) => !dismissed.has(inv.token));
@@ -34,6 +39,11 @@ export default function InvitationBanner() {
 
   return (
     <div className="space-y-2 mb-6">
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-2.5 text-sm text-red-400">
+          {error}
+        </div>
+      )}
       {visible.map((inv) => (
         <div
           key={inv.id}

@@ -455,19 +455,19 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (176 tests across 12 files):**
+**What's tested (189 tests across 12 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `test_health` | 2 | Liveness and readiness endpoints |
 | `test_auth` | 6 | Google OAuth login (mocked), session, `/me`, logout |
-| `test_transactions` | 18 | CRUD, search, filters, pagination, manual vs. Plaid |
+| `test_transactions` | 24 | CRUD, search, filters, pagination, manual vs. Plaid, auto-categorize, recurring, date validation |
 | `test_accounts` | 11 | List, update type/name, unlink, summary aggregation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
-| `test_goals` | 30 | CRUD, shared goals, linked accounts, contributions, ownership |
+| `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_household` | 22 | Invite, accept, decline, cancel, rename, leave, scope |
-| `test_settings` | 19 | Profile, user settings, category rules, export, clear |
+| `test_settings` | 22 | Profile, user settings, category rules, export, clear, tag cleanup, sync validation |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_net_worth` | 5 | Snapshots, history |
 | `test_plaid` | 10 | Link token, exchange, sync, items (all Plaid calls mocked) |

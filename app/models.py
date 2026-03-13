@@ -85,6 +85,7 @@ class Transaction(SQLModel, table=True):
     """Financial transactions synced from Plaid or added manually."""
 
     __tablename__ = "transactions"
+    __table_args__ = (sa.Index("ix_transactions_date", "date"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
     plaid_transaction_id: str = Field(unique=True, index=True)
@@ -95,7 +96,7 @@ class Transaction(SQLModel, table=True):
     category: Optional[str] = None
     pending_status: bool = False
     needs_review: bool = Field(default=True)
-    account_id: Optional[int] = Field(default=None, foreign_key="accounts.id")
+    account_id: Optional[int] = Field(default=None, foreign_key="accounts.id", index=True)
     is_manual: bool = Field(default=False)
     notes: Optional[str] = None
     user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
@@ -222,6 +223,7 @@ class NetWorthSnapshot(SQLModel, table=True):
     """Point-in-time snapshot of net worth for historical tracking."""
 
     __tablename__ = "net_worth_snapshots"
+    __table_args__ = (UniqueConstraint("user_id", "date"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)
@@ -238,6 +240,7 @@ class Tag(SQLModel, table=True):
     """User-defined label for transactions."""
 
     __tablename__ = "tags"
+    __table_args__ = (UniqueConstraint("user_id", "name"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)
@@ -251,6 +254,7 @@ class TransactionTag(SQLModel, table=True):
     """Junction table linking transactions to tags."""
 
     __tablename__ = "transaction_tags"
+    __table_args__ = (UniqueConstraint("transaction_id", "tag_id"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
     transaction_id: int = Field(foreign_key="transactions.id", index=True)
@@ -292,8 +296,8 @@ class HouseholdInvitation(SQLModel, table=True):
     __tablename__ = "household_invitations"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    household_id: int = Field(foreign_key="households.id")
-    invited_by_user_id: int = Field(foreign_key="users.id")
+    household_id: int = Field(foreign_key="households.id", index=True)
+    invited_by_user_id: int = Field(foreign_key="users.id", index=True)
     invited_email: str = Field(index=True)
     token: str = Field(default_factory=lambda: uuid4().hex, unique=True, index=True)
     status: str = Field(default="pending")

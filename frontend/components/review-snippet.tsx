@@ -45,7 +45,7 @@ export default function ReviewSnippet() {
         </p>
       ) : (
         <ul className="mt-4 space-y-2">
-          {data!.map((txn) => (
+          {(data ?? []).map((txn) => (
             <li
               key={txn.id}
               className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2"

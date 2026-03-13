@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from tests.conftest import make_settings, make_transaction
+from tests.conftest import make_settings, make_tag, make_transaction
 
 
 # -- Profile ---------------------------------------------------------------
@@ -183,3 +183,34 @@ def test_clear_transactions(auth_client, session):
 
     check = client.get("/api/v1/transactions")
     assert check.json() == []
+
+
+def test_clear_transactions_with_tags(auth_client, session):
+    client, user = auth_client
+    txn = make_transaction(session, user)
+    tag = make_tag(session, user, name="test-tag")
+    client.post(f"/api/v1/tags/transactions/{txn.id}/tags/{tag.id}")
+
+    resp = client.delete("/api/v1/settings/transactions")
+    assert resp.status_code == 204
+
+    check = client.get("/api/v1/transactions")
+    assert check.json() == []
+
+
+# -- Sync validation -------------------------------------------------------
+
+def test_update_settings_invalid_sync_hour(auth_client, session):
+    client, user = auth_client
+    make_settings(session, user)
+    resp = client.put("/api/v1/settings", json={"sync_hour": 25})
+    assert resp.status_code == 400
+    assert "sync_hour" in resp.json()["detail"]
+
+
+def test_update_settings_invalid_sync_minute(auth_client, session):
+    client, user = auth_client
+    make_settings(session, user)
+    resp = client.put("/api/v1/settings", json={"sync_minute": -1})
+    assert resp.status_code == 400
+    assert "sync_minute" in resp.json()["detail"]

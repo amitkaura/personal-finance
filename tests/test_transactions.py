@@ -1,11 +1,11 @@
-"""Transaction CRUD, categories, filtering, and pagination tests."""
+"""Transaction CRUD, categories, filtering, pagination, recurring, and validation tests."""
 
 from datetime import date, timedelta
 from decimal import Decimal
 
 from app.main import app
 from app.auth import get_current_user
-from tests.conftest import make_account, make_transaction, make_user
+from tests.conftest import make_account, make_transaction, make_user, make_settings
 
 
 # -- List ------------------------------------------------------------------
@@ -182,3 +182,75 @@ def test_get_categories(auth_client):
     assert "Food & Dining" in cats
     assert "Groceries" in cats
     assert len(cats) > 5
+
+
+# -- Date validation -------------------------------------------------------
+
+def test_create_transaction_invalid_date(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/transactions", json={
+        "date": "not-a-date",
+        "amount": 10,
+        "merchant_name": "X",
+    })
+    assert resp.status_code == 400
+    assert "date" in resp.json()["detail"].lower()
+
+
+def test_update_transaction_invalid_date(auth_client, session):
+    client, user = auth_client
+    txn = make_transaction(session, user)
+    resp = client.patch(f"/api/v1/transactions/{txn.id}", json={"date": "2024-13-45"})
+    assert resp.status_code == 400
+
+
+# -- Auto-categorize -------------------------------------------------------
+
+def test_auto_categorize_no_pending(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/transactions/auto-categorize")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 0
+    assert data["categorized"] == 0
+
+
+def test_auto_categorize_with_rules(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user)
+    make_transaction(session, user, merchant="Starbucks Coffee", category=None,
+                     needs_review=True, account=acct, is_manual=False)
+    from app.models import CategoryRule
+    rule = CategoryRule(user_id=user.id, keyword="starbucks", category="Food & Dining")
+    session.add(rule)
+    session.commit()
+
+    resp = client.post("/api/v1/transactions/auto-categorize")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["categorized"] == 1
+
+
+# -- Recurring -------------------------------------------------------------
+
+def test_recurring_empty(auth_client):
+    client, _ = auth_client
+    resp = client.get("/api/v1/transactions/recurring")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_recurring_detects_pattern(auth_client, session):
+    client, user = auth_client
+    today = date.today()
+    for i in range(3):
+        make_transaction(session, user, merchant="Netflix", amount=Decimal("15.99"),
+                         txn_date=today - timedelta(days=30 * i))
+
+    resp = client.get("/api/v1/transactions/recurring")
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) >= 1
+    assert items[0]["merchant_name"] == "Netflix"
+    assert items[0]["frequency"] == "monthly"

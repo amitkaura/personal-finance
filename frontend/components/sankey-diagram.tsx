@@ -97,15 +97,23 @@ function labelFromId(id: string): string {
 export default function SankeyDiagram() {
   const scope = useScope();
   const queryLimit = 200;
-  const { data: transactions } = useQuery({
+  const { data: transactions, isLoading: txnLoading } = useQuery({
     queryKey: ["transactions", "all", scope, queryLimit],
     queryFn: () => api.getTransactions({ limit: queryLimit, scope }),
   });
 
-  const { data: accounts } = useQuery({
+  const { data: accounts, isLoading: acctLoading } = useQuery({
     queryKey: ["accounts", scope],
     queryFn: () => api.getAccounts(scope),
   });
+
+  if (txnLoading || acctLoading) {
+    return (
+      <div className="flex h-96 items-center justify-center rounded-2xl border border-border bg-card">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-accent" />
+      </div>
+    );
+  }
 
   if (!transactions?.length || !accounts?.length) {
     return (

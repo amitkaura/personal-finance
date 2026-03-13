@@ -82,7 +82,7 @@ export default function CashFlowBarChart() {
 
   const scope = useScope();
   const queryLimit = 200;
-  const { data: transactions } = useQuery({
+  const { data: transactions, isLoading } = useQuery({
     queryKey: ["transactions", "all", scope, queryLimit],
     queryFn: () => api.getTransactions({ limit: queryLimit, scope }),
   });
@@ -199,7 +199,11 @@ export default function CashFlowBarChart() {
         )}
       </div>
 
-      {chartData.length === 0 ? (
+      {isLoading ? (
+        <div className="flex h-80 items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-accent" />
+        </div>
+      ) : chartData.length === 0 ? (
         <div className="flex h-80 items-center justify-center">
           <p className="text-sm text-muted-foreground">
             No transaction data available.

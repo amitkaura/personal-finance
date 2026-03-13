@@ -117,7 +117,7 @@ export default function BudgetSnippet() {
 
           {hasPersonal && (
             <ul className="mt-3 space-y-1.5">
-              {data.items
+              {[...data.items]
                 .sort((a, b) => b.percent_used - a.percent_used)
                 .slice(0, 3)
                 .map((item) => (

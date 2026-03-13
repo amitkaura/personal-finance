@@ -357,3 +357,53 @@ def test_household_member_can_contribute(auth_client, session):
     })
     assert resp.status_code == 201
     assert resp.json()["amount"] == 300.0
+
+
+# -- Account ownership validation -----------------------------------------
+
+def test_create_goal_rejects_other_users_account(auth_client, session):
+    client, user = auth_client
+    other = make_user(session)
+    other_acct = make_account(session, other, name="Other Checking")
+    resp = client.post("/api/v1/goals", json={
+        "name": "Sneaky Goal",
+        "target_amount": 1000,
+        "linked_account_ids": [other_acct.id],
+    })
+    assert resp.status_code == 403
+    assert "does not belong" in resp.json()["detail"]
+
+
+def test_create_shared_goal_allows_household_accounts(auth_client, session):
+    client, user = auth_client
+    partner = make_user(session)
+    household = make_household(session, user)
+    add_household_member(session, household, partner)
+    partner_acct = make_account(session, partner, name="Partner Checking")
+    resp = client.post("/api/v1/goals", json={
+        "name": "Joint Vacation",
+        "target_amount": 5000,
+        "household_id": household.id,
+        "linked_account_ids": [partner_acct.id],
+    })
+    assert resp.status_code == 201
+
+
+# -- Date validation -------------------------------------------------------
+
+def test_create_goal_invalid_date(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/goals", json={
+        "name": "Bad Date Goal",
+        "target_amount": 1000,
+        "target_date": "not-a-date",
+    })
+    assert resp.status_code == 400
+    assert "date" in resp.json()["detail"].lower()
+
+
+def test_update_goal_invalid_date(auth_client, session):
+    client, user = auth_client
+    goal = make_goal(session, user)
+    resp = client.patch(f"/api/v1/goals/{goal.id}", json={"target_date": "2024-99-01"})
+    assert resp.status_code == 400
