@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import {
   Building2,
@@ -11,6 +11,8 @@ import {
   Unlink,
   LinkIcon,
   RefreshCw,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
@@ -112,12 +114,28 @@ function ConnectionCard({
     },
   });
 
+  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "success" | "error">("idle");
+
   const syncMutation = useMutation({
     mutationFn: () => api.triggerSync(connection.id),
+    onMutate: () => {
+      setSyncStatus("syncing");
+    },
     onSuccess: () => {
+      setSyncStatus("success");
       setTimeout(() => invalidate(), 3000);
     },
+    onError: () => {
+      setSyncStatus("error");
+    },
   });
+
+  useEffect(() => {
+    if (syncStatus === "success" || syncStatus === "error") {
+      const timer = setTimeout(() => setSyncStatus("idle"), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [syncStatus]);
 
   return (
     <>
@@ -155,18 +173,30 @@ function ConnectionCard({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${
-                  syncMutation.isPending ? "animate-spin" : ""
-                }`}
-              />
-              Sync
-            </button>
+            {syncStatus === "success" ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Synced
+              </span>
+            ) : syncStatus === "error" ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400">
+                <XCircle className="h-3.5 w-3.5" />
+                Sync failed
+              </span>
+            ) : (
+              <button
+                onClick={() => syncMutation.mutate()}
+                disabled={syncStatus === "syncing"}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${
+                    syncStatus === "syncing" ? "animate-spin" : ""
+                  }`}
+                />
+                {syncStatus === "syncing" ? "Syncing..." : "Sync"}
+              </button>
+            )}
             <button
               onClick={() => setConfirmUnlink(true)}
               className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"

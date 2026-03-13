@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import Image from "next/image";
 import {
   Check,
@@ -15,10 +15,12 @@ import {
   Trash2,
   Pencil,
   Tag,
+  SlidersHorizontal,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 import type { Transaction, Tag as TagType } from "@/lib/types";
+import ConfirmDialog from "@/components/confirm-dialog";
 
 export default function TransactionsPage() {
   const formatCurrency = useFormatCurrencyPrecise();
@@ -27,6 +29,8 @@ export default function TransactionsPage() {
   const isViewingOwn = scope === "personal";
   const [filter, setFilter] = useState<"review" | "all">("review");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersRef = useRef<HTMLDivElement>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -38,6 +42,19 @@ export default function TransactionsPage() {
   const [amountMin, setAmountMin] = useState("");
   const [amountMax, setAmountMax] = useState("");
   const queryLimit = 100;
+
+  const [deleteConfirm, setDeleteConfirm] = useState<Transaction | null>(null);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) {
+        setFiltersOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [filtersOpen]);
 
   const { data: transactions, isLoading } = useQuery({
     queryKey: ["transactions", filter, scope, queryLimit],
@@ -73,6 +90,7 @@ export default function TransactionsPage() {
     mutationFn: (id: number) => api.deleteTransaction(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      setDeleteConfirm(null);
     },
   });
 
@@ -84,14 +102,16 @@ export default function TransactionsPage() {
     },
   });
 
-  const hasActiveFilters =
-    searchQuery ||
-    selectedCategory ||
-    transactionType !== "all" ||
-    dateFrom ||
-    dateTo ||
-    amountMin ||
-    amountMax;
+  const activeFilterCount = [
+    selectedCategory,
+    transactionType !== "all" ? transactionType : "",
+    dateFrom,
+    dateTo,
+    amountMin,
+    amountMax,
+  ].filter(Boolean).length;
+
+  const hasActiveFilters = !!searchQuery || activeFilterCount > 0;
 
   const filteredTransactions = useMemo(() => {
     if (!transactions) return [];
@@ -165,6 +185,7 @@ export default function TransactionsPage() {
               onClick={() => autoCatMutation.mutate()}
               disabled={autoCatMutation.isPending}
               className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+              title="Use rules and AI to categorize uncategorized transactions"
             >
               {autoCatMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -216,7 +237,7 @@ export default function TransactionsPage() {
         )}
       </div>
 
-      {/* Filters */}
+      {/* Primary filter row */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <div className="flex gap-1 rounded-lg bg-muted p-0.5">
           <button
@@ -224,7 +245,7 @@ export default function TransactionsPage() {
             className={`inline-flex items-center gap-1.5 ${tabClass(filter === "review")}`}
           >
             <AlertCircle className="h-3.5 w-3.5" />
-            Needs Review
+            Uncategorized
           </button>
           <button
             onClick={() => setFilter("all")}
@@ -236,70 +257,122 @@ export default function TransactionsPage() {
 
         <div className="h-5 w-px bg-border" />
 
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className={selectClass}
-        >
-          <option value="">All Categories</option>
-          {categories?.map((cat) => (
-            <option key={cat} value={cat}>
-              {cat}
-            </option>
-          ))}
-        </select>
+        {/* Filters popover trigger */}
+        <div className="relative" ref={filtersRef}>
+          <button
+            onClick={() => setFiltersOpen(!filtersOpen)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Filters"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span
+                data-testid="filter-badge"
+                className="flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-accent-foreground"
+              >
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
 
-        <select
-          value={transactionType}
-          onChange={(e) =>
-            setTransactionType(e.target.value as "all" | "income" | "expense")
-          }
-          className={selectClass}
-        >
-          <option value="all">All Types</option>
-          <option value="income">Income</option>
-          <option value="expense">Expenses</option>
-        </select>
+          {filtersOpen && (
+            <div className="absolute left-0 z-20 mt-1 w-80 rounded-lg border border-border bg-card p-4 shadow-xl">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                    Category
+                  </label>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    className={`${selectClass} w-full`}
+                  >
+                    <option value="">All Categories</option>
+                    {categories?.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-        <div className="h-5 w-px bg-border" />
+                <div>
+                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                    Type
+                  </label>
+                  <select
+                    value={transactionType}
+                    onChange={(e) =>
+                      setTransactionType(
+                        e.target.value as "all" | "income" | "expense"
+                      )
+                    }
+                    className={`${selectClass} w-full`}
+                  >
+                    <option value="all">All Types</option>
+                    <option value="income">Income</option>
+                    <option value="expense">Expenses</option>
+                  </select>
+                </div>
 
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          className={inputClass}
-          aria-label="From date"
-        />
-        <span className="text-xs text-muted-foreground">to</span>
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          className={inputClass}
-          aria-label="To date"
-        />
+                <div>
+                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                    From
+                  </label>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className={`${inputClass} w-full`}
+                    aria-label="From date"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                    To
+                  </label>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className={`${inputClass} w-full`}
+                    aria-label="To date"
+                  />
+                </div>
 
-        <div className="h-5 w-px bg-border" />
-
-        <input
-          type="number"
-          value={amountMin}
-          onChange={(e) => setAmountMin(e.target.value)}
-          placeholder="Min $"
-          className={`${inputClass} w-20`}
-          min="0"
-          step="0.01"
-        />
-        <span className="text-xs text-muted-foreground">to</span>
-        <input
-          type="number"
-          value={amountMax}
-          onChange={(e) => setAmountMax(e.target.value)}
-          placeholder="Max $"
-          className={`${inputClass} w-20`}
-          min="0"
-          step="0.01"
-        />
+                <div>
+                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                    Min Amount
+                  </label>
+                  <input
+                    type="number"
+                    value={amountMin}
+                    onChange={(e) => setAmountMin(e.target.value)}
+                    placeholder="$0"
+                    className={`${inputClass} w-full`}
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                    Max Amount
+                  </label>
+                  <input
+                    type="number"
+                    value={amountMax}
+                    onChange={(e) => setAmountMax(e.target.value)}
+                    placeholder="$∞"
+                    className={`${inputClass} w-full`}
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {hasActiveFilters && (
           <button
@@ -356,13 +429,32 @@ export default function TransactionsPage() {
               onRecategorize={(id, cat) =>
                 recategorizeMutation.mutate({ id, category: cat })
               }
-              onDelete={(id) => deleteMutation.mutate(id)}
+              onDelete={(id) =>
+                setDeleteConfirm(
+                  filteredTransactions.find((t) => t.id === id) ?? null
+                )
+              }
               editable={isViewingOwn}
               showOwner={!isViewingOwn}
             />
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        title="Delete transaction?"
+        description={
+          deleteConfirm
+            ? `This will permanently delete the manual transaction "${deleteConfirm.merchant_name || "Unknown"}".`
+            : ""
+        }
+        confirmLabel="Delete"
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteConfirm && deleteMutation.mutate(deleteConfirm.id)}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </>
   );
 }
@@ -385,6 +477,18 @@ function TransactionRow({
   showOwner?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
 
   return (
     <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-4 py-3">
@@ -456,7 +560,7 @@ function TransactionRow({
 
       {!txn.category && editable && (
         <div className="flex items-center gap-2">
-          <div className="relative">
+          <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setOpen(!open)}
               className="inline-flex items-center gap-1 rounded-lg bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"

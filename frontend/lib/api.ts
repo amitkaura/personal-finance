@@ -160,7 +160,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  getTransactions: (params?: { limit?: number; offset?: number; scope?: ViewScope; uncategorized?: boolean }) => {
+  getTransactions: (params?: { limit?: number; offset?: number; scope?: ViewScope; uncategorized?: boolean; category?: string }) => {
     const query = new URLSearchParams();
     if (params?.uncategorized)
       query.set("uncategorized", "true");
@@ -168,6 +168,7 @@ export const api = {
     if (params?.offset) query.set("offset", String(params.offset));
     if (params?.scope && params.scope !== "personal")
       query.set("scope", params.scope);
+    if (params?.category) query.set("category", params.category);
     const qs = query.toString();
     return fetcher<Transaction[]>(`/transactions${qs ? `?${qs}` : ""}`);
   },

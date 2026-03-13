@@ -298,3 +298,9 @@ export interface HouseholdInvitation {
   invited_by_picture: string | null;
   status: string;
 }
+
+export interface Category {
+  id: number;
+  name: string;
+  user_id: number;
+}

@@ -95,7 +95,6 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Household")).toBeInTheDocument();
     expect(screen.getByText("General")).toBeInTheDocument();
     expect(screen.getByText("Sync Schedule")).toBeInTheDocument();
-    expect(screen.getByText("Category Rules")).toBeInTheDocument();
     expect(screen.getByText("AI Categorization")).toBeInTheDocument();
     expect(screen.getByText("Data Management")).toBeInTheDocument();
   });
@@ -252,6 +251,68 @@ describe("SettingsPage", () => {
         expect(screen.getByText("Currency")).toBeInTheDocument();
         expect(screen.getByText("Date Format")).toBeInTheDocument();
         expect(screen.getByText("Locale")).toBeInTheDocument();
+      });
+    });
+  });
+
+  // --- Enhancement: No CategoryRulesSection ---
+
+  it("does not render Category Rules section", async () => {
+    renderWithProviders(<SettingsPage />);
+    expect(screen.queryByText("Category Rules")).not.toBeInTheDocument();
+    expect(screen.queryByText("Add Rule")).not.toBeInTheDocument();
+  });
+
+  // --- Enhancement: Save flash messages ---
+
+  describe("GeneralSection save flash", () => {
+    it("shows 'Settings saved' after saving general settings", async () => {
+      mockApi.updateSettings.mockResolvedValue(TEST_SETTINGS);
+      const user = userEvent.setup();
+      renderWithProviders(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Currency")).toBeInTheDocument();
+      });
+
+      const currencySelect = screen.getByDisplayValue("CAD");
+      await user.selectOptions(currencySelect, "USD");
+      await user.click(screen.getAllByText("Save")[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Settings saved")).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("SyncSection save flash", () => {
+    it("shows 'Schedule saved' after saving sync settings", async () => {
+      mockApi.updateSettings.mockResolvedValue(TEST_SETTINGS);
+      const user = userEvent.setup();
+      renderWithProviders(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Sync Schedule")).toBeInTheDocument();
+      });
+
+      const syncSection = screen.getByText("Sync Schedule").closest(".rounded-2xl")!;
+      const toggleBtn = syncSection.querySelector("button[class*='rounded-full']")!;
+      await user.click(toggleBtn);
+
+      await waitFor(() => {
+        const saveBtns = Array.from(syncSection.querySelectorAll("button")).filter(
+          (b) => b.textContent?.includes("Save")
+        );
+        expect(saveBtns.length).toBeGreaterThan(0);
+      });
+
+      const saveBtns = Array.from(syncSection.querySelectorAll("button")).filter(
+        (b) => b.textContent?.includes("Save")
+      );
+      await user.click(saveBtns[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Schedule saved")).toBeInTheDocument();
       });
     });
   });

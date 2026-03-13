@@ -57,13 +57,14 @@ describe("Sidebar", () => {
     expect(screen.getByText("fino")).toBeInTheDocument();
   });
 
-  it("renders all navigation links", () => {
+  it("renders all navigation links including Categories", () => {
     render(<Sidebar />);
 
     const expectedLinks = [
       "Dashboard",
       "Accounts",
       "Transactions",
+      "Categories",
       "Budgets",
       "Goals",
       "Cash Flow",
@@ -141,5 +142,31 @@ describe("Sidebar", () => {
 
     const settingsLink = screen.getByText("Settings").closest("a")!;
     expect(settingsLink.getAttribute("href")).toBe("/settings");
+  });
+
+  it("Categories link has href /categories", () => {
+    render(<Sidebar />);
+    const categoriesLink = screen.getByText("Categories").closest("a")!;
+    expect(categoriesLink.getAttribute("href")).toBe("/categories");
+  });
+
+  it("Categories appears between Transactions and Budgets", () => {
+    render(<Sidebar />);
+    const links = screen.getAllByRole("link").filter(
+      (el) => el.closest("nav") !== null
+    );
+    const labels = links.map((el) => el.textContent);
+    const txnIdx = labels.indexOf("Transactions");
+    const catIdx = labels.indexOf("Categories");
+    const budIdx = labels.indexOf("Budgets");
+    expect(catIdx).toBe(txnIdx + 1);
+    expect(budIdx).toBe(catIdx + 1);
+  });
+
+  it("has navigation role and aria-label", () => {
+    render(<Sidebar />);
+    const nav = screen.getByRole("navigation");
+    expect(nav).toBeInTheDocument();
+    expect(nav).toHaveAttribute("aria-label");
   });
 });

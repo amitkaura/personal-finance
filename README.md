@@ -23,7 +23,8 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Supports US and Canadian institutions
 - Automatic balance refresh on every sync
 - Account type classification (depository, credit, loan, investment) with editable subtypes
-- Unlink individual accounts or revoke full institution connections
+- Unlink individual accounts or revoke full institution connections with confirmation dialog
+- **Sync feedback** -- clear "Synced" or "Sync failed" status after each connection sync
 - Accounts page hides unlinked accounts by default (toggle to show all)
 - **Manual accounts** -- create accounts without Plaid (all types: depository, credit, loan, investment)
 - Manually adjust balances on manual accounts at any time
@@ -40,10 +41,10 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
   - Duplicate detection skips previously imported rows
 - **Infinite scroll** -- browse the full transaction history with automatic pagination (loads 50 at a time as you scroll)
 - Server-side search by merchant name with filters for category, account, source (manual vs synced), and uncategorized
-- Filter by account, manual/synced source, income/expense type, date range, and amount range
+- **Filter popover** -- secondary filters (category, type, date range, amount range) collapsed behind a Filters button with active-filter count badge; click outside to dismiss
 - Inline auto-categorization: transactions are categorized on import using rules and LLM fallback
-- Manual "auto-categorize" button to batch-process any remaining uncategorized transactions
-- Delete manual transactions; Plaid-synced transactions are protected
+- Manual "auto-categorize" button with tooltip describing the AI/rules categorization process
+- **Delete confirmation** -- manual transaction deletion requires confirmation via dialog; Plaid-synced transactions are protected
 
 ### Hybrid Categorization
 1. **Rule-based** -- user-defined keyword-to-category mappings checked first
@@ -57,8 +58,9 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Filter and organize spending with tag-based labels
 
 ### Budgets
-- Monthly category budgets with configurable amounts
-- Optional rollover of unspent budget to the next month
+- Monthly category budgets with configurable amounts; **click-to-edit** inline amount editing
+- Optional rollover of unspent budget to the next month (tooltip explains rollover behavior)
+- **Accessible progress bars** -- ARIA `progressbar` role with `aria-valuenow`/`aria-valuemax`
 - Copy all budgets from one month to another
 - **Shared budgets** -- create household-level budgets editable by either partner
 - **Per-person spending breakdown** -- shared budget rows show a two-tone progress bar with per-person contribution amounts
@@ -132,13 +134,19 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Configurable per-route and global rate limiting (`memory` or `redis` backend)
 - Readiness endpoint (`/health/ready`) checks database and Redis dependencies
 
+### Navigation & Layout
+- **Mobile-responsive sidebar** -- hamburger toggle for small screens with overlay drawer
+- **Categories nav link** -- sidebar includes a dedicated Categories page link
+- Sidebar supports mobile open/close with backdrop click-to-dismiss
+- Main content uses responsive margin (`lg:ml-60`) for proper layout on all screen sizes
+
 ### Settings & Configuration
 - **Profile & Account** -- display name, avatar URL, bio (with Google fallback)
-- **General** -- currency (CAD, USD, EUR, GBP, etc.), date format, number locale
-- **Sync Schedule** -- enable/disable auto-sync, pick hour, minute, and timezone
-- **Category Rules** -- CRUD for keyword-to-category mappings
+- **General** -- currency (CAD, USD, EUR, GBP, etc.), date format, number locale; "Settings saved" flash on save
+- **Sync Schedule** -- enable/disable auto-sync, pick hour, minute, and timezone; "Schedule saved" flash on save
 - **AI Categorization** -- configure LLM base URL, model, and API key
-- **Data Management** -- CSV export of all transactions, bulk delete, factory reset (wipes all financial data while preserving login and household)
+- **Data Management** -- CSV export of all transactions, bulk CSV import, bulk delete, factory reset (wipes all financial data while preserving login and household)
+- Category rules management is on the dedicated Categories page
 
 ### Dashboard
 - Net worth hero card with total assets, liabilities, and net worth
@@ -562,26 +570,26 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (300 tests across 32 files — 73% line coverage):**
+**What's tested (307 tests across 32 files — 73% line coverage):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
 | `bulk-csv-import-dialog` | 19 | Bulk upload, multi-account mapping, preview, import flow |
 | `cashflow-bar-chart` | 17 | Bar chart rendering, drill-down, period switching, breadcrumbs |
-| `settings-page` | 14 | All sections: profile, household, general, data management |
+| `settings-page` | 17 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management |
 | `csv-import-dialog` | 14 | Upload step, auto-detection, debit/credit mapping, preview, import, results, errors, navigation |
-| `transactions-page` | 11 | Title, add form, search, filter tabs, category/type filters, loading, empty states, delete, badges, auto-categorize |
+| `transactions-page` | 13 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close |
 | `accounts-page` | 12 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
-| `budgets-page` | 10 | Title, month navigation, copy from last month, add form, loading, totals, empty state |
+| `budgets-page` | 8 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes |
 | `goals-page` | 10 | Title, empty state, active/completed sections, progress bar, target date, create dialog, shared summary, delete confirm |
-| `sidebar` | 10 | Brand, nav links, active state, user avatar, logout, hrefs |
+| `sidebar` | 13 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
 | `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
 | `reports-page` | 8 | Title, period selector, loading, summary cards, category bars, empty states, top merchants |
 | `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
 | `recurring-page` | 7 | Title, loading, empty state, recurring cards, summary, consistent/varies badges, sort dropdown |
-| `connections-page` | 7 | Title, empty state, loading, connection cards, sync/disconnect buttons, confirm dialog, link account |
+| `connections-page` | 6 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync |
 | `net-worth-history` | 6 | Loading, empty state with snapshot, chart rendering, change indicator, period selector |
 | `credit-cards-widget` | 6 | Loading, empty, card list, total owed, utilization bar colors, no-limit handling |
 | `recurring-widget` | 6 | Loading, empty, recurring detection, max 6 items, null merchant handling, sort by amount |
@@ -597,24 +605,25 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `sync-button` | 4 | Idle state, click triggers API, syncing state (disabled), returns to idle after delay |
 | `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
 | `link-account` | 4 | Idle button, token fetch on click, success message, pluralization |
-| `auth-gate` | 4 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, layout classes |
+| `auth-gate` | 6 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, hamburger menu button, toggle sidebar open, responsive margin classes |
 
 **Coverage by area:**
 
 | Area | Statements | Lines | Branches |
 |------|-----------|-------|----------|
-| `components/` | 85% | 84% | 80% |
+| `components/` | 85% | 84% | 79% |
 | `lib/` | 98% | 99% | 90% |
 | `app/cashflow/` | 100% | 100% | 100% |
 | `app/reports/` | 80% | 81% | 77% |
+| `app/connections/` | 77% | 79% | 65% |
 | `app/recurring/` | 78% | 77% | 68% |
 | `app/login/` | 76% | 76% | 50% |
-| `app/connections/` | 68% | 69% | 57% |
 | `app/accounts/` | 61% | 61% | 63% |
-| `app/transactions/` | 59% | 62% | 65% |
-| `app/budgets/` | 53% | 55% | 45% |
-| `app/goals/` | 41% | 43% | 45% |
-| **Overall** | **73%** | **73%** | **71%** |
+| `app/transactions/` | 59% | 60% | 48% |
+| `app/budgets/` | 53% | 55% | 32% |
+| `app/settings/` | 49% | 50% | 32% |
+| `app/goals/` | 41% | 43% | 26% |
+| **Overall** | **72%** | **73%** | **70%** |
 
 **Test infrastructure:**
 - jsdom environment with global mocks for `next/image`, `next/link`, `next/navigation`

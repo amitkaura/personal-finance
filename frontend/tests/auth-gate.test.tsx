@@ -1,68 +1,90 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import AuthGate from "@/components/auth-gate";
 import { TEST_USER } from "./helpers";
+import { render } from "@testing-library/react";
 
-const mockUseAuth = vi.fn();
+const mockAuthState = vi.hoisted(() => ({
+  value: {} as Record<string, unknown>,
+}));
 
 vi.mock("@/components/auth-provider", () => ({
-  useAuth: () => mockUseAuth(),
+  useAuth: () => mockAuthState.value,
 }));
 
 vi.mock("@/components/sidebar", () => ({
   __esModule: true,
-  default: () => <nav data-testid="sidebar">Sidebar</nav>,
+  default: (props: { isOpen?: boolean; onClose?: () => void }) => (
+    <aside data-testid="sidebar" data-open={props.isOpen ?? true}>
+      Sidebar
+    </aside>
+  ),
 }));
 
 vi.mock("@/components/invitation-banner", () => ({
   __esModule: true,
-  default: () => <div data-testid="invitation-banner">Banner</div>,
+  default: () => <div data-testid="invitation-banner" />,
 }));
 
 vi.mock("@/app/login/page", () => ({
   __esModule: true,
-  default: () => <div data-testid="login-page">Login Page</div>,
-}));
-
-vi.mock("@/components/household-provider", () => ({
-  useHousehold: () => ({
-    household: null, partner: null, scope: "personal",
-    setScope: vi.fn(), pendingInvitations: [], isLoading: false, refetch: vi.fn(),
-  }),
+  default: () => <div data-testid="login-page">Login</div>,
 }));
 
 describe("AuthGate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAuthState.value = {
+      user: TEST_USER,
+      isLoading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      refreshUser: vi.fn(),
+    };
   });
 
-  it("renders loading spinner when auth is loading", () => {
-    mockUseAuth.mockReturnValue({ user: null, isLoading: true });
-    render(<AuthGate><div>Child</div></AuthGate>);
-    expect(document.querySelector(".animate-spin")).toBeTruthy();
-    expect(screen.queryByText("Child")).toBeNull();
+  it("shows loading spinner when loading", () => {
+    mockAuthState.value = { ...mockAuthState.value, isLoading: true, user: null };
+    render(<AuthGate>Content</AuthGate>);
+    expect(document.querySelector(".animate-spin")).not.toBeNull();
   });
 
-  it("renders login page when not authenticated", () => {
-    mockUseAuth.mockReturnValue({ user: null, isLoading: false });
-    render(<AuthGate><div>Child</div></AuthGate>);
+  it("shows login page when unauthenticated", () => {
+    mockAuthState.value = { ...mockAuthState.value, isLoading: false, user: null };
+    render(<AuthGate>Content</AuthGate>);
     expect(screen.getByTestId("login-page")).toBeInTheDocument();
-    expect(screen.queryByText("Child")).toBeNull();
   });
 
   it("renders sidebar and children when authenticated", () => {
-    mockUseAuth.mockReturnValue({ user: TEST_USER, isLoading: false });
-    render(<AuthGate><div>Child Content</div></AuthGate>);
+    render(<AuthGate><div>Page Content</div></AuthGate>);
     expect(screen.getByTestId("sidebar")).toBeInTheDocument();
-    expect(screen.getByTestId("invitation-banner")).toBeInTheDocument();
-    expect(screen.getByText("Child Content")).toBeInTheDocument();
+    expect(screen.getByText("Page Content")).toBeInTheDocument();
   });
 
-  it("renders main with proper layout classes", () => {
-    mockUseAuth.mockReturnValue({ user: TEST_USER, isLoading: false });
+  it("renders a hamburger menu button for mobile", () => {
+    render(<AuthGate><div>Content</div></AuthGate>);
+    const hamburger = screen.getByLabelText("Toggle menu");
+    expect(hamburger).toBeInTheDocument();
+  });
+
+  it("clicking hamburger toggles sidebar open", async () => {
+    const user = userEvent.setup();
+    render(<AuthGate><div>Content</div></AuthGate>);
+
+    const hamburger = screen.getByLabelText("Toggle menu");
+    await user.click(hamburger);
+
+    const sidebar = screen.getByTestId("sidebar");
+    expect(sidebar.getAttribute("data-open")).toBe("true");
+  });
+
+  it("main content uses responsive margin (no fixed ml-60 on mobile)", () => {
     render(<AuthGate><div>Content</div></AuthGate>);
     const main = document.querySelector("main");
-    expect(main?.className).toContain("ml-60");
+    expect(main).not.toBeNull();
+    const classes = main!.className.split(/\s+/);
+    expect(classes).not.toContain("ml-60");
+    expect(classes).toContain("lg:ml-60");
   });
 });

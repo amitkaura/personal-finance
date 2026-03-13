@@ -97,7 +97,6 @@ export default function SettingsPage() {
         <HouseholdSection />
         <GeneralSection />
         <SyncSection />
-        <CategoryRulesSection />
         <AiSection />
         <DataSection />
       </div>
@@ -609,6 +608,7 @@ function GeneralSection() {
   });
 
   const [form, setForm] = useState<Partial<UserSettings>>({});
+  const [saved, setSaved] = useState(false);
 
   const currency = form.currency ?? settings?.currency ?? "CAD";
   const dateFormat = form.date_format ?? settings?.date_format ?? "YYYY-MM-DD";
@@ -624,6 +624,8 @@ function GeneralSection() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       setForm({});
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     },
   });
 
@@ -671,12 +673,17 @@ function GeneralSection() {
           </select>
         </div>
       </div>
-      {dirty && (
-        <div className="mt-4 flex justify-end">
-          <SaveButton
-            loading={mutation.isPending}
-            onClick={() => mutation.mutate(form)}
-          />
+      {(dirty || saved) && (
+        <div className="mt-4 flex items-center justify-end gap-3">
+          {saved && (
+            <span className="text-xs text-green-400">Settings saved</span>
+          )}
+          {dirty && (
+            <SaveButton
+              loading={mutation.isPending}
+              onClick={() => mutation.mutate(form)}
+            />
+          )}
         </div>
       )}
     </div>
@@ -693,6 +700,7 @@ function SyncSection() {
   });
 
   const [form, setForm] = useState<Partial<UserSettings>>({});
+  const [saved, setSaved] = useState(false);
 
   const enabled = form.sync_enabled ?? settings?.sync_enabled ?? true;
   const hour = form.sync_hour ?? settings?.sync_hour ?? 0;
@@ -710,6 +718,8 @@ function SyncSection() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       setForm({});
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     },
   });
 
@@ -785,12 +795,17 @@ function SyncSection() {
           </div>
         </div>
       )}
-      {dirty && (
-        <div className="mt-4 flex justify-end">
-          <SaveButton
-            loading={mutation.isPending}
-            onClick={() => mutation.mutate(form)}
-          />
+      {(dirty || saved) && (
+        <div className="mt-4 flex items-center justify-end gap-3">
+          {saved && (
+            <span className="text-xs text-green-400">Schedule saved</span>
+          )}
+          {dirty && (
+            <SaveButton
+              loading={mutation.isPending}
+              onClick={() => mutation.mutate(form)}
+            />
+          )}
         </div>
       )}
     </div>

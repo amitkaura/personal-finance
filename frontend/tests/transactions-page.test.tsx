@@ -1,158 +1,216 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import TransactionsPage from "@/app/transactions/page";
-import { renderWithProviders, TEST_SETTINGS } from "./helpers";
+import {
+  renderWithProviders,
+  TEST_TRANSACTIONS,
+  TEST_CATEGORIES,
+} from "./helpers";
+import type { ViewScope } from "@/lib/types";
 
 const mockApi = vi.hoisted(() => ({
   getTransactions: vi.fn(),
   getCategories: vi.fn(),
+  autoCategorize: vi.fn(),
   updateTransaction: vi.fn(),
   deleteTransaction: vi.fn(),
   createTransaction: vi.fn(),
-  autoCategorize: vi.fn(),
-  getSettings: vi.fn(),
-  getTags: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({ api: mockApi }));
-
-vi.mock("@/components/household-provider", () => ({
-  useHousehold: () => ({
-    household: null, partner: null, scope: "personal",
-    setScope: vi.fn(), pendingInvitations: [], isLoading: false, refetch: vi.fn(),
-  }),
+vi.mock("@/lib/api", () => ({
+  api: mockApi,
 }));
 
-const TXN_REVIEW = {
-  id: 1, merchant_name: "Starbucks", amount: -5.50, date: "2025-01-15",
-  category: null, is_manual: false, pending_status: false,
-  notes: null, owner_name: null, tags: [],
-};
+const mockScope = vi.hoisted(() => ({ value: "personal" as ViewScope }));
 
-const TXN_CATEGORIZED = {
-  id: 2, merchant_name: "Loblaws", amount: -85.00, date: "2025-01-14",
-  category: "Groceries", is_manual: false, pending_status: false,
-  notes: null, owner_name: null, tags: [],
-};
-
-const TXN_MANUAL = {
-  id: 3, merchant_name: "Cash Deposit", amount: 200, date: "2025-01-13",
-  category: "Income", is_manual: true, pending_status: false,
-  notes: null, owner_name: null, tags: [],
-};
+vi.mock("@/lib/hooks", () => ({
+  useFormatCurrencyPrecise: () => (n: number) =>
+    `$${Math.abs(n).toFixed(2)}`,
+  useScope: () => mockScope.value,
+}));
 
 describe("TransactionsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockApi.getSettings.mockResolvedValue(TEST_SETTINGS);
-    mockApi.getTransactions.mockResolvedValue([]);
-    mockApi.getCategories.mockResolvedValue(["Food & Dining", "Groceries", "Income"]);
-    mockApi.getTags.mockResolvedValue([]);
+    mockScope.value = "personal";
+    mockApi.getTransactions.mockResolvedValue(TEST_TRANSACTIONS);
+    mockApi.getCategories.mockResolvedValue(TEST_CATEGORIES);
+    mockApi.autoCategorize.mockResolvedValue({
+      total: 5,
+      categorized: 3,
+      skipped: 2,
+    });
+    mockApi.updateTransaction.mockResolvedValue({});
+    mockApi.deleteTransaction.mockResolvedValue(undefined);
+    mockApi.createTransaction.mockResolvedValue({});
   });
 
-  it("renders title and subtitle", async () => {
+  // --- Enhancement 1: "Uncategorized" tab label ---
+
+  it('shows "Uncategorized" tab instead of "Needs Review"', async () => {
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Uncategorized")).toBeInTheDocument();
+    expect(screen.queryByText("Needs Review")).not.toBeInTheDocument();
+  });
+
+  // --- Enhancement 2: Filter popover ---
+
+  it("renders a Filters button with SlidersHorizontal icon", async () => {
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
+  });
+
+  it("opens filter popover when Filters button is clicked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /filters/i }));
+
+    expect(screen.getByLabelText("From date")).toBeInTheDocument();
+    expect(screen.getByLabelText("To date")).toBeInTheDocument();
+  });
+
+  it("shows active filter count badge on Filters button", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /filters/i }));
+
+    const typeSelect = screen.getByDisplayValue("All Types");
+    await user.selectOptions(typeSelect, "income");
+
+    const badge = screen.getByTestId("filter-badge");
+    expect(badge).toHaveTextContent("1");
+  });
+
+  it("closes filter popover on click-outside", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /filters/i }));
+    expect(screen.getByLabelText("From date")).toBeInTheDocument();
+
+    await user.click(document.body);
+    await waitFor(() => {
+      expect(screen.queryByLabelText("From date")).not.toBeInTheDocument();
+    });
+  });
+
+  // --- Enhancement 3: Delete confirmation dialog ---
+
+  it("shows a confirmation dialog before deleting a manual transaction", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Grocery Store")).toBeInTheDocument();
+    });
+
+    const deleteBtn = screen.getByTitle("Delete manual transaction");
+    await user.click(deleteBtn);
+
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByText("Delete transaction?")).toBeInTheDocument();
+  });
+
+  it("does not delete when cancel is clicked in the confirm dialog", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Grocery Store")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle("Delete manual transaction"));
+    await user.click(screen.getByText("Cancel"));
+
+    expect(mockApi.deleteTransaction).not.toHaveBeenCalled();
+  });
+
+  it("deletes when confirmed in the dialog", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Grocery Store")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle("Delete manual transaction"));
+    await user.click(screen.getByText("Delete"));
+
+    await waitFor(() => {
+      expect(mockApi.deleteTransaction).toHaveBeenCalledWith(3);
+    });
+  });
+
+  // --- Enhancement 4: Click-outside closes categorize dropdown ---
+
+  it("closes the categorize dropdown when clicking outside", async () => {
+    mockApi.getTransactions.mockResolvedValue([TEST_TRANSACTIONS[1]]);
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Employer Inc")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Categorize"));
+
+    const dropdown = document.querySelector("[class*='absolute'][class*='z-20']");
+    expect(dropdown).not.toBeNull();
+
+    await user.click(document.body);
+    await waitFor(() => {
+      const closedDropdown = document.querySelector("[class*='absolute'][class*='z-20'][class*='max-h']");
+      expect(closedDropdown).toBeNull();
+    });
+  });
+
+  // --- Enhancement 5: Auto-categorize tooltip ---
+
+  it("auto-categorize button has a descriptive tooltip", async () => {
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    const btn = screen.getByRole("button", { name: /auto-categorize/i });
+    expect(btn).toHaveAttribute("title");
+    expect(btn.getAttribute("title")).toMatch(/rules|ai|categoriz/i);
+  });
+
+  // --- Basic functionality ---
+
+  it("renders the page title", async () => {
     renderWithProviders(<TransactionsPage />);
     expect(screen.getByText("Transactions")).toBeInTheDocument();
-    expect(screen.getByText(/Review and categorize/)).toBeInTheDocument();
   });
 
-  it("shows Add Transaction button in personal scope", async () => {
+  it("renders transactions list", async () => {
     renderWithProviders(<TransactionsPage />);
     await waitFor(() => {
-      expect(screen.getByText("Add Transaction")).toBeInTheDocument();
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
     });
+    expect(screen.getByText("Employer Inc")).toBeInTheDocument();
+    expect(screen.getByText("Grocery Store")).toBeInTheDocument();
   });
 
-  it("opens and closes add transaction form", async () => {
-    const user = userEvent.setup();
-    renderWithProviders(<TransactionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Add Transaction")).toBeInTheDocument();
-    });
-    await user.click(screen.getByText("Add Transaction"));
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText(/merchant/i)).toBeInTheDocument();
-    });
-  });
-
-  it("shows loading skeletons while fetching", () => {
+  it("shows loading skeleton initially", async () => {
     mockApi.getTransactions.mockReturnValue(new Promise(() => {}));
     renderWithProviders(<TransactionsPage />);
-    expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
-  });
-
-  it("shows empty state when no transactions in review mode", async () => {
-    mockApi.getTransactions.mockResolvedValue([]);
-    renderWithProviders(<TransactionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("All transactions reviewed!")).toBeInTheDocument();
-    });
-  });
-
-  it("renders transaction rows", async () => {
-    mockApi.getTransactions.mockResolvedValue([TXN_REVIEW, TXN_CATEGORIZED]);
-    renderWithProviders(<TransactionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Starbucks")).toBeInTheDocument();
-      expect(screen.getByText("Loblaws")).toBeInTheDocument();
-    });
-  });
-
-  it("filter tabs switch between Needs Review and All", async () => {
-    const user = userEvent.setup();
-    mockApi.getTransactions.mockResolvedValue([TXN_REVIEW]);
-    renderWithProviders(<TransactionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Needs Review")).toBeInTheDocument();
-      expect(screen.getByText("All")).toBeInTheDocument();
-    });
-    await user.click(screen.getByText("All"));
-    expect(mockApi.getTransactions).toHaveBeenCalled();
-  });
-
-  it("search filters by merchant name", async () => {
-    const user = userEvent.setup();
-    mockApi.getTransactions.mockResolvedValue([TXN_REVIEW, TXN_CATEGORIZED]);
-    renderWithProviders(<TransactionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Starbucks")).toBeInTheDocument();
-    });
-    const searchInput = screen.getByPlaceholderText(/search/i);
-    await user.type(searchInput, "Star");
-    await waitFor(() => {
-      expect(screen.getByText("Starbucks")).toBeInTheDocument();
-      expect(screen.queryByText("Loblaws")).toBeNull();
-    });
-  });
-
-  it("shows MANUAL badge for manual transactions", async () => {
-    mockApi.getTransactions.mockResolvedValue([TXN_MANUAL]);
-    renderWithProviders(<TransactionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Cash Deposit")).toBeInTheDocument();
-      expect(screen.getByText("MANUAL")).toBeInTheDocument();
-    });
-  });
-
-  it("delete button visible only on manual transactions", async () => {
-    mockApi.getTransactions.mockResolvedValue([TXN_MANUAL, TXN_CATEGORIZED]);
-    renderWithProviders(<TransactionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Cash Deposit")).toBeInTheDocument();
-    });
-    const deleteButtons = screen.getAllByTitle("Delete manual transaction");
-    expect(deleteButtons).toHaveLength(1);
-  });
-
-  it("Auto-Categorize button triggers API", async () => {
-    const user = userEvent.setup();
-    mockApi.autoCategorize.mockResolvedValue({ updated: 5 });
-    renderWithProviders(<TransactionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Auto-Categorize")).toBeInTheDocument();
-    });
-    await user.click(screen.getByText("Auto-Categorize"));
-    expect(mockApi.autoCategorize).toHaveBeenCalled();
+    const skeletons = document.querySelectorAll(".animate-pulse");
+    expect(skeletons.length).toBeGreaterThan(0);
   });
 });

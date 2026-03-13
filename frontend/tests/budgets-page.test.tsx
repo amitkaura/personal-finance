@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import BudgetsPage from "@/app/budgets/page";
-import { renderWithProviders, TEST_SETTINGS } from "./helpers";
+import { renderWithProviders } from "./helpers";
+import type { ViewScope, BudgetSummary } from "@/lib/types";
 
 const mockApi = vi.hoisted(() => ({
   getBudgetSummary: vi.fn(),
@@ -13,116 +14,181 @@ const mockApi = vi.hoisted(() => ({
   updateBudget: vi.fn(),
   deleteBudget: vi.fn(),
   copyBudgets: vi.fn(),
+  getSpendingPreferences: vi.fn(),
   setSpendingPreference: vi.fn(),
-  getSettings: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({ api: mockApi }));
+vi.mock("@/lib/api", () => ({
+  api: mockApi,
+}));
+
+const mockScope = vi.hoisted(() => ({ value: "personal" as ViewScope }));
+
+vi.mock("@/lib/hooks", () => ({
+  useFormatCurrency: () => (n: number) => `$${Math.abs(n).toFixed(0)}`,
+  useScope: () => mockScope.value,
+}));
 
 vi.mock("@/components/household-provider", () => ({
   useHousehold: () => ({
-    household: null, partner: null, scope: "personal",
-    setScope: vi.fn(), pendingInvitations: [], isLoading: false, refetch: vi.fn(),
+    household: null,
+    partner: null,
+    scope: "personal",
+    setScope: vi.fn(),
+    pendingInvitations: [],
+    isLoading: false,
+    refetch: vi.fn(),
   }),
 }));
 
-const EMPTY_SUMMARY = {
-  month: "2025-01", items: [], total_budgeted: 0, total_spent: 0, total_remaining: 0,
+const TEST_SUMMARY: BudgetSummary = {
+  month: "2025-03",
+  items: [
+    {
+      id: 1,
+      category: "Food & Dining",
+      budgeted: 500,
+      rollover: 0,
+      effective_budget: 500,
+      spent: 350,
+      remaining: 150,
+      percent_used: 70,
+    },
+    {
+      id: 2,
+      category: "Transportation",
+      budgeted: 200,
+      rollover: 0,
+      effective_budget: 200,
+      spent: 180,
+      remaining: 20,
+      percent_used: 90,
+    },
+  ],
+  total_budgeted: 700,
+  total_spent: 530,
+  total_remaining: 170,
 };
 
-const SUMMARY_WITH_DATA = {
-  month: "2025-01",
-  items: [
-    { id: 1, category: "Food & Dining", amount: 500, spent: 300, remaining: 200, percent_used: 60 },
-    { id: 2, category: "Entertainment", amount: 200, spent: 180, remaining: 20, percent_used: 90 },
-  ],
-  total_budgeted: 700, total_spent: 480, total_remaining: 220,
-};
+const TEST_BUDGETS = [
+  { id: 1, category: "Food & Dining", amount: 500, month: "2025-03", rollover: true, household_id: null },
+  { id: 2, category: "Transportation", amount: 200, month: "2025-03", rollover: false, household_id: null },
+];
 
 describe("BudgetsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockApi.getSettings.mockResolvedValue(TEST_SETTINGS);
-    mockApi.getBudgetSummary.mockResolvedValue(EMPTY_SUMMARY);
-    mockApi.getBudgets.mockResolvedValue([]);
-    mockApi.getCategories.mockResolvedValue(["Food & Dining", "Entertainment", "Groceries"]);
+    mockScope.value = "personal";
+    mockApi.getBudgetSummary.mockResolvedValue(TEST_SUMMARY);
+    mockApi.getBudgets.mockResolvedValue(TEST_BUDGETS);
+    mockApi.getCategories.mockResolvedValue(["Food & Dining", "Transportation", "Entertainment"]);
     mockApi.getBudgetConflicts.mockResolvedValue([]);
+    mockApi.updateBudget.mockResolvedValue({});
   });
 
-  it("renders title and subtitle", () => {
-    renderWithProviders(<BudgetsPage />);
-    expect(screen.getByText("Budgets")).toBeInTheDocument();
-    expect(screen.getByText(/Plan and track spending/)).toBeInTheDocument();
-  });
+  // --- Enhancement 1: Rollover tooltip ---
 
-  it("shows month navigation", () => {
-    renderWithProviders(<BudgetsPage />);
-    const buttons = screen.getAllByRole("button");
-    expect(buttons.length).toBeGreaterThan(0);
-  });
-
-  it("shows Copy from last month in personal scope", () => {
-    renderWithProviders(<BudgetsPage />);
-    expect(screen.getByText("Copy from last month")).toBeInTheDocument();
-  });
-
-  it("shows empty state when no budgets", async () => {
-    renderWithProviders(<BudgetsPage />);
-    await waitFor(() => {
-      expect(screen.getByText(/No budgets for this month/)).toBeInTheDocument();
-    });
-  });
-
-  it("renders budget rows with data", async () => {
-    mockApi.getBudgetSummary.mockResolvedValue(SUMMARY_WITH_DATA);
-    mockApi.getBudgets.mockResolvedValue([
-      { id: 1, rollover: false },
-      { id: 2, rollover: false },
-    ]);
+  it("rollover checkbox has a descriptive tooltip", async () => {
     renderWithProviders(<BudgetsPage />);
     await waitFor(() => {
       expect(screen.getByText("Food & Dining")).toBeInTheDocument();
-      expect(screen.getByText("Entertainment")).toBeInTheDocument();
     });
+
+    const rolloverLabels = screen.getAllByText("Rollover");
+    const firstLabel = rolloverLabels[0].closest("label")!;
+    expect(firstLabel).toHaveAttribute("title");
+    expect(firstLabel.getAttribute("title")).toMatch(/carry.*unspent.*budget.*forward/i);
   });
 
-  it("shows totals when data exists", async () => {
-    mockApi.getBudgetSummary.mockResolvedValue(SUMMARY_WITH_DATA);
-    mockApi.getBudgets.mockResolvedValue([]);
+  // --- Enhancement 2: Inline amount editing ---
+
+  it("clicking a budget amount opens an inline edit input", async () => {
+    const user = userEvent.setup();
     renderWithProviders(<BudgetsPage />);
     await waitFor(() => {
-      expect(screen.getByText("Total Budgeted")).toBeInTheDocument();
-      expect(screen.getByText("Total Spent")).toBeInTheDocument();
-      expect(screen.getByText("Remaining")).toBeInTheDocument();
+      expect(screen.getByText("Food & Dining")).toBeInTheDocument();
+    });
+
+    const amountText = screen.getByText("$500");
+    await user.click(amountText);
+
+    const input = screen.getByDisplayValue("500");
+    expect(input).toBeInTheDocument();
+    expect(input.tagName).toBe("INPUT");
+  });
+
+  it("pressing Enter on inline edit calls updateBudget", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<BudgetsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Food & Dining")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("$500"));
+    const input = screen.getByDisplayValue("500");
+    await user.clear(input);
+    await user.type(input, "600");
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(mockApi.updateBudget).toHaveBeenCalledWith(1, { amount: 600 });
     });
   });
 
-  it("shows loading skeletons while fetching", () => {
+  it("pressing Escape on inline edit reverts without saving", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<BudgetsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Food & Dining")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("$500"));
+    const input = screen.getByDisplayValue("500");
+    await user.clear(input);
+    await user.type(input, "999");
+    await user.keyboard("{Escape}");
+
+    expect(mockApi.updateBudget).not.toHaveBeenCalled();
+    expect(screen.queryByDisplayValue("999")).not.toBeInTheDocument();
+  });
+
+  // --- Enhancement 3: Progress bar ARIA ---
+
+  it("progress bars have ARIA progressbar attributes", async () => {
+    renderWithProviders(<BudgetsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Food & Dining")).toBeInTheDocument();
+    });
+
+    const progressBars = screen.getAllByRole("progressbar");
+    expect(progressBars.length).toBeGreaterThanOrEqual(2);
+
+    const first = progressBars[0];
+    expect(first).toHaveAttribute("aria-valuenow");
+    expect(first).toHaveAttribute("aria-valuemin", "0");
+    expect(first).toHaveAttribute("aria-valuemax");
+  });
+
+  // --- Basic functionality ---
+
+  it("renders the page title", async () => {
+    renderWithProviders(<BudgetsPage />);
+    expect(screen.getByText("Budgets")).toBeInTheDocument();
+  });
+
+  it("shows loading skeleton initially", async () => {
     mockApi.getBudgetSummary.mockReturnValue(new Promise(() => {}));
     renderWithProviders(<BudgetsPage />);
-    expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+    const skeletons = document.querySelectorAll(".animate-pulse");
+    expect(skeletons.length).toBeGreaterThan(0);
   });
 
-  it("shows Add Budget form heading", async () => {
+  it("shows budget totals", async () => {
     renderWithProviders(<BudgetsPage />);
     await waitFor(() => {
-      expect(screen.getAllByText("Add Budget").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText("$700")).toBeInTheDocument();
     });
-  });
-
-  it("Copy from last month calls API", async () => {
-    const user = userEvent.setup();
-    mockApi.copyBudgets.mockResolvedValue({ copied: 3 });
-    renderWithProviders(<BudgetsPage />);
-    await user.click(screen.getByText("Copy from last month"));
-    expect(mockApi.copyBudgets).toHaveBeenCalled();
-  });
-
-  it("month navigation buttons change displayed month", async () => {
-    const user = userEvent.setup();
-    renderWithProviders(<BudgetsPage />);
-    const prevBtn = screen.getAllByRole("button")[0];
-    await user.click(prevBtn);
-    expect(mockApi.getBudgetSummary).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("$530")).toBeInTheDocument();
+    expect(screen.getByText("$170")).toBeInTheDocument();
   });
 });

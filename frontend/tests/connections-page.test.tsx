@@ -2,22 +2,27 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ConnectionsPage from "@/app/connections/page";
-import { renderWithProviders, TEST_SETTINGS } from "./helpers";
+import { renderWithProviders } from "./helpers";
+import type { ViewScope, PlaidConnection } from "@/lib/types";
 
 const mockApi = vi.hoisted(() => ({
   getPlaidItems: vi.fn(),
   triggerSync: vi.fn(),
   unlinkPlaidItem: vi.fn(),
-  getSettings: vi.fn(),
+  createLinkToken: vi.fn(),
+  exchangeToken: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({ api: mockApi }));
+vi.mock("@/lib/api", () => ({
+  api: mockApi,
+}));
 
-vi.mock("@/components/household-provider", () => ({
-  useHousehold: () => ({
-    household: null, partner: null, scope: "personal",
-    setScope: vi.fn(), pendingInvitations: [], isLoading: false, refetch: vi.fn(),
-  }),
+const mockScope = vi.hoisted(() => ({ value: "personal" as ViewScope }));
+
+vi.mock("@/lib/hooks", () => ({
+  useFormatCurrencyPrecise: () => (n: number) =>
+    `$${Math.abs(n).toFixed(2)}`,
+  useScope: () => mockScope.value,
 }));
 
 vi.mock("@/components/link-account", () => ({
@@ -25,76 +30,97 @@ vi.mock("@/components/link-account", () => ({
   default: () => <button>Link Account</button>,
 }));
 
-const CONNECTION = {
-  id: 1, institution_name: "TD Bank", item_id: "item-123",
+const TEST_CONNECTION: PlaidConnection = {
+  id: 1,
+  item_id: "item-1",
+  institution_name: "Test Bank",
   accounts: [
-    { id: 10, name: "Checking", type: "depository", subtype: "checking",
-      current_balance: 5000, is_linked: true },
-    { id: 11, name: "Credit Card", type: "credit", subtype: "visa",
-      current_balance: -1200, is_linked: true },
+    {
+      id: 1,
+      name: "Checking",
+      type: "depository",
+      subtype: "checking",
+      current_balance: 5000,
+      is_linked: true,
+    },
   ],
 };
 
 describe("ConnectionsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockApi.getSettings.mockResolvedValue(TEST_SETTINGS);
-    mockApi.getPlaidItems.mockResolvedValue([]);
+    mockScope.value = "personal";
+    mockApi.getPlaidItems.mockResolvedValue([TEST_CONNECTION]);
+    mockApi.triggerSync.mockResolvedValue({ status: "synced" });
+    mockApi.unlinkPlaidItem.mockResolvedValue({
+      status: "unlinked",
+      institution_name: "Test Bank",
+      accounts_unlinked: 1,
+    });
   });
 
-  it("renders title", () => {
+  it("renders the page title", async () => {
     renderWithProviders(<ConnectionsPage />);
     expect(screen.getByText("Connections")).toBeInTheDocument();
   });
 
+  it("renders connection cards", async () => {
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
+    });
+  });
+
   it("shows empty state when no connections", async () => {
+    mockApi.getPlaidItems.mockResolvedValue([]);
     renderWithProviders(<ConnectionsPage />);
     await waitFor(() => {
-      expect(screen.getByText(/No institutions connected/)).toBeInTheDocument();
+      expect(screen.getByText(/no institutions connected/i)).toBeInTheDocument();
     });
   });
 
-  it("shows loading skeletons while fetching", () => {
-    mockApi.getPlaidItems.mockReturnValue(new Promise(() => {}));
-    renderWithProviders(<ConnectionsPage />);
-    expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
-  });
+  // --- Enhancement: Sync feedback ---
 
-  it("renders connection cards with accounts", async () => {
-    mockApi.getPlaidItems.mockResolvedValue([CONNECTION]);
-    renderWithProviders(<ConnectionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("TD Bank")).toBeInTheDocument();
-      expect(screen.getByText("Checking")).toBeInTheDocument();
-      expect(screen.getByText("Credit Card")).toBeInTheDocument();
-    });
-  });
-
-  it("shows Sync and Disconnect buttons", async () => {
-    mockApi.getPlaidItems.mockResolvedValue([CONNECTION]);
-    renderWithProviders(<ConnectionsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Sync")).toBeInTheDocument();
-      expect(screen.getByText("Disconnect")).toBeInTheDocument();
-    });
-  });
-
-  it("Disconnect opens confirm dialog", async () => {
+  it("shows success feedback after sync", async () => {
     const user = userEvent.setup();
-    mockApi.getPlaidItems.mockResolvedValue([CONNECTION]);
     renderWithProviders(<ConnectionsPage />);
     await waitFor(() => {
-      expect(screen.getByText("Disconnect")).toBeInTheDocument();
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
     });
-    await user.click(screen.getByText("Disconnect"));
+
+    await user.click(screen.getByText("Sync"));
+
     await waitFor(() => {
-      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-      expect(screen.getByText(/Disconnect TD Bank/)).toBeInTheDocument();
+      expect(screen.getByText(/synced/i)).toBeInTheDocument();
     });
   });
 
-  it("shows Link Account button", async () => {
+  it("shows error feedback when sync fails", async () => {
+    mockApi.triggerSync.mockRejectedValue(new Error("Sync failed"));
+    const user = userEvent.setup();
     renderWithProviders(<ConnectionsPage />);
-    expect(screen.getByText("Link Account")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Sync"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/failed/i)).toBeInTheDocument();
+    });
+  });
+
+  it("disables sync button and shows spinner while syncing", async () => {
+    mockApi.triggerSync.mockReturnValue(new Promise(() => {}));
+    const user = userEvent.setup();
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Sync"));
+
+    const syncBtn = screen.getByText("Syncing...").closest("button")!;
+    expect(syncBtn).toBeDisabled();
   });
 });

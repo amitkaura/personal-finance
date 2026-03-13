@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import {
   Plus,
   ChevronLeft,
@@ -131,8 +131,8 @@ export default function BudgetsPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, rollover }: { id: number; rollover: boolean }) =>
-      api.updateBudget(id, { rollover }),
+    mutationFn: ({ id, rollover, amount }: { id: number; rollover?: boolean; amount?: number }) =>
+      api.updateBudget(id, { ...(rollover !== undefined && { rollover }), ...(amount !== undefined && { amount }) }),
     onSuccess: invalidate,
   });
 
@@ -377,6 +377,7 @@ export default function BudgetsPage() {
                 formatCurrency={formatCurrency}
                 editable
                 onToggleRollover={(id, enabled) => updateMutation.mutate({ id, rollover: enabled })}
+                onUpdateAmount={(id, amount) => updateMutation.mutate({ id, amount })}
                 onDelete={(item) => setDeleteConfirm(item)}
                 isUpdating={updateMutation.isPending}
               />
@@ -387,6 +388,7 @@ export default function BudgetsPage() {
                 formatCurrency={formatCurrency}
                 editable={false}
                 onToggleRollover={() => {}}
+                onUpdateAmount={() => {}}
                 onDelete={() => {}}
                 isUpdating={false}
               />
@@ -397,6 +399,7 @@ export default function BudgetsPage() {
                 formatCurrency={formatCurrency}
                 editable
                 onToggleRollover={(id, enabled) => updateMutation.mutate({ id, rollover: enabled })}
+                onUpdateAmount={(id, amount) => updateMutation.mutate({ id, amount })}
                 onDelete={(item) => setDeleteConfirm(item)}
                 isUpdating={updateMutation.isPending}
                 showBreakdown
@@ -424,6 +427,9 @@ export default function BudgetsPage() {
                       onToggleRollover={(enabled) =>
                         updateMutation.mutate({ id: item.id, rollover: enabled })
                       }
+                      onUpdateAmount={(amount) =>
+                        updateMutation.mutate({ id: item.id, amount } as any)
+                      }
                       onDelete={() => setDeleteConfirm(item)}
                       isUpdating={updateMutation.isPending}
                       editable={isViewingOwn}
@@ -442,6 +448,7 @@ export default function BudgetsPage() {
                     formatCurrency={formatCurrency}
                     editable
                     onToggleRollover={(id, enabled) => updateMutation.mutate({ id, rollover: enabled })}
+                    onUpdateAmount={(id, amount) => updateMutation.mutate({ id, amount })}
                     onDelete={(item) => setDeleteConfirm(item)}
                     isUpdating={updateMutation.isPending}
                     showBreakdown
@@ -478,6 +485,7 @@ function BudgetSection({
   formatCurrency,
   editable,
   onToggleRollover,
+  onUpdateAmount,
   onDelete,
   isUpdating,
   showBreakdown = false,
@@ -488,6 +496,7 @@ function BudgetSection({
   formatCurrency: (n: number) => string;
   editable: boolean;
   onToggleRollover: (id: number, enabled: boolean) => void;
+  onUpdateAmount: (id: number, amount: number) => void;
   onDelete: (item: BudgetSummaryItem) => void;
   isUpdating: boolean;
   showBreakdown?: boolean;
@@ -526,6 +535,7 @@ function BudgetSection({
               rolloverEnabled={rolloverMap.get(item.id) ?? false}
               formatCurrency={formatCurrency}
               onToggleRollover={(enabled) => onToggleRollover(item.id, enabled)}
+              onUpdateAmount={(amount) => onUpdateAmount(item.id, amount)}
               onDelete={() => onDelete(item)}
               isUpdating={isUpdating}
               editable={editable}
@@ -543,6 +553,7 @@ function BudgetItemRow({
   rolloverEnabled,
   formatCurrency,
   onToggleRollover,
+  onUpdateAmount,
   onDelete,
   isUpdating,
   editable = true,
@@ -552,6 +563,7 @@ function BudgetItemRow({
   rolloverEnabled: boolean;
   formatCurrency: (n: number) => string;
   onToggleRollover: (enabled: boolean) => void;
+  onUpdateAmount: (amount: number) => void;
   onDelete: () => void;
   isUpdating: boolean;
   editable?: boolean;
@@ -559,9 +571,31 @@ function BudgetItemRow({
 }) {
   const percent = Math.min(item.percent_used, 100);
   const color = progressColor(item.percent_used);
+  const [editingAmount, setEditingAmount] = useState(false);
+  const [amountValue, setAmountValue] = useState(String(item.budgeted));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingAmount && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editingAmount]);
+
+  function handleAmountKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") {
+      const val = parseFloat(amountValue);
+      if (val > 0) {
+        onUpdateAmount(val);
+      }
+      setEditingAmount(false);
+    } else if (e.key === "Escape") {
+      setAmountValue(String(item.budgeted));
+      setEditingAmount(false);
+    }
+  }
 
   const breakdownEntries = breakdown ? Object.entries(breakdown) : [];
-  const totalForBar = breakdownEntries.reduce((s, [, v]) => s + v, 0) || item.spent;
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
@@ -571,7 +605,35 @@ function BudgetItemRow({
             <p className="font-medium">{item.category}</p>
             <div className="flex items-center gap-3 text-sm">
               <span className="text-muted-foreground">
-                {formatCurrency(item.spent)} / {formatCurrency(item.effective_budget)}
+                {formatCurrency(item.spent)} /{" "}
+                {editable && !editingAmount ? (
+                  <button
+                    onClick={() => {
+                      setAmountValue(String(item.budgeted));
+                      setEditingAmount(true);
+                    }}
+                    className="cursor-pointer hover:underline"
+                  >
+                    {formatCurrency(item.effective_budget)}
+                  </button>
+                ) : editingAmount ? (
+                  <input
+                    ref={inputRef}
+                    type="number"
+                    value={amountValue}
+                    onChange={(e) => setAmountValue(e.target.value)}
+                    onKeyDown={handleAmountKeyDown}
+                    onBlur={() => {
+                      setAmountValue(String(item.budgeted));
+                      setEditingAmount(false);
+                    }}
+                    className="w-20 rounded bg-muted px-1.5 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-accent"
+                    min="0"
+                    step="0.01"
+                  />
+                ) : (
+                  formatCurrency(item.effective_budget)
+                )}
               </span>
               <span
                 className={
@@ -586,7 +648,14 @@ function BudgetItemRow({
           </div>
 
           {/* Progress bar */}
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+          <div
+            className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-valuenow={item.spent}
+            aria-valuemin={0}
+            aria-valuemax={item.effective_budget}
+            aria-label={`${item.category} budget progress`}
+          >
             {breakdownEntries.length > 1 && item.effective_budget > 0 ? (
               <div className="flex h-full">
                 {breakdownEntries.map(([name, amount], i) => {
@@ -628,7 +697,10 @@ function BudgetItemRow({
         <div className="flex items-center gap-2 sm:shrink-0">
           {editable && (
             <>
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <label
+                className="flex cursor-pointer items-center gap-2 text-sm"
+                title="Carry unspent budget forward to the next month"
+              >
                 <input
                   type="checkbox"
                   checked={rolloverEnabled}

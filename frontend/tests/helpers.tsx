@@ -7,6 +7,8 @@ import type {
   HouseholdInvitation,
   HouseholdMember,
   UserSettings,
+  Transaction,
+  Account,
 } from "@/lib/types";
 
 // ─── Fixtures ──────────────────────────────────────────────────────
@@ -81,6 +83,66 @@ export const TEST_SETTINGS: UserSettings = {
   llm_api_key_set: false,
   llm_model: "",
 };
+
+export const TEST_ACCOUNT: Account = {
+  id: 1,
+  user_id: 1,
+  name: "Checking",
+  official_name: "Primary Checking",
+  type: "depository",
+  subtype: "checking",
+  current_balance: 5000,
+  available_balance: 4800,
+  credit_limit: null,
+  currency_code: "CAD",
+  plaid_account_id: "plaid-1",
+  plaid_item_id: 1,
+  is_linked: true,
+};
+
+export const TEST_TRANSACTIONS: Transaction[] = [
+  {
+    id: 1,
+    date: "2025-03-01",
+    amount: 42.5,
+    merchant_name: "Coffee Shop",
+    category: "Food & Dining",
+    pending_status: false,
+    account_id: 1,
+    plaid_transaction_id: "txn-1",
+    is_manual: false,
+    notes: null,
+    tags: [],
+  },
+  {
+    id: 2,
+    date: "2025-03-02",
+    amount: -1500,
+    merchant_name: "Employer Inc",
+    category: null,
+    pending_status: false,
+    account_id: 1,
+    plaid_transaction_id: "txn-2",
+    is_manual: false,
+    notes: null,
+    tags: [],
+  },
+  {
+    id: 3,
+    date: "2025-03-03",
+    amount: 25.0,
+    merchant_name: "Grocery Store",
+    category: null,
+    pending_status: false,
+    account_id: 1,
+    plaid_transaction_id: "",
+    is_manual: true,
+    notes: "Weekly groceries",
+    tags: [{ id: 1, name: "essentials", color: "#4ade80" }],
+  },
+];
+
+export const TEST_CATEGORIES = ["Food & Dining", "Groceries", "Transportation", "Entertainment"];
 
 // ─── Mock API ──────────────────────────────────────────────────────
 
