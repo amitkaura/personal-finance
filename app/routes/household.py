@@ -6,8 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from fastapi import BackgroundTasks
+
 from app.auth import get_current_user
 from app.database import get_session
+from app.email import send_invitation_email
 from app.models import (
     Budget,
     Goal,
@@ -92,6 +95,7 @@ class InviteRequest(BaseModel):
 @router.post("/invite")
 def invite_partner(
     body: InviteRequest,
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
@@ -150,6 +154,14 @@ def invite_partner(
     session.add(invitation)
     session.commit()
     session.refresh(invitation)
+
+    background_tasks.add_task(
+        send_invitation_email,
+        to_email=invitation.invited_email,
+        inviter_name=user.display_name or user.name,
+        inviter_email=user.email,
+        household_name=household.name,
+    )
 
     return {
         "id": invitation.id,

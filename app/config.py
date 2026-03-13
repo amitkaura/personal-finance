@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     sync_minute: int = 0
     sync_timezone: str = "America/Toronto"
 
+    # Email (SMTP)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_from_name: str = "FinanceApp"
+    smtp_use_tls: bool = True
+    app_url: str = "http://localhost:3000"
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8000

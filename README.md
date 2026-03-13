@@ -455,7 +455,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (189 tests across 12 files):**
+**What's tested (196 tests across 13 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -466,7 +466,8 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
-| `test_household` | 22 | Invite, accept, decline, cancel, rename, leave, scope |
+| `test_household` | 24 | Invite, accept, decline, cancel, rename, leave, scope, invitation email |
+| `test_email` | 5 | SMTP service, invitation template, send/skip/fail handling |
 | `test_settings` | 22 | Profile, user settings, category rules, export, clear, tag cleanup, sync validation |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_net_worth` | 5 | Snapshots, history |
@@ -540,6 +541,14 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `RATE_LIMIT_TRUST_PROXY` | No | Use `X-Forwarded-For` for client IP (default: `false`) |
 | `RATE_LIMIT_BACKEND` | No | `memory` or `redis` (default: `memory`) |
 | `REDIS_URL` | Required if Redis backend | Redis connection URL (default: `redis://redis:6379/0`) |
+| `SMTP_HOST` | No | SMTP server hostname (empty = email disabled) |
+| `SMTP_PORT` | No | SMTP server port (default: `587`) |
+| `SMTP_USER` | No | SMTP auth username |
+| `SMTP_PASSWORD` | No | SMTP auth password |
+| `SMTP_FROM_EMAIL` | No | Sender email address |
+| `SMTP_FROM_NAME` | No | Sender display name (default: `FinanceApp`) |
+| `SMTP_USE_TLS` | No | Use STARTTLS (default: `true`) |
+| `APP_URL` | No | Frontend URL for email links (default: `http://localhost:3000`) |
 
 ## Security
 

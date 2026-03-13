@@ -1,5 +1,7 @@
 """Household invite, accept, decline, cancel, rename, leave, and scope tests."""
 
+from unittest.mock import patch
+
 from app.main import app
 from app.auth import get_current_user
 from tests.conftest import (
@@ -252,3 +254,26 @@ def test_household_scope_transactions(auth_client, session):
     resp_partner = client.get("/api/v1/transactions", params={"scope": "partner"})
     assert len(resp_partner.json()) == 1
     assert resp_partner.json()[0]["merchant_name"] == "Partner Store"
+
+
+# -- Invitation email ------------------------------------------------------
+
+def test_invite_sends_email(auth_client, session):
+    client, user = auth_client
+    with patch("app.routes.household.send_invitation_email") as mock_send:
+        resp = client.post("/api/v1/household/invite", json={"email": "partner@test.com"})
+        assert resp.status_code == 200
+        mock_send.assert_called_once_with(
+            to_email="partner@test.com",
+            inviter_name=user.display_name or user.name,
+            inviter_email=user.email,
+            household_name="Our Household",
+        )
+
+
+def test_invite_email_not_sent_on_failure(auth_client, session):
+    client, user = auth_client
+    with patch("app.routes.household.send_invitation_email") as mock_send:
+        resp = client.post("/api/v1/household/invite", json={"email": user.email})
+        assert resp.status_code == 400
+        mock_send.assert_not_called()
