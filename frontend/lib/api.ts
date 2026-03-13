@@ -145,6 +145,15 @@ export const api = {
   getAccountSummary: (scope?: ViewScope) =>
     fetcher<AccountSummary>(`/accounts/summary${scope && scope !== "personal" ? `?scope=${scope}` : ""}`),
 
+  createAccount: (body: { name: string; type: string; current_balance?: number }) =>
+    fetcher<Account>("/accounts", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  deleteAccount: (accountId: number) =>
+    fetcher<{ ok: boolean }>(`/accounts/${accountId}`, { method: "DELETE" }),
+
   updateAccount: (id: number, body: { type?: string; subtype?: string; name?: string }) =>
     fetcher<Account>(`/accounts/${id}`, {
       method: "PATCH",

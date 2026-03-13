@@ -1,19 +1,12 @@
-"""CRUD, auto-seeding, rename cascading, and delete reassignment tests for categories."""
+"""Category CRUD endpoint tests."""
 
-from app.main import app
-from app.auth import get_current_user
-from tests.conftest import (
-    make_category,
-    make_transaction,
-    make_user,
-)
+from tests.conftest import make_category, make_transaction, make_user
 from app.models import CategoryRule
 
 
-# -- List / Auto-seed --------------------------------------------------------
+# -- List ------------------------------------------------------------------
 
-def test_list_categories_auto_seeds(auth_client, session):
-    """First GET for a new user should create the 16 default categories."""
+def test_list_auto_seeds_defaults(auth_client):
     client, _ = auth_client
     resp = client.get("/api/v1/categories")
     assert resp.status_code == 200
@@ -21,27 +14,51 @@ def test_list_categories_auto_seeds(auth_client, session):
     assert len(cats) == 16
     names = [c["name"] for c in cats]
     assert "Food & Dining" in names
+    assert "Income" in names
     assert "Other" in names
 
 
-def test_list_categories_returns_existing(auth_client, session):
+def test_list_returns_existing(auth_client, session):
     client, user = auth_client
     make_category(session, user, "Custom A")
     make_category(session, user, "Custom B")
+
     resp = client.get("/api/v1/categories")
     assert resp.status_code == 200
+    cats = resp.json()
+    assert len(cats) == 2
+    assert cats[0]["name"] == "Custom A"
+    assert cats[1]["name"] == "Custom B"
+
+
+def test_list_separate_per_user(auth_client, session):
+    client, user = auth_client
+    make_category(session, user, "Mine")
+
+    other = make_user(session)
+    make_category(session, other, "Theirs")
+
+    resp = client.get("/api/v1/categories")
     names = [c["name"] for c in resp.json()]
-    assert names == ["Custom A", "Custom B"]
+    assert "Mine" in names
+    assert "Theirs" not in names
 
 
-# -- Create -------------------------------------------------------------------
+# -- Create ----------------------------------------------------------------
 
-def test_create_category(auth_client, session):
+def test_create_category(auth_client):
     client, _ = auth_client
-    resp = client.post("/api/v1/categories", json={"name": "Pets"})
+    resp = client.post("/api/v1/categories", json={"name": "Custom Cat"})
     assert resp.status_code == 201
-    assert resp.json()["name"] == "Pets"
-    assert "id" in resp.json()
+    data = resp.json()
+    assert data["name"] == "Custom Cat"
+    assert "id" in data
+
+
+def test_create_category_empty_name(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/categories", json={"name": "   "})
+    assert resp.status_code == 400
 
 
 def test_create_category_duplicate(auth_client, session):
@@ -51,127 +68,159 @@ def test_create_category_duplicate(auth_client, session):
     assert resp.status_code == 409
 
 
-def test_create_category_empty_name(auth_client):
-    client, _ = auth_client
-    resp = client.post("/api/v1/categories", json={"name": "  "})
-    assert resp.status_code == 400
+# -- Update ----------------------------------------------------------------
 
-
-# -- Update (rename) ---------------------------------------------------------
-
-def test_rename_category(auth_client, session):
+def test_update_category_rename(auth_client, session):
     client, user = auth_client
-    cat = make_category(session, user, "Dining Out")
-    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Restaurants"})
+    cat = make_category(session, user, "Old Name")
+    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "New Name"})
     assert resp.status_code == 200
-    assert resp.json()["name"] == "Restaurants"
+    assert resp.json()["name"] == "New Name"
 
 
-def test_rename_cascades_to_transactions(auth_client, session):
+def test_update_category_cascades_transactions(auth_client, session):
     client, user = auth_client
-    cat = make_category(session, user, "Dining Out")
-    make_transaction(session, user, category="Dining Out")
-    make_transaction(session, user, category="Dining Out")
+    cat = make_category(session, user, "Dining")
+    make_transaction(session, user, category="Dining")
 
     client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Restaurants"})
 
-    txns = client.get("/api/v1/transactions").json()
-    for t in txns:
-        assert t["category"] == "Restaurants"
+    from sqlmodel import select
+    from app.models import Transaction
+    txns = session.exec(
+        select(Transaction).where(Transaction.user_id == user.id)
+    ).all()
+    assert txns[0].category == "Restaurants"
 
 
-def test_rename_cascades_to_rules(auth_client, session):
+def test_update_category_cascades_rules(auth_client, session):
     client, user = auth_client
-    cat = make_category(session, user, "Dining Out")
-    rule = CategoryRule(user_id=user.id, keyword="sushi", category="Dining Out")
+    cat = make_category(session, user, "Dining")
+    rule = CategoryRule(user_id=user.id, keyword="cafe", category="Dining")
     session.add(rule)
     session.commit()
 
     client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Restaurants"})
 
-    rules = client.get("/api/v1/settings/rules").json()
-    assert rules[0]["category"] == "Restaurants"
+    from sqlmodel import select
+    session.expire_all()
+    rules = session.exec(
+        select(CategoryRule).where(CategoryRule.user_id == user.id)
+    ).all()
+    assert rules[0].category == "Restaurants"
 
 
-def test_rename_duplicate_rejected(auth_client, session):
+def test_update_category_empty_name(auth_client, session):
     client, user = auth_client
-    make_category(session, user, "Alpha")
-    cat_b = make_category(session, user, "Beta")
-    resp = client.patch(f"/api/v1/categories/{cat_b.id}", json={"name": "Alpha"})
+    cat = make_category(session, user, "Food")
+    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "  "})
+    assert resp.status_code == 400
+
+
+def test_update_category_duplicate_name(auth_client, session):
+    client, user = auth_client
+    make_category(session, user, "Food")
+    cat = make_category(session, user, "Dining")
+    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Food"})
     assert resp.status_code == 409
 
 
-def test_rename_not_found(auth_client):
+def test_update_category_same_name_noop(auth_client, session):
+    client, user = auth_client
+    cat = make_category(session, user, "Food")
+    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Food"})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Food"
+
+
+def test_update_category_not_found(auth_client):
     client, _ = auth_client
-    resp = client.patch("/api/v1/categories/99999", json={"name": "X"})
+    resp = client.patch("/api/v1/categories/99999", json={"name": "Nope"})
     assert resp.status_code == 404
 
 
-# -- Delete -------------------------------------------------------------------
+def test_update_other_users_category(auth_client, session):
+    client, _ = auth_client
+    other = make_user(session)
+    cat = make_category(session, other, "Private")
+    resp = client.patch(f"/api/v1/categories/{cat.id}", json={"name": "Hacked"})
+    assert resp.status_code == 404
 
-def test_delete_category_uncategorize(auth_client, session):
-    """Delete without reassignment sets transactions to NULL."""
+
+# -- Delete ----------------------------------------------------------------
+
+def test_delete_category(auth_client, session):
     client, user = auth_client
     cat = make_category(session, user, "Temp")
-    make_transaction(session, user, category="Temp")
-
     resp = client.delete(f"/api/v1/categories/{cat.id}")
     assert resp.status_code == 204
 
-    txns = client.get("/api/v1/transactions").json()
-    assert txns[0]["category"] is None
 
-
-def test_delete_category_reassign(auth_client, session):
-    """Delete with reassignment moves transactions to the target category."""
+def test_delete_category_nullifies_transactions(auth_client, session):
     client, user = auth_client
-    old = make_category(session, user, "Old Cat")
-    new = make_category(session, user, "New Cat")
-    make_transaction(session, user, category="Old Cat")
+    cat = make_category(session, user, "Dining")
+    make_transaction(session, user, category="Dining")
 
-    resp = client.delete(f"/api/v1/categories/{old.id}?reassign_to={new.id}")
+    client.delete(f"/api/v1/categories/{cat.id}")
+
+    from sqlmodel import select
+    from app.models import Transaction
+    session.expire_all()
+    txns = session.exec(
+        select(Transaction).where(Transaction.user_id == user.id)
+    ).all()
+    assert txns[0].category is None
+
+
+def test_delete_category_with_reassign(auth_client, session):
+    client, user = auth_client
+    old_cat = make_category(session, user, "Dining")
+    new_cat = make_category(session, user, "Restaurants")
+    make_transaction(session, user, category="Dining")
+
+    resp = client.delete(
+        f"/api/v1/categories/{old_cat.id}",
+        params={"reassign_to": new_cat.id},
+    )
     assert resp.status_code == 204
 
-    txns = client.get("/api/v1/transactions").json()
-    assert txns[0]["category"] == "New Cat"
+    from sqlmodel import select
+    from app.models import Transaction
+    session.expire_all()
+    txns = session.exec(
+        select(Transaction).where(Transaction.user_id == user.id)
+    ).all()
+    assert txns[0].category == "Restaurants"
 
 
-def test_delete_removes_rules(auth_client, session):
+def test_delete_category_reassign_invalid_target(auth_client, session):
     client, user = auth_client
     cat = make_category(session, user, "Temp")
-    rule = CategoryRule(user_id=user.id, keyword="test", category="Temp")
+    resp = client.delete(
+        f"/api/v1/categories/{cat.id}",
+        params={"reassign_to": 99999},
+    )
+    assert resp.status_code == 404
+
+
+def test_delete_category_deletes_rules(auth_client, session):
+    client, user = auth_client
+    cat = make_category(session, user, "Dining")
+    rule = CategoryRule(user_id=user.id, keyword="cafe", category="Dining")
     session.add(rule)
     session.commit()
 
     client.delete(f"/api/v1/categories/{cat.id}")
 
-    rules = client.get("/api/v1/settings/rules").json()
+    from sqlmodel import select
+    session.expire_all()
+    rules = session.exec(
+        select(CategoryRule).where(CategoryRule.user_id == user.id)
+    ).all()
     assert len(rules) == 0
 
 
-def test_delete_not_found(auth_client):
+def test_delete_category_not_found(auth_client):
     client, _ = auth_client
     resp = client.delete("/api/v1/categories/99999")
     assert resp.status_code == 404
-
-
-def test_delete_reassign_invalid_target(auth_client, session):
-    client, user = auth_client
-    cat = make_category(session, user, "Temp")
-    resp = client.delete(f"/api/v1/categories/{cat.id}?reassign_to=99999")
-    assert resp.status_code == 404
-
-
-# -- Isolation ----------------------------------------------------------------
-
-def test_categories_isolated_per_user(auth_client, session):
-    """User A's categories are not visible to user B."""
-    client, user_a = auth_client
-    make_category(session, user_a, "Only Mine")
-
-    user_b = make_user(session)
-    app.dependency_overrides[get_current_user] = lambda: user_b
-
-    resp = client.get("/api/v1/categories")
-    names = [c["name"] for c in resp.json()]
-    assert "Only Mine" not in names

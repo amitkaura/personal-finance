@@ -42,7 +42,7 @@ describe("CsvImportDialog", () => {
       <CsvImportDialog accountId={1} accountName="My Checking" onClose={onClose} />,
     );
     expect(screen.getByText("Import Transactions")).toBeInTheDocument();
-    expect(screen.getByText("My Checking")).toBeInTheDocument();
+    expect(screen.getByText(/My Checking/)).toBeInTheDocument();
     expect(screen.getByText("Drag & drop a CSV file here")).toBeInTheDocument();
     expect(screen.getByText("Choose File")).toBeInTheDocument();
   });
@@ -103,19 +103,18 @@ describe("CsvImportDialog", () => {
     });
   });
 
-  it("enables Preview button when required columns are mapped", async () => {
+  it("enables Next button when required columns are mapped", async () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
     );
     await uploadCsv("Date,Description,Amount\n2026-01-15,Coffee,4.50\n");
 
     await waitFor(() => {
-      const previewBtn = screen.getByText("Preview");
-      expect(previewBtn).not.toBeDisabled();
+      expect(screen.getByText("Next")).not.toBeDisabled();
     });
   });
 
-  it("enables Preview button with debit/credit columns instead of amount", async () => {
+  it("enables Next button with debit/credit columns instead of amount", async () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
     );
@@ -124,8 +123,7 @@ describe("CsvImportDialog", () => {
     );
 
     await waitFor(() => {
-      const previewBtn = screen.getByText("Preview");
-      expect(previewBtn).not.toBeDisabled();
+      expect(screen.getByText("Next")).not.toBeDisabled();
     });
   });
 
@@ -139,9 +137,9 @@ describe("CsvImportDialog", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Preview")).not.toBeDisabled();
+      expect(screen.getByText("Next")).not.toBeDisabled();
     });
-    await user.click(screen.getByText("Preview"));
+    await user.click(screen.getByText("Next"));
 
     await waitFor(() => {
       expect(screen.getByText(/2 transactions ready to import/)).toBeInTheDocument();
@@ -159,8 +157,8 @@ describe("CsvImportDialog", () => {
       "Date,Description,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n",
     );
 
-    await waitFor(() => expect(screen.getByText("Preview")).not.toBeDisabled());
-    await user.click(screen.getByText("Preview"));
+    await waitFor(() => expect(screen.getByText("Next")).not.toBeDisabled());
+    await user.click(screen.getByText("Next"));
 
     await waitFor(() => expect(screen.getByText(/Import 2/)).not.toBeDisabled());
     await user.click(screen.getByText(/Import 2/));
@@ -187,8 +185,8 @@ describe("CsvImportDialog", () => {
       "Date,Description,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n",
     );
 
-    await waitFor(() => expect(screen.getByText("Preview")).not.toBeDisabled());
-    await user.click(screen.getByText("Preview"));
+    await waitFor(() => expect(screen.getByText("Next")).not.toBeDisabled());
+    await user.click(screen.getByText("Next"));
     await waitFor(() => expect(screen.getByText(/Import 2/)).not.toBeDisabled());
     await user.click(screen.getByText(/Import 2/));
 
@@ -214,8 +212,8 @@ describe("CsvImportDialog", () => {
       "Date,Description,Amount\n2026-01-15,Coffee,4.50\n",
     );
 
-    await waitFor(() => expect(screen.getByText("Preview")).not.toBeDisabled());
-    await user.click(screen.getByText("Preview"));
+    await waitFor(() => expect(screen.getByText("Next")).not.toBeDisabled());
+    await user.click(screen.getByText("Next"));
     await waitFor(() => expect(screen.getByText(/Import 1/)).not.toBeDisabled());
     await user.click(screen.getByText(/Import 1/));
 
@@ -234,8 +232,8 @@ describe("CsvImportDialog", () => {
       "Date,Description,Amount\n2026-01-15,Coffee,4.50\n",
     );
 
-    await waitFor(() => expect(screen.getByText("Preview")).not.toBeDisabled());
-    await user.click(screen.getByText("Preview"));
+    await waitFor(() => expect(screen.getByText("Next")).not.toBeDisabled());
+    await user.click(screen.getByText("Next"));
     await waitFor(() => expect(screen.getByText(/Import 1/)).not.toBeDisabled());
     await user.click(screen.getByText(/Import 1/));
 
@@ -270,8 +268,8 @@ describe("CsvImportDialog", () => {
       "Date,Description,Amount,Category\n2026-01-15,Coffee Shop,4.50,Food\n",
     );
 
-    await waitFor(() => expect(screen.getByText("Preview")).not.toBeDisabled());
-    await user.click(screen.getByText("Preview"));
+    await waitFor(() => expect(screen.getByText("Next")).not.toBeDisabled());
+    await user.click(screen.getByText("Next"));
     await waitFor(() => expect(screen.getByText(/Import 1/)).not.toBeDisabled());
     await user.click(screen.getByText(/Import 1/));
 

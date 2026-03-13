@@ -1,11 +1,12 @@
-"""Account list, update, unlink, and summary tests."""
+"""Account list, create, update, delete, unlink, and summary tests."""
 
 from decimal import Decimal
+from uuid import uuid4
 
 from app.main import app
 from app.auth import get_current_user
 from app.models import AccountType
-from tests.conftest import make_account, make_user
+from tests.conftest import make_account, make_transaction, make_user
 
 
 # -- List ------------------------------------------------------------------
@@ -34,6 +35,88 @@ def test_list_does_not_show_other_users(auth_client, session):
     resp = client.get("/api/v1/accounts")
     assert len(resp.json()) == 1
     assert resp.json()[0]["name"] == "Mine"
+
+
+# -- Create ----------------------------------------------------------------
+
+def test_create_manual_account(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/accounts", json={"name": "My Savings"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "My Savings"
+    assert data["type"] == "depository"
+    assert data["current_balance"] == 0.0
+    assert data["is_linked"] is False
+    assert data["plaid_account_id"].startswith("manual-")
+
+
+def test_create_manual_account_all_fields(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/accounts", json={
+        "name": "Visa Card",
+        "type": "credit",
+        "current_balance": 1500.50,
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "Visa Card"
+    assert data["type"] == "credit"
+    assert data["current_balance"] == 1500.50
+
+
+def test_create_manual_account_invalid_type(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/accounts", json={"name": "Bad", "type": "magic"})
+    assert resp.status_code == 400
+
+
+# -- Delete ----------------------------------------------------------------
+
+def test_delete_manual_account(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, plaid_account_id=f"manual-{uuid4().hex}")
+    resp = client.delete(f"/api/v1/accounts/{acct.id}")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+def test_delete_manual_account_cascades_transactions(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, plaid_account_id=f"manual-{uuid4().hex}")
+    make_transaction(session, user, account=acct)
+    make_transaction(session, user, account=acct)
+
+    resp = client.delete(f"/api/v1/accounts/{acct.id}")
+    assert resp.status_code == 200
+
+    from sqlmodel import select
+    from app.models import Transaction
+    remaining = session.exec(
+        select(Transaction).where(Transaction.account_id == acct.id)
+    ).all()
+    assert len(remaining) == 0
+
+
+def test_delete_non_manual_account_rejected(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user)
+    resp = client.delete(f"/api/v1/accounts/{acct.id}")
+    assert resp.status_code == 400
+
+
+def test_delete_account_not_found(auth_client):
+    client, _ = auth_client
+    resp = client.delete("/api/v1/accounts/99999")
+    assert resp.status_code == 404
+
+
+def test_delete_other_users_account(auth_client, session):
+    client, _ = auth_client
+    other = make_user(session)
+    acct = make_account(session, other, plaid_account_id=f"manual-{uuid4().hex}")
+    resp = client.delete(f"/api/v1/accounts/{acct.id}")
+    assert resp.status_code == 404
 
 
 # -- Update ----------------------------------------------------------------

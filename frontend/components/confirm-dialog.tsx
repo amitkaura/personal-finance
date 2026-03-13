@@ -42,12 +42,19 @@ export default function ConfirmDialog({
   return (
     <div
       ref={overlayRef}
+      data-testid="confirm-overlay"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === overlayRef.current) onCancel();
       }}
     >
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-desc"
+        className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl"
+      >
         <div className="flex items-start gap-4">
           <div
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
@@ -61,8 +68,8 @@ export default function ConfirmDialog({
             />
           </div>
           <div>
-            <h3 className="text-base font-semibold">{title}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            <h3 id="confirm-dialog-title" className="text-base font-semibold">{title}</h3>
+            <p id="confirm-dialog-desc" className="mt-1 text-sm text-muted-foreground">{description}</p>
           </div>
         </div>
 

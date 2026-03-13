@@ -5,7 +5,12 @@ from unittest.mock import MagicMock, patch
 
 from app.models import AccountType, PlaidItem
 from app.crypto import encrypt_token
-from tests.conftest import make_account, make_user
+from tests.conftest import (
+    add_household_member,
+    make_account,
+    make_household,
+    make_user,
+)
 
 
 def _make_plaid_item(session, user, item_id="item-abc-123"):
@@ -122,3 +127,112 @@ def test_unlink_item_not_found(auth_client):
     client, _ = auth_client
     resp = client.post("/api/v1/plaid/items/99999/unlink")
     assert resp.status_code == 404
+
+
+# -- Exchange token --------------------------------------------------------
+
+def _mock_plaid_exchange(item_id="item-new-123", access_token="access-new-tok",
+                         accounts=None):
+    """Return a configured mock Plaid client for exchange-token tests."""
+    mock_client = MagicMock()
+
+    exchange_resp = MagicMock()
+    exchange_resp.access_token = access_token
+    exchange_resp.item_id = item_id
+    mock_client.item_public_token_exchange.return_value = exchange_resp
+
+    if accounts is None:
+        acct = MagicMock()
+        acct.account_id = "plaid-acct-new-001"
+        acct.name = "Checking"
+        acct.official_name = "Primary Checking"
+        acct.type.value = "depository"
+        acct.subtype = MagicMock()
+        acct.subtype.value = "checking"
+        acct.balances.current = 1500.00
+        acct.balances.available = 1400.00
+        acct.balances.limit = None
+        acct.balances.iso_currency_code = "USD"
+        acct.mask = "1234"
+        accounts = [acct]
+
+    accounts_resp = MagicMock()
+    accounts_resp.accounts = accounts
+    mock_client.accounts_get.return_value = accounts_resp
+
+    return mock_client
+
+
+def test_exchange_token_success(auth_client, session):
+    client, user = auth_client
+    mock_client = _mock_plaid_exchange()
+
+    with patch("app.routes.plaid.get_plaid_client", return_value=mock_client):
+        resp = client.post("/api/v1/plaid/exchange-token", json={
+            "public_token": "public-sandbox-abc",
+            "institution_name": "Test Bank",
+        })
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["item_id"] == "item-new-123"
+    assert data["accounts_synced"] == 1
+
+
+def test_exchange_token_stores_institution_name(auth_client, session):
+    client, user = auth_client
+    mock_client = _mock_plaid_exchange()
+
+    with patch("app.routes.plaid.get_plaid_client", return_value=mock_client):
+        client.post("/api/v1/plaid/exchange-token", json={
+            "public_token": "public-sandbox-abc",
+            "institution_name": "Chase",
+        })
+
+    from sqlmodel import select
+    item = session.exec(
+        select(PlaidItem).where(PlaidItem.user_id == user.id)
+    ).first()
+    assert item.institution_name == "Chase"
+
+
+def test_exchange_token_relink_existing(auth_client, session):
+    client, user = auth_client
+    existing_acct = make_account(
+        session, user, name="Old Checking",
+        plaid_account_id="plaid-acct-new-001",
+        balance=Decimal("500"),
+        is_linked=False,
+    )
+
+    mock_client = _mock_plaid_exchange()
+    with patch("app.routes.plaid.get_plaid_client", return_value=mock_client):
+        resp = client.post("/api/v1/plaid/exchange-token", json={
+            "public_token": "public-sandbox-abc",
+        })
+
+    assert resp.status_code == 200
+    assert resp.json()["accounts_synced"] == 1
+
+    session.expire_all()
+    from app.models import Account
+    acct = session.get(Account, existing_acct.id)
+    assert acct.is_linked is True
+    assert float(acct.current_balance) == 1500.00
+
+
+def test_exchange_token_conflict_other_user(auth_client, session):
+    client, user = auth_client
+    other = make_user(session)
+    make_account(
+        session, other, name="Their Account",
+        plaid_account_id="plaid-acct-new-001",
+    )
+
+    mock_client = _mock_plaid_exchange()
+    with patch("app.routes.plaid.get_plaid_client", return_value=mock_client):
+        resp = client.post("/api/v1/plaid/exchange-token", json={
+            "public_token": "public-sandbox-abc",
+        })
+
+    assert resp.status_code == 409

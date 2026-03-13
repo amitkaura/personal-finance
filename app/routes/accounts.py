@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -12,7 +13,7 @@ from sqlmodel import Session, select
 from app.auth import get_current_user
 from app.database import get_session
 from app.household import get_scoped_user_ids
-from app.models import Account, AccountType, User
+from app.models import Account, AccountType, Transaction, User
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -65,6 +66,65 @@ def _acct_to_dict(a: Account, owner_names: dict[int, dict] | None = None) -> dic
         d["owner_name"] = info.get("name", "")
         d["owner_picture"] = info.get("picture")
     return d
+
+
+class AccountCreate(BaseModel):
+    name: str
+    type: str = "depository"
+    current_balance: float = 0
+
+
+@router.post("")
+def create_account(
+    body: AccountCreate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Create a manual (non-Plaid) account."""
+    valid_types = {t.value for t in AccountType}
+    if body.type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid type. Must be one of: {', '.join(valid_types)}",
+        )
+
+    acct = Account(
+        user_id=user.id,
+        name=body.name,
+        type=AccountType(body.type),
+        current_balance=Decimal(str(body.current_balance)),
+        plaid_account_id=f"manual-{uuid4().hex}",
+        plaid_item_id=None,
+        is_linked=False,
+    )
+    session.add(acct)
+    session.commit()
+    session.refresh(acct)
+    return _acct_to_dict(acct)
+
+
+@router.delete("/{account_id}")
+def delete_account(
+    account_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Delete a manual account and its transactions."""
+    acct = session.get(Account, account_id)
+    if not acct or acct.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if not acct.plaid_account_id.startswith("manual-"):
+        raise HTTPException(status_code=400, detail="Only manual accounts can be deleted")
+
+    txns = session.exec(
+        select(Transaction).where(Transaction.account_id == account_id)
+    ).all()
+    for txn in txns:
+        session.delete(txn)
+
+    session.delete(acct)
+    session.commit()
+    return {"ok": True}
 
 
 class AccountUpdate(BaseModel):

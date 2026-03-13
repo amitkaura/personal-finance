@@ -476,23 +476,24 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (230 tests across 13 files):**
+**What's tested (260 tests across 14 files — 82% line coverage):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `test_health` | 2 | Liveness and readiness endpoints |
-| `test_auth` | 6 | Google OAuth login (mocked), session, `/me`, logout |
-| `test_transactions` | 32 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize, recurring, date validation, response schema |
-| `test_accounts` | 28 | List, update, unlink, summary, manual create/delete, balance update, CSV import, cascade delete, negative amounts, inline auto-categorization |
-| `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
+| `test_settings` | 43 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
-| `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
+| `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
-| `test_email` | 6 | SMTP service, invitation template, send/skip/fail handling, port-465 SSL |
-| `test_settings` | 23 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation |
+| `test_transactions` | 27 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize, recurring, date validation, response schema |
+| `test_categories` | 20 | Category listing, rule-based categorization, LLM fallback |
+| `test_accounts` | 19 | List, update, unlink, summary, manual create/delete, balance update, CSV import, cascade delete, negative amounts, inline auto-categorization |
+| `test_plaid` | 14 | Link token, exchange, sync, items (all Plaid calls mocked) |
+| `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
+| `test_email` | 6 | SMTP service, invitation template, send/skip/fail handling, port-465 SSL |
+| `test_auth` | 6 | Google OAuth login (mocked), session, `/me`, logout |
 | `test_net_worth` | 5 | Snapshots, history |
-| `test_plaid` | 10 | Link token, exchange, sync, items (all Plaid calls mocked) |
+| `test_health` | 2 | Liveness and readiness endpoints |
 
 **Test infrastructure:**
 - In-memory SQLite with per-test isolation (fresh tables for each test)
@@ -513,20 +514,23 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (113 tests across 10 files):**
+**What's tested (183 tests across 13 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `auth-provider` | 6 | Loading state, login/logout, cache clearing, default context |
-| `household-provider` | 6 | Load household/partner, scope persistence per user in localStorage, reset |
-| `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
-| `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
+| `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
+| `bulk-csv-import-dialog` | 19 | Bulk upload, multi-account mapping, preview, import flow |
+| `cashflow-bar-chart` | 17 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `settings-page` | 14 | All sections: profile, household, general, data management |
-| `sidebar` | 10 | Brand, nav links, active state, user avatar, logout, hrefs |
-| `hooks` | 6 | `useFormatCurrency`, `useFormatCurrencyPrecise`, `useScope` |
-| `csv-utils` | 28 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
-| `accounts-page` | 12 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs |
 | `csv-import-dialog` | 14 | Upload step, auto-detection, debit/credit mapping, preview, import, results, errors, navigation |
+| `accounts-page` | 12 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs |
+| `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss |
+| `sidebar` | 10 | Brand, nav links, active state, user avatar, logout, hrefs |
+| `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
+| `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
+| `household-provider` | 6 | Load household/partner, scope persistence per user in localStorage, reset |
+| `hooks` | 6 | `useFormatCurrency`, `useFormatCurrencyPrecise`, `useScope` |
+| `auth-provider` | 6 | Loading state, login/logout, cache clearing, default context |
 
 **Test infrastructure:**
 - jsdom environment with global mocks for `next/image`, `next/link`, `next/navigation`

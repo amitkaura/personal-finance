@@ -517,3 +517,50 @@ def test_bulk_import_ndjson_streaming(auth_client, session):
     complete = json.loads(lines[-1])
     assert complete["type"] == "complete"
     assert complete["imported"] == 2
+
+
+def test_bulk_import_invalid_date(auth_client, session):
+    client, user = auth_client
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "not-a-date", "amount": 10.00, "merchant_name": "Shop"},
+        ],
+    })
+    assert resp.json()["imported"] == 0
+    assert len(resp.json()["errors"]) == 1
+    assert "not-a-date" in resp.json()["errors"][0]
+
+
+def test_bulk_import_preserves_csv_category(auth_client, session):
+    client, user = auth_client
+    rule = CategoryRule(user_id=user.id, keyword="shop", category="Shopping")
+    session.add(rule)
+    session.commit()
+
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop",
+             "category": "Groceries"},
+        ],
+    })
+    assert resp.json()["imported"] == 1
+    assert resp.json()["categorized"] == 0
+    txns = session.exec(select(Transaction).where(Transaction.user_id == user.id)).all()
+    assert txns[0].category == "Groceries"
+
+
+def test_bulk_import_sets_needs_review_when_uncategorized(auth_client, session):
+    client, user = auth_client
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Unknown Place"},
+        ],
+    })
+    assert resp.json()["imported"] == 1
+    assert resp.json()["categorized"] == 0
+    txns = session.exec(select(Transaction).where(Transaction.user_id == user.id)).all()
+    assert txns[0].needs_review is True
+    assert txns[0].category is None

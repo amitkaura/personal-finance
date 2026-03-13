@@ -85,10 +85,9 @@ describe("ConfirmDialog", () => {
   });
 
   it("calls onCancel when clicking the overlay backdrop", async () => {
-    const user = userEvent.setup();
     render(<ConfirmDialog {...defaultProps} />);
-    const overlay = screen.getByRole("presentation");
-    await user.click(overlay);
+    const overlay = screen.getByTestId("confirm-overlay");
+    fireEvent.click(overlay);
     expect(defaultProps.onCancel).toHaveBeenCalled();
   });
 });

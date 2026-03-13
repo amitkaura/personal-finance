@@ -63,11 +63,6 @@ vi.mock("@nivo/bar", () => ({
   ),
 }));
 
-vi.mock("@/components/sankey-diagram", () => ({
-  __esModule: true,
-  default: () => <div data-testid="sankey-diagram">Sankey Mock</div>,
-}));
-
 // ─── Fixtures ────────────────────────────────────────────────────────
 
 function txn(
@@ -326,6 +321,93 @@ describe("CashFlowBarChart", () => {
     });
   });
 
+  it("shows empty state when no transactions", async () => {
+    mockApi.getAllTransactions.mockResolvedValue([]);
+    renderWithProviders(<CashFlowBarChart />);
+    await waitFor(() => {
+      expect(screen.getByText("No transaction data available.")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("nivo-bar-chart")).not.toBeInTheDocument();
+  });
+
+  it("shows uncategorized transactions as 'Uncategorized' in category drill-down", async () => {
+    const user = userEvent.setup();
+    const txnsWithUncategorized: Transaction[] = [
+      txn({ id: 10, date: "2025-01-05", amount: 80, merchant_name: "Random Shop", category: null }),
+      txn({ id: 11, date: "2025-01-10", amount: 120, merchant_name: "Electric Co", category: "Utilities" }),
+    ];
+    mockApi.getAllTransactions.mockResolvedValue(txnsWithUncategorized);
+
+    renderWithProviders(<CashFlowBarChart />);
+    await waitFor(() => {
+      expect(screen.getByTestId("bar-Jan 2025-Expenses")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("bar-Jan 2025-Expenses"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("bar-Uncategorized-amount")).toBeInTheDocument();
+      expect(screen.getByTestId("bar-Utilities-amount")).toBeInTheDocument();
+    });
+  });
+
+  it("filters by quarter when quarter dropdown is used", async () => {
+    const user = userEvent.setup();
+    const yearOfTxns: Transaction[] = [];
+    for (let m = 0; m < 12; m++) {
+      const date = `2025-${String(m + 1).padStart(2, "0")}-15`;
+      yearOfTxns.push(
+        txn({ id: 600 + m, date, amount: -1000, merchant_name: "Employer", category: "Salary" }),
+      );
+    }
+    mockApi.getAllTransactions.mockResolvedValue(yearOfTxns);
+
+    renderWithProviders(<CashFlowBarChart />);
+    await waitFor(() => {
+      expect(screen.getByTestId("nivo-bar-chart")).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByDisplayValue(/Last 12 months/i), "2025");
+    await waitFor(() => {
+      expect(screen.getByTestId("bar-Jan 2025-Income")).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByDisplayValue("All Quarters"), "1");
+    await waitFor(() => {
+      expect(screen.getByTestId("bar-Jan 2025-Income")).toBeInTheDocument();
+      expect(screen.getByTestId("bar-Mar 2025-Income")).toBeInTheDocument();
+      expect(screen.queryByTestId("bar-Apr 2025-Income")).not.toBeInTheDocument();
+    });
+  });
+
+  it("filters by month when month dropdown is used", async () => {
+    const user = userEvent.setup();
+    const yearOfTxns: Transaction[] = [];
+    for (let m = 0; m < 12; m++) {
+      const date = `2025-${String(m + 1).padStart(2, "0")}-15`;
+      yearOfTxns.push(
+        txn({ id: 700 + m, date, amount: -1000, merchant_name: "Employer", category: "Salary" }),
+      );
+    }
+    mockApi.getAllTransactions.mockResolvedValue(yearOfTxns);
+
+    renderWithProviders(<CashFlowBarChart />);
+    await waitFor(() => {
+      expect(screen.getByTestId("nivo-bar-chart")).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByDisplayValue(/Last 12 months/i), "2025");
+    await waitFor(() => {
+      expect(screen.getByTestId("bar-Jan 2025-Income")).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByDisplayValue("All Months"), "0");
+    await waitFor(() => {
+      expect(screen.getByTestId("bar-Jan 2025-Income")).toBeInTheDocument();
+      expect(screen.queryByTestId("bar-Feb 2025-Income")).not.toBeInTheDocument();
+    });
+  });
+
   it("shows breadcrumb navigation at each drill level", async () => {
     const user = userEvent.setup();
     renderWithProviders(<CashFlowBarChart />);
@@ -363,18 +445,20 @@ describe("CashFlowPage", () => {
     mockApi.getAccounts.mockResolvedValue([]);
   });
 
-  it("does not render a Sankey diagram", async () => {
-    renderWithProviders(<CashFlowPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Cash Flow")).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId("sankey-diagram")).not.toBeInTheDocument();
-  });
-
-  it("renders the cash flow bar chart", async () => {
+  it("renders the cash flow bar chart when transactions exist", async () => {
     renderWithProviders(<CashFlowPage />);
     await waitFor(() => {
       expect(screen.getByTestId("nivo-bar-chart")).toBeInTheDocument();
     });
+  });
+
+  it("shows empty state when no transactions exist", async () => {
+    mockApi.getTransactions.mockResolvedValue([]);
+    mockApi.getAllTransactions.mockResolvedValue([]);
+    renderWithProviders(<CashFlowPage />);
+    await waitFor(() => {
+      expect(screen.getByText("No transactions yet")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("nivo-bar-chart")).not.toBeInTheDocument();
   });
 });

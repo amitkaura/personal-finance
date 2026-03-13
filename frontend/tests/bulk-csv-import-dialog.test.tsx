@@ -369,4 +369,65 @@ describe("BulkCsvImportDialog", () => {
       expect(screen.getByText(/Assign a role to each column/)).toBeInTheDocument();
     });
   });
+
+  it("shows Exact badge for categories matching existing ones", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
+    await uploadCsv(
+      "Date,Merchant,Amount,Account,Category\n2026-01-15,Coffee,4.50,Visa,Groceries\n",
+    );
+
+    await waitFor(() => expect(screen.getByText("Next")).not.toBeDisabled());
+    await user.click(screen.getByText("Next"));
+    await waitFor(() => expect(screen.getByText("Visa")).toBeInTheDocument());
+
+    let nextButtons = screen.getAllByText("Next");
+    await user.click(nextButtons[nextButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/unique categor/)).toBeInTheDocument();
+      expect(screen.getByText("Exact")).toBeInTheDocument();
+    });
+  });
+
+  it("shows New badge for unmatched categories", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
+    await uploadCsv(
+      "Date,Merchant,Amount,Account,Category\n2026-01-15,Coffee,4.50,Visa,Crypto Fees\n",
+    );
+
+    await waitFor(() => expect(screen.getByText("Next")).not.toBeDisabled());
+    await user.click(screen.getByText("Next"));
+    await waitFor(() => expect(screen.getByText("Visa")).toBeInTheDocument());
+
+    let nextButtons = screen.getAllByText("Next");
+    await user.click(nextButtons[nextButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/unique categor/)).toBeInTheDocument();
+      expect(screen.getByText("New")).toBeInTheDocument();
+      expect(screen.getByText("Crypto Fees")).toBeInTheDocument();
+    });
+  });
+
+  it("shows ~Fuzzy badge for close-but-not-exact category matches", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
+    await uploadCsv(
+      "Date,Merchant,Amount,Account,Category\n2026-01-15,Coffee,4.50,Visa,Shoping\n",
+    );
+
+    await waitFor(() => expect(screen.getByText("Next")).not.toBeDisabled());
+    await user.click(screen.getByText("Next"));
+    await waitFor(() => expect(screen.getByText("Visa")).toBeInTheDocument());
+
+    let nextButtons = screen.getAllByText("Next");
+    await user.click(nextButtons[nextButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/unique categor/)).toBeInTheDocument();
+      expect(screen.getByText("~Fuzzy")).toBeInTheDocument();
+    });
+  });
 });

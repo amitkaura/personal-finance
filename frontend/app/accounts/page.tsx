@@ -12,9 +12,11 @@ import {
   Check,
   Pencil,
   Unlink,
-  LinkIcon,
   EyeOff,
   Eye,
+  Plus,
+  Upload,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
@@ -22,6 +24,7 @@ import { useAuth } from "@/components/auth-provider";
 import type { Account } from "@/lib/types";
 import LinkAccount from "@/components/link-account";
 import ConfirmDialog from "@/components/confirm-dialog";
+import CsvImportDialog from "@/components/csv-import-dialog";
 
 const ACCOUNT_TYPES = [
   { value: "depository", label: "Cash", icon: Landmark, color: "text-accent" },
@@ -41,28 +44,56 @@ function typeConfig(type: string) {
   return ACCOUNT_TYPES.find((t) => t.value === type) ?? ACCOUNT_TYPES[0];
 }
 
+function isManualAccount(account: Account) {
+  return account.plaid_account_id.startsWith("manual-");
+}
+
 export default function AccountsPage() {
   const formatCurrency = useFormatCurrencyPrecise();
   const scope = useScope();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["accounts", scope],
     queryFn: () => api.getAccounts(scope),
   });
   const isViewingOwn = scope === "personal";
   const [hideUnlinked, setHideUnlinked] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState("depository");
+  const [newBalance, setNewBalance] = useState("0");
+  const [importAccount, setImportAccount] = useState<Account | null>(null);
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      api.createAccount({
+        name: newName,
+        type: newType,
+        current_balance: parseFloat(newBalance) || 0,
+      }),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
+      setShowAddForm(false);
+      setNewName("");
+      setNewType("depository");
+      setNewBalance("0");
+      setImportAccount(created);
+    },
+  });
 
   const unlinkedCount = useMemo(
     () => accounts?.filter((a) => !a.is_linked).length ?? 0,
-    [accounts]
+    [accounts],
   );
 
   const visibleAccounts = useMemo(
     () =>
       hideUnlinked
-        ? accounts?.filter((a) => a.is_linked) ?? []
+        ? accounts?.filter((a) => a.is_linked || isManualAccount(a)) ?? []
         : accounts ?? [],
-    [accounts, hideUnlinked]
+    [accounts, hideUnlinked],
   );
 
   return (
@@ -89,14 +120,85 @@ export default function AccountsPage() {
               ) : (
                 <Eye className="h-3.5 w-3.5" />
               )}
-              {hideUnlinked
-                ? `${unlinkedCount} hidden`
-                : "Hide unlinked"}
+              {hideUnlinked ? `${unlinkedCount} hidden` : "Hide unlinked"}
+            </button>
+          )}
+          {isViewingOwn && (
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add Account
             </button>
           )}
           {isViewingOwn && <LinkAccount />}
         </div>
       </div>
+
+      {/* Add Manual Account form */}
+      {showAddForm && (
+        <div className="mt-4 rounded-2xl border border-accent/30 bg-card p-5">
+          <h3 className="text-sm font-semibold mb-3">Add Manual Account</h3>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[180px]">
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Account Name
+              </label>
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. TD Chequing"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent"
+              />
+            </div>
+            <div className="w-40">
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Type
+              </label>
+              <select
+                value={newType}
+                onChange={(e) => setNewType(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent"
+              >
+                {ACCOUNT_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-32">
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Balance
+              </label>
+              <input
+                type="number"
+                value={newBalance}
+                onChange={(e) => setNewBalance(e.target.value)}
+                step="0.01"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent tabular-nums"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowAddForm(false)}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => createMutation.mutate()}
+                disabled={!newName.trim() || createMutation.isPending}
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+              >
+                Create Account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="mt-8 space-y-4">
@@ -113,7 +215,7 @@ export default function AccountsPage() {
           <p className="mt-3 text-muted-foreground">
             {hideUnlinked
               ? "All accounts are hidden. Toggle the filter to show unlinked accounts."
-              : 'No accounts linked yet. Click "Link Account" above to connect your bank.'}
+              : 'No accounts yet. Click "Add Account" or "Link Account" above to get started.'}
           </p>
         </div>
       ) : (
@@ -124,9 +226,18 @@ export default function AccountsPage() {
               account={acct}
               editable={acct.user_id === user?.id}
               showOwner={scope !== "personal"}
+              onImport={() => setImportAccount(acct)}
             />
           ))}
         </div>
+      )}
+
+      {importAccount && (
+        <CsvImportDialog
+          accountId={importAccount.id}
+          accountName={importAccount.name}
+          onClose={() => setImportAccount(null)}
+        />
       )}
     </>
   );
@@ -136,18 +247,22 @@ function AccountRow({
   account,
   editable = true,
   showOwner = false,
+  onImport,
 }: {
   account: Account;
   editable?: boolean;
   showOwner?: boolean;
+  onImport: () => void;
 }) {
   const formatCurrency = useFormatCurrencyPrecise();
   const queryClient = useQueryClient();
   const [typeOpen, setTypeOpen] = useState(false);
   const [subtypeOpen, setSubtypeOpen] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const config = typeConfig(account.type);
   const Icon = config.icon;
+  const isManual = isManualAccount(account);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["accounts"] });
@@ -181,13 +296,22 @@ function AccountRow({
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteAccount(account.id),
+    onSuccess: () => {
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      setConfirmDelete(false);
+    },
+  });
+
   const subtypeOptions = SUBTYPES[account.type] ?? [];
 
   return (
     <>
       <div
         className={`flex items-center justify-between rounded-2xl border px-6 py-4 ${
-          account.is_linked
+          account.is_linked || isManual
             ? "border-border bg-card"
             : "border-border/50 bg-card/50 opacity-70"
         }`}
@@ -213,10 +337,15 @@ function AccountRow({
                   {account.owner_name.split(" ")[0]}
                 </span>
               )}
-              {!account.is_linked && (
+              {!account.is_linked && !isManual && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                   <Unlink className="h-2.5 w-2.5" />
                   Unlinked
+                </span>
+              )}
+              {isManual && (
+                <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-400">
+                  Manual
                 </span>
               )}
             </div>
@@ -313,8 +442,30 @@ function AccountRow({
                 )}
               </div>
 
-              {/* Unlink button */}
-              {account.is_linked && (
+              {/* Import CSV button (manual accounts only) */}
+              {isManual && (
+                <button
+                  onClick={onImport}
+                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/10 hover:text-accent"
+                  title="Import CSV"
+                >
+                  <Upload className="h-4 w-4" />
+                </button>
+              )}
+
+              {/* Delete button (manual accounts only) */}
+              {isManual && (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
+                  title="Delete account"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+
+              {/* Unlink button (Plaid accounts only) */}
+              {account.is_linked && !isManual && (
                 <button
                   onClick={() => setConfirmUnlink(true)}
                   className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
@@ -337,6 +488,17 @@ function AccountRow({
         loading={unlinkMutation.isPending}
         onConfirm={() => unlinkMutation.mutate()}
         onCancel={() => setConfirmUnlink(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Delete ${account.name}?`}
+        description="This will permanently delete this account and all its transactions. This action cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
+        onCancel={() => setConfirmDelete(false)}
       />
     </>
   );
