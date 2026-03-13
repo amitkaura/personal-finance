@@ -229,6 +229,31 @@ describe("TransactionsPage", () => {
     mockSearchParams.value = new URLSearchParams();
   });
 
+  // --- Category and date filter from URL params ---
+
+  it("pre-selects category and date filters when query params are present", async () => {
+    mockSearchParams.value = new URLSearchParams(
+      "category=Food+%26+Dining&from=2025-03-01&to=2025-03-31"
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /filters/i }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Food & Dining")).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("From date")).toHaveValue("2025-03-01");
+    expect(screen.getByLabelText("To date")).toHaveValue("2025-03-31");
+
+    mockSearchParams.value = new URLSearchParams();
+  });
+
   // --- Basic functionality ---
 
   it("renders the page title", async () => {

@@ -61,6 +61,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Budgets
 - Monthly category budgets with configurable amounts; **click-to-edit** inline amount editing
 - Optional rollover of unspent budget to the next month (tooltip explains rollover behavior)
+- **Click-to-filter** -- click any budget row to navigate to the Transactions page pre-filtered by that category and month date range
 - **Accessible progress bars** -- ARIA `progressbar` role with `aria-valuenow`/`aria-valuemax`
 - Copy all budgets from one month to another
 - **Shared budgets** -- create household-level budgets editable by either partner
@@ -548,14 +549,14 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (312 tests across 32 files):**
+**What's tested (314 tests across 32 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
 | `settings-page` | 17 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
-| `transactions-page` | 14 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param |
+| `transactions-page` | 15 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params |
 | `sidebar` | 13 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
 | `accounts-page` | 13 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs, click row navigates to filtered transactions |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
@@ -564,7 +565,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `goals-page` | 10 | Title, empty state, active/completed sections, progress bar, target date, create dialog, shared summary, delete confirm |
 | `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
 | `reports-page` | 8 | Title, period selector, loading, summary cards, category bars, empty states, top merchants |
-| `budgets-page` | 8 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes |
+| `budgets-page` | 9 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes, click row navigates to filtered transactions |
 | `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
 | `recurring-page` | 7 | Title, loading, empty state, recurring cards, summary, consistent/varies badges, sort dropdown |
 | `connections-page` | 6 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync |

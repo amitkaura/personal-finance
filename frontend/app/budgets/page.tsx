@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   ChevronLeft,
@@ -450,6 +451,7 @@ export default function BudgetsPage() {
                 onUpdateAmount={(id, amount) => updateMutation.mutate({ id, amount })}
                 onDelete={(item) => setDeleteConfirm(item)}
                 isUpdating={updateMutation.isPending}
+                month={month}
               />
               <BudgetSection
                 title="Partner's Budgets"
@@ -461,6 +463,7 @@ export default function BudgetsPage() {
                 onUpdateAmount={() => {}}
                 onDelete={() => {}}
                 isUpdating={false}
+                month={month}
               />
               <BudgetSection
                 title="Shared Budgets"
@@ -473,6 +476,7 @@ export default function BudgetsPage() {
                 onDelete={(item) => setDeleteConfirm(item)}
                 isUpdating={updateMutation.isPending}
                 showBreakdown
+                month={month}
               />
             </div>
           ) : (
@@ -503,6 +507,7 @@ export default function BudgetsPage() {
                       onDelete={() => setDeleteConfirm(item)}
                       isUpdating={updateMutation.isPending}
                       editable={isViewingOwn}
+                      month={month}
                     />
                   ))}
                 </div>
@@ -522,6 +527,7 @@ export default function BudgetsPage() {
                     onDelete={(item) => setDeleteConfirm(item)}
                     isUpdating={updateMutation.isPending}
                     showBreakdown
+                    month={month}
                   />
                 </div>
               )}
@@ -559,6 +565,7 @@ function BudgetSection({
   onDelete,
   isUpdating,
   showBreakdown = false,
+  month,
 }: {
   title: string;
   section: BudgetSectionSummary;
@@ -570,6 +577,7 @@ function BudgetSection({
   onDelete: (item: BudgetSummaryItem) => void;
   isUpdating: boolean;
   showBreakdown?: boolean;
+  month: string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const rolloverMap = useMemo(() => {
@@ -610,6 +618,7 @@ function BudgetSection({
               isUpdating={isUpdating}
               editable={editable}
               breakdown={showBreakdown ? item.breakdown : undefined}
+              month={month}
             />
           ))}
         </div>
@@ -628,6 +637,7 @@ function BudgetItemRow({
   isUpdating,
   editable = true,
   breakdown,
+  month,
 }: {
   item: BudgetSummaryItem;
   rolloverEnabled: boolean;
@@ -638,9 +648,11 @@ function BudgetItemRow({
   isUpdating: boolean;
   editable?: boolean;
   breakdown?: Record<string, number>;
+  month: string;
 }) {
   const percent = Math.min(item.percent_used, 100);
   const color = progressColor(item.percent_used);
+  const router = useRouter();
   const [editingAmount, setEditingAmount] = useState(false);
   const [amountValue, setAmountValue] = useState(String(item.budgeted));
   const inputRef = useRef<HTMLInputElement>(null);
@@ -670,7 +682,17 @@ function BudgetItemRow({
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 flex-1">
+        <div
+          className="min-w-0 flex-1 cursor-pointer rounded-xl transition-colors hover:bg-muted/50"
+          onClick={() => {
+            const [y, m] = month.split("-").map(Number);
+            const lastDay = new Date(y, m, 0).getDate();
+            const from = `${month}-01`;
+            const to = `${month}-${String(lastDay).padStart(2, "0")}`;
+            router.push(`/transactions?category=${encodeURIComponent(item.category)}&from=${from}&to=${to}`);
+          }}
+          role="link"
+        >
           <div className="flex items-center justify-between gap-2">
             <p className="font-medium">{item.category}</p>
             <div className="flex items-center gap-3 text-sm">
@@ -678,7 +700,8 @@ function BudgetItemRow({
                 {formatCurrency(item.spent)} /{" "}
                 {editable && !editingAmount ? (
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setAmountValue(String(item.budgeted));
                       setEditingAmount(true);
                     }}
@@ -693,6 +716,7 @@ function BudgetItemRow({
                     value={amountValue}
                     onChange={(e) => setAmountValue(e.target.value)}
                     onKeyDown={handleAmountKeyDown}
+                    onClick={(e) => e.stopPropagation()}
                     onBlur={() => {
                       setAmountValue(String(item.budgeted));
                       setEditingAmount(false);

@@ -41,6 +41,19 @@ vi.mock("@/components/household-provider", () => ({
   }),
 }));
 
+const mockRouterPush = vi.hoisted(() => vi.fn());
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockRouterPush,
+    replace: vi.fn(),
+    back: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  usePathname: () => "/budgets",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const TEST_SUMMARY: BudgetSummary = {
   month: "2025-03",
   items: [
@@ -167,6 +180,29 @@ describe("BudgetsPage", () => {
     expect(first).toHaveAttribute("aria-valuenow");
     expect(first).toHaveAttribute("aria-valuemin", "0");
     expect(first).toHaveAttribute("aria-valuemax");
+  });
+
+  // --- Budget row click to filtered transactions ---
+
+  it("navigates to transactions page filtered by category and month when clicking a budget row", async () => {
+    mockRouterPush.mockClear();
+    const user = userEvent.setup();
+    renderWithProviders(<BudgetsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Food & Dining")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Food & Dining"));
+
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      expect.stringContaining("/transactions?")
+    );
+    const url = mockRouterPush.mock.calls[0][0] as string;
+    const params = new URLSearchParams(url.split("?")[1]);
+    expect(params.get("category")).toBe("Food & Dining");
+    expect(params.get("from")).toMatch(/^\d{4}-\d{2}-01$/);
+    expect(params.get("to")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   // --- Basic functionality ---

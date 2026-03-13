@@ -33,12 +33,18 @@ export default function TransactionsPage() {
   const filtersRef = useRef<HTMLDivElement>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState(
+    () => searchParams.get("category") ?? "",
+  );
   const [transactionType, setTransactionType] = useState<
     "all" | "income" | "expense"
   >("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(
+    () => searchParams.get("from") ?? "",
+  );
+  const [dateTo, setDateTo] = useState(
+    () => searchParams.get("to") ?? "",
+  );
   const [amountMin, setAmountMin] = useState("");
   const [amountMax, setAmountMax] = useState("");
   const [selectedAccountId, setSelectedAccountId] = useState(
