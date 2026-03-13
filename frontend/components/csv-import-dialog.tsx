@@ -30,6 +30,7 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
   const [result, setResult] = useState<ImportCompleteEvent | null>(null);
+  const [negateAmounts, setNegateAmounts] = useState(false);
 
   const headers = rawRows[0] ?? [];
 
@@ -40,8 +41,8 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
 
   const mappedRows = useMemo<MappedRow[]>(() => {
     if (!hasDateAndMerchant || rawRows.length < 2) return [];
-    return buildMappedRows(rawRows, columnRoles);
-  }, [rawRows, columnRoles, hasDateAndMerchant]);
+    return buildMappedRows(rawRows, columnRoles, { negateAmounts });
+  }, [rawRows, columnRoles, hasDateAndMerchant, negateAmounts]);
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -184,6 +185,18 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
               </table>
             </div>
 
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={negateAmounts}
+                onChange={(e) => setNegateAmounts(e.target.checked)}
+                className="rounded border-border"
+              />
+              <span className="text-muted-foreground">
+                Negate amounts (flip income/expense signs)
+              </span>
+            </label>
+
             {!hasDateAndMerchant && (
               <p className="text-xs text-amber-400">
                 Assign at least Date, Merchant, and Amount (or Debit/Credit) columns to continue.
@@ -250,6 +263,18 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
                 </tbody>
               </table>
             </div>
+
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={negateAmounts}
+                onChange={(e) => setNegateAmounts(e.target.checked)}
+                className="rounded border-border"
+              />
+              <span className="text-muted-foreground">
+                Negate amounts (flip income/expense signs)
+              </span>
+            </label>
 
             {error && (
               <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-xs text-red-400">

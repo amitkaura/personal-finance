@@ -254,6 +254,66 @@ describe("buildMappedRows", () => {
     expect(mapped).toHaveLength(1);
     expect(mapped[0].amount).toBe(-3000.00);
   });
+
+  it("treats negative credit values as income (not expense)", () => {
+    const rows = [
+      ["Date", "Description", "Debit", "Credit"],
+      ["2026-01-15", "Coffee Shop", "4.50", ""],
+      ["2026-01-16", "Employer Payroll", "", "-1500.00"],
+    ];
+    const roles: ("date" | "merchant" | "debit" | "credit")[] = [
+      "date", "merchant", "debit", "credit",
+    ];
+    const mapped = buildMappedRows(rows, roles);
+
+    expect(mapped).toHaveLength(2);
+    expect(mapped[0].amount).toBe(4.50);
+    expect(mapped[1].amount).toBe(-1500.00);
+  });
+
+  it("treats negative debit values as expenses", () => {
+    const rows = [
+      ["Date", "Description", "Debit", "Credit"],
+      ["2026-01-15", "Refund", "-25.00", ""],
+    ];
+    const roles: ("date" | "merchant" | "debit" | "credit")[] = [
+      "date", "merchant", "debit", "credit",
+    ];
+    const mapped = buildMappedRows(rows, roles);
+
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0].amount).toBe(25.00);
+  });
+
+  it("negates all amounts when negateAmounts option is set", () => {
+    const rows = [
+      ["Date", "Description", "Amount"],
+      ["2026-01-15", "Coffee Shop", "-25.00"],
+      ["2026-01-16", "Employer Payroll", "1500.00"],
+    ];
+    const roles: ("date" | "merchant" | "amount")[] = ["date", "merchant", "amount"];
+    const mapped = buildMappedRows(rows, roles, { negateAmounts: true });
+
+    expect(mapped).toHaveLength(2);
+    expect(mapped[0].amount).toBe(25.00);
+    expect(mapped[1].amount).toBe(-1500.00);
+  });
+
+  it("negates debit/credit amounts when negateAmounts option is set", () => {
+    const rows = [
+      ["Date", "Description", "Debit", "Credit"],
+      ["2026-01-15", "Coffee", "4.50", ""],
+      ["2026-01-16", "Payroll", "", "1500.00"],
+    ];
+    const roles: ("date" | "merchant" | "debit" | "credit")[] = [
+      "date", "merchant", "debit", "credit",
+    ];
+    const mapped = buildMappedRows(rows, roles, { negateAmounts: true });
+
+    expect(mapped).toHaveLength(2);
+    expect(mapped[0].amount).toBe(-4.50);
+    expect(mapped[1].amount).toBe(1500.00);
+  });
 });
 
 describe("buildBulkMappedRows", () => {
@@ -362,6 +422,47 @@ describe("buildBulkMappedRows", () => {
     expect(mapped[0].account_name).toBe("Visa");
     expect(mapped[0].owner_name).toBe("Bob");
     expect(mapped[1].amount).toBe(-2000.00);
+    expect(mapped[1].account_name).toBe("Checking");
+  });
+
+  it("treats negative credit values as income in bulk rows", () => {
+    const rows = [
+      ["Date", "Merchant", "Debit", "Credit", "Account"],
+      ["2026-01-15", "Payroll", "", "-2500.00", "Checking"],
+    ];
+    const roles: ColumnRole[] = ["date", "merchant", "debit", "credit", "account"];
+    const mapped = buildBulkMappedRows(rows, roles);
+
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0].amount).toBe(-2500.00);
+    expect(mapped[0].account_name).toBe("Checking");
+  });
+
+  it("treats negative debit values as expenses in bulk rows", () => {
+    const rows = [
+      ["Date", "Merchant", "Debit", "Credit", "Account"],
+      ["2026-01-15", "Refund", "-15.00", "", "Visa"],
+    ];
+    const roles: ColumnRole[] = ["date", "merchant", "debit", "credit", "account"];
+    const mapped = buildBulkMappedRows(rows, roles);
+
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0].amount).toBe(15.00);
+  });
+
+  it("negates all amounts when negateAmounts option is set", () => {
+    const rows = [
+      ["Date", "Merchant", "Amount", "Account"],
+      ["2026-01-15", "Coffee", "-25.00", "Visa"],
+      ["2026-01-16", "Payroll", "1500.00", "Checking"],
+    ];
+    const roles: ColumnRole[] = ["date", "merchant", "amount", "account"];
+    const mapped = buildBulkMappedRows(rows, roles, { negateAmounts: true });
+
+    expect(mapped).toHaveLength(2);
+    expect(mapped[0].amount).toBe(25.00);
+    expect(mapped[0].account_name).toBe("Visa");
+    expect(mapped[1].amount).toBe(-1500.00);
     expect(mapped[1].account_name).toBe("Checking");
   });
 });

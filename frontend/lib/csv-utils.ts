@@ -177,9 +177,14 @@ export function normalizeDate(raw: string): string | null {
   return null;
 }
 
+export interface MappingOptions {
+  negateAmounts?: boolean;
+}
+
 export function buildMappedRows(
   rawRows: string[][],
   columnRoles: ColumnRole[],
+  options?: MappingOptions,
 ): MappedRow[] {
   const dateIdx = columnRoles.indexOf("date");
   const merchantIdx = columnRoles.indexOf("merchant");
@@ -205,8 +210,8 @@ export function buildMappedRows(
     } else {
       const rawDebit = (debitIdx >= 0 ? row[debitIdx] ?? "" : "").replace(/[$,\s]/g, "");
       const rawCredit = (creditIdx >= 0 ? row[creditIdx] ?? "" : "").replace(/[$,\s]/g, "");
-      const debit = parseFloat(rawDebit) || 0;
-      const credit = parseFloat(rawCredit) || 0;
+      const debit = Math.abs(parseFloat(rawDebit) || 0);
+      const credit = Math.abs(parseFloat(rawCredit) || 0);
 
       if (debit === 0 && credit === 0) continue;
 
@@ -216,6 +221,8 @@ export function buildMappedRows(
 
     const merchant = row[merchantIdx]?.trim();
     if (!merchant) continue;
+
+    if (options?.negateAmounts) amount = -amount;
 
     const entry: MappedRow = { date, amount, merchant_name: merchant };
     if (categoryIdx >= 0 && row[categoryIdx]?.trim()) {
@@ -229,6 +236,7 @@ export function buildMappedRows(
 export function buildBulkMappedRows(
   rawRows: string[][],
   columnRoles: ColumnRole[],
+  options?: MappingOptions,
 ): BulkMappedRow[] {
   const dateIdx = columnRoles.indexOf("date");
   const merchantIdx = columnRoles.indexOf("merchant");
@@ -258,8 +266,8 @@ export function buildBulkMappedRows(
     } else {
       const rawDebit = (debitIdx >= 0 ? row[debitIdx] ?? "" : "").replace(/[$,\s]/g, "");
       const rawCredit = (creditIdx >= 0 ? row[creditIdx] ?? "" : "").replace(/[$,\s]/g, "");
-      const debit = parseFloat(rawDebit) || 0;
-      const credit = parseFloat(rawCredit) || 0;
+      const debit = Math.abs(parseFloat(rawDebit) || 0);
+      const credit = Math.abs(parseFloat(rawCredit) || 0);
 
       if (debit === 0 && credit === 0) continue;
       amount = debit > 0 ? debit : -credit;
@@ -267,6 +275,8 @@ export function buildBulkMappedRows(
 
     const merchant = row[merchantIdx]?.trim();
     if (!merchant) continue;
+
+    if (options?.negateAmounts) amount = -amount;
 
     const entry: BulkMappedRow = { date, amount, merchant_name: merchant };
     if (categoryIdx >= 0 && row[categoryIdx]?.trim()) {
