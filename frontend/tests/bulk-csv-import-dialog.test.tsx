@@ -1,14 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, fireEvent } from "@testing-library/react";
+import { screen, waitFor, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import BulkCsvImportDialog from "@/components/bulk-csv-import-dialog";
-import { renderWithProviders } from "./helpers";
+import { renderWithProviders, TEST_CATEGORIES } from "./helpers";
 
 const mockApi = vi.hoisted(() => ({
   bulkImportTransactions: vi.fn(),
+  getAccounts: vi.fn(),
+  getCategories: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({ api: mockApi }));
+
+vi.mock("@/components/household-provider", () => ({
+  useHousehold: () => ({ household: null, loading: false, refetch: () => {} }),
+}));
 
 function makeCsvFile(content: string, name = "test.csv"): File {
   return new File([content], name, { type: "text/csv" });
@@ -21,11 +27,27 @@ async function uploadCsv(content: string) {
   fireEvent.change(input, { target: { files: [file] } });
 }
 
+async function advanceToPreview(
+  user: ReturnType<typeof userEvent.setup>,
+  csv: string,
+  extraSteps: string[] = [],
+) {
+  await uploadCsv(csv);
+  await waitFor(() => expect(screen.getByText("Next")).toBeInTheDocument());
+  await user.click(screen.getByText("Next"));
+  for (const _ of extraSteps) {
+    await waitFor(() => expect(screen.getByText("Next")).toBeInTheDocument());
+    await user.click(screen.getByText("Next"));
+  }
+}
+
 describe("BulkCsvImportDialog", () => {
   const onClose = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockApi.getAccounts.mockResolvedValue([]);
+    mockApi.getCategories.mockResolvedValue([]);
     mockApi.bulkImportTransactions.mockResolvedValue({
       type: "complete",
       imported: 2,
@@ -35,77 +57,155 @@ describe("BulkCsvImportDialog", () => {
     });
   });
 
-  it("renders initial state with file upload button", () => {
+  it("renders upload step with file upload button", () => {
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
     expect(screen.getByText("Bulk Import Transactions")).toBeInTheDocument();
     expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
-    expect(screen.getByText("Cancel")).toBeInTheDocument();
-    expect(screen.getByText(/Upload a CSV with columns/)).toBeInTheDocument();
+    expect(screen.getByText(/Upload a CSV with transactions/)).toBeInTheDocument();
   });
 
-  it("file upload parses CSV and shows preview", async () => {
+  it("file upload goes to column mapping step", async () => {
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
     await uploadCsv(
       "Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n",
     );
 
     await waitFor(() => {
-      expect(screen.getByText("2 rows parsed")).toBeInTheDocument();
-      expect(screen.getByText("Coffee")).toBeInTheDocument();
-      expect(screen.getByText("Grocery")).toBeInTheDocument();
+      expect(screen.getByText(/Verify column assignments/)).toBeTruthy();
+      const table = screen.getByRole("table");
+      expect(within(table).getByText("Column")).toBeInTheDocument();
+      expect(within(table).getByText("Sample")).toBeInTheDocument();
+      expect(within(table).getByText("Role")).toBeInTheDocument();
     });
   });
 
-  it("shows error for invalid CSV", async () => {
+  it("shows error for CSV with only a header row", async () => {
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
     await uploadCsv("Date,Merchant,Amount\n");
 
     await waitFor(() => {
       expect(
-        screen.getByText("Could not parse CSV. Ensure it has date, amount, and merchant/description columns."),
+        screen.getByText("CSV must contain a header row and at least one data row."),
       ).toBeInTheDocument();
     });
   });
 
-  it("shows detected accounts when CSV has account_name column", async () => {
+  it("shows accounts review step when CSV has account column", async () => {
+    const user = userEvent.setup();
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
     await uploadCsv(
       "Date,Merchant,Amount,Account\n2026-01-15,Coffee,4.50,Visa\n2026-01-16,Grocery,42.00,Checking\n",
     );
 
+    await waitFor(() => expect(screen.getByText("Next")).toBeInTheDocument());
+    await user.click(screen.getByText("Next"));
+
     await waitFor(() => {
-      expect(screen.getByText("Accounts detected: Visa, Checking")).toBeInTheDocument();
+      expect(screen.getByText("Visa")).toBeInTheDocument();
+      expect(screen.getByText("Checking")).toBeInTheDocument();
+      expect(screen.getAllByText("New")).toHaveLength(2);
     });
   });
 
-  it("Import button disabled when no rows", () => {
-    renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
-    expect(screen.getByText("Import 0 rows")).toBeDisabled();
-  });
-
-  it("Import calls bulkImportTransactions with correct payload", async () => {
+  it("marks existing accounts appropriately", async () => {
+    mockApi.getAccounts.mockResolvedValue([{ id: 1, name: "Visa" }]);
     const user = userEvent.setup();
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
     await uploadCsv(
-      "Date,Merchant,Amount,Account,Category\n2026-01-15,Coffee,4.50,Visa,Food\n",
+      "Date,Merchant,Amount,Account\n2026-01-15,Coffee,4.50,Visa\n2026-01-16,Grocery,42.00,Checking\n",
     );
 
-    await waitFor(() => expect(screen.getByText("1 rows parsed")).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 rows/));
+    await waitFor(() => expect(screen.getByText("Next")).toBeInTheDocument());
+    await user.click(screen.getByText("Next"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Existing")).toBeInTheDocument();
+      expect(screen.getByText("New")).toBeInTheDocument();
+    });
+  });
+
+  it("shows category matching step when CSV has category column", async () => {
+    mockApi.getCategories.mockResolvedValue(TEST_CATEGORIES);
+    const user = userEvent.setup();
+    renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
+    await uploadCsv(
+      "Date,Merchant,Amount,Category\n2026-01-15,Coffee,4.50,Food & Dining\n2026-01-16,Grocery,42.00,Crypto Fees\n",
+    );
+
+    await waitFor(() => expect(screen.getByText("Next")).toBeInTheDocument());
+    await user.click(screen.getByText("Next"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/categories found in CSV/)).toBeInTheDocument();
+      expect(screen.getByText("Food & Dining")).toBeInTheDocument();
+      expect(screen.getByText("Crypto Fees")).toBeInTheDocument();
+      expect(screen.getByText("Exact")).toBeInTheDocument();
+      expect(screen.getByText("New")).toBeInTheDocument();
+    });
+  });
+
+  it("navigates through all steps to import with accounts and categories", async () => {
+    mockApi.getCategories.mockResolvedValue(TEST_CATEGORIES);
+    const user = userEvent.setup();
+    renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
+
+    await advanceToPreview(
+      user,
+      "Date,Merchant,Amount,Account,Category\n2026-01-15,Coffee,4.50,Visa,Food & Dining\n",
+      ["accounts", "categories"],
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 transactions ready/)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText(/Import 1 transactions/));
+
+    await waitFor(() => {
+      expect(screen.getByText("Import complete")).toBeInTheDocument();
+    });
+  });
+
+  it("Import calls bulkImportTransactions with correct payload", async () => {
+    mockApi.getCategories.mockResolvedValue(TEST_CATEGORIES);
+    const user = userEvent.setup();
+    renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
+
+    await advanceToPreview(
+      user,
+      "Date,Merchant,Amount,Account,Category\n2026-01-15,Coffee,4.50,Visa,Food & Dining\n",
+      ["accounts", "categories"],
+    );
+
+    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 1 transactions/));
 
     await waitFor(() => {
       expect(mockApi.bulkImportTransactions).toHaveBeenCalled();
-      const [payload, onProgress] = mockApi.bulkImportTransactions.mock.calls[0];
+      const [payload] = mockApi.bulkImportTransactions.mock.calls[0];
       expect(payload.accounts).toEqual([{ name: "Visa", type: "depository" }]);
       expect(payload.transactions).toHaveLength(1);
       expect(payload.transactions[0]).toMatchObject({
         date: "2026-01-15",
         amount: 4.5,
         merchant_name: "Coffee",
-        category: "Food",
+        category: "Food & Dining",
         account_name: "Visa",
       });
-      expect(typeof onProgress).toBe("function");
+    });
+  });
+
+  it("skips to preview when no accounts or categories", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
+
+    await advanceToPreview(
+      user,
+      "Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 transactions ready/)).toBeInTheDocument();
     });
   });
 
@@ -116,7 +216,6 @@ describe("BulkCsvImportDialog", () => {
     });
     mockApi.bulkImportTransactions.mockImplementation(
       (_payload: unknown, onProgress: (evt: unknown) => void) => {
-        // Call progress callback before resolving so progress UI is shown
         queueMicrotask(() => {
           onProgress({ current: 1, total: 1, merchant: "Coffee", status: "", category: null });
         });
@@ -131,9 +230,9 @@ describe("BulkCsvImportDialog", () => {
     );
     const user = userEvent.setup();
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
-    await uploadCsv("Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
-    await waitFor(() => expect(screen.getByText(/Import 1 rows/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 rows/));
+    await advanceToPreview(user, "Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
+    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 1 transactions/));
 
     await waitFor(() => {
       expect(screen.getByText("Importing...")).toBeInTheDocument();
@@ -153,12 +252,14 @@ describe("BulkCsvImportDialog", () => {
     });
     const user = userEvent.setup();
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
-    await uploadCsv(
+
+    await advanceToPreview(
+      user,
       "Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n",
     );
 
-    await waitFor(() => expect(screen.getByText(/Import 2 rows/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 2 rows/));
+    await waitFor(() => expect(screen.getByText(/Import 2 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 2 transactions/));
 
     await waitFor(() => {
       expect(screen.getByText("Import complete")).toBeInTheDocument();
@@ -176,10 +277,9 @@ describe("BulkCsvImportDialog", () => {
     });
     const user = userEvent.setup();
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
-    await uploadCsv("Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
-
-    await waitFor(() => expect(screen.getByText(/Import 1 rows/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 rows/));
+    await advanceToPreview(user, "Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
+    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 1 transactions/));
 
     await waitFor(() => {
       expect(screen.getByText("Import complete")).toBeInTheDocument();
@@ -190,19 +290,45 @@ describe("BulkCsvImportDialog", () => {
   it("Done button calls onClose", async () => {
     const user = userEvent.setup();
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
-    await uploadCsv("Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
-    await waitFor(() => expect(screen.getByText(/Import 1 rows/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 rows/));
+    await advanceToPreview(user, "Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
+    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 1 transactions/));
 
     await waitFor(() => expect(screen.getByText("Done")).toBeInTheDocument());
     await user.click(screen.getByText("Done"));
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("Cancel button calls onClose", async () => {
+  it("Back button in columns returns to upload", async () => {
     const user = userEvent.setup();
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
-    await user.click(screen.getByText("Cancel"));
-    expect(onClose).toHaveBeenCalled();
+    await uploadCsv("Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
+
+    await waitFor(() => expect(screen.getByText("Back")).toBeInTheDocument());
+    await user.click(screen.getByText("Back"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
+    });
+  });
+
+  it("includes new_categories in payload for unmatched categories", async () => {
+    mockApi.getCategories.mockResolvedValue(TEST_CATEGORIES);
+    const user = userEvent.setup();
+    renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
+
+    await advanceToPreview(
+      user,
+      "Date,Merchant,Amount,Category\n2026-01-15,Coffee,4.50,Crypto Fees\n",
+      ["categories"],
+    );
+
+    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 1 transactions/));
+
+    await waitFor(() => {
+      const [payload] = mockApi.bulkImportTransactions.mock.calls[0];
+      expect(payload.new_categories).toContain("Crypto Fees");
+    });
   });
 });

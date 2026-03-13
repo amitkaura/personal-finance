@@ -1,0 +1,28 @@
+---
+description: Check frontend/lib/ for existing utilities before writing inline logic in components
+globs: "frontend/components/**"
+alwaysApply: false
+---
+
+# Check for Existing Utilities First
+
+Before writing any non-trivial logic inline in a component, **search `frontend/lib/` for existing utilities**.
+
+## Key Libraries
+
+| File | Provides |
+|------|----------|
+| `frontend/lib/csv-utils.ts` | CSV parsing (RFC-compliant, handles quoted fields), column role auto-detection (`guessRole`), date normalization, debit/credit mapping, `buildMappedRows`, `buildBulkMappedRows`, fuzzy category matching (`matchCategories`, Levenshtein distance) |
+| `frontend/lib/api.ts` | All API calls, type exports (`BulkImportPayload`, `ImportProgressEvent`, `ImportCompleteEvent`), streaming NDJSON helper |
+
+## Rules
+
+1. **Never write an inline CSV parser** -- use `parseCsv` from `csv-utils.ts`.
+2. **Never hardcode column name lookups** -- use `guessRole` and `buildMappedRows`/`buildBulkMappedRows`.
+3. **Never write inline date parsing** -- use `normalizeDate` from `csv-utils.ts`.
+4. **Never write inline category matching** -- use `matchCategories` from `csv-utils.ts`.
+5. If a utility doesn't exist yet, create it in `frontend/lib/` with tests, then import it.
+
+## Why This Matters
+
+The CSV import dialogs were rewritten with a naive 3-line CSV parser that split on commas (breaking on quoted fields) and hardcoded column names, while `csv-utils.ts` (298 lines, 51 tests) sat unused on disk.

@@ -1,0 +1,27 @@
+---
+description: Prefer editing existing files over rewriting them from scratch to prevent feature regressions
+alwaysApply: true
+---
+
+# Edit, Don't Rewrite
+
+When modifying an existing file, **always edit it in place** rather than rewriting from scratch.
+
+## Before Changing Any File
+
+1. **Read the file first** -- understand what it already does before making changes.
+2. **Identify imports and dependencies** -- note which libraries, utilities, and modules the file uses.
+3. **Use targeted edits** (`StrReplace`) to modify specific sections, not `Write` to replace the entire file.
+
+## When a Full Rewrite Seems Necessary
+
+If the file truly needs to be rewritten (rare), before proceeding:
+
+1. List every piece of functionality the current version provides.
+2. List every import/utility it uses from the codebase.
+3. Confirm with the user that removing any of these is intentional.
+4. Ensure the new version imports and uses the same utility libraries -- never replace a tested library function with a naive inline reimplementation.
+
+## Why This Matters
+
+Rewriting files from scratch silently drops functionality. The CSV import dialogs were rewritten without using the existing `csv-utils.ts` library, losing column mapping, debit/credit support, date normalization, and fuzzy category matching -- all of which had 51 passing tests.

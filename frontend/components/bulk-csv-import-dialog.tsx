@@ -1,68 +1,82 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Upload, X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { useState, useRef, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Upload, X, Loader2, CheckCircle2, AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
 import { api, BulkImportPayload, ImportProgressEvent, ImportCompleteEvent } from "@/lib/api";
+import { useHousehold } from "@/components/household-provider";
+import {
+  parseCsv,
+  guessRole,
+  buildBulkMappedRows,
+  matchCategories,
+  ROLE_OPTIONS,
+  type ColumnRole,
+  type BulkMappedRow,
+  type CategoryMatch,
+} from "@/lib/csv-utils";
 
 interface Props {
   onClose: () => void;
 }
 
-interface ParsedRow {
-  date: string;
-  amount: number;
-  merchant_name: string;
-  category?: string;
-  notes?: string;
-  account_name?: string;
-}
-
-function parseCsv(text: string): ParsedRow[] {
-  const lines = text.trim().split("\n");
-  if (lines.length < 2) return [];
-  const header = lines[0].toLowerCase().split(",").map((h) => h.trim().replace(/"/g, ""));
-
-  const dateIdx = header.findIndex((h) => h === "date");
-  const amountIdx = header.findIndex((h) => h === "amount");
-  const merchantIdx = header.findIndex((h) =>
-    ["merchant", "merchant_name", "description", "name", "payee"].includes(h),
-  );
-  const categoryIdx = header.findIndex((h) => h === "category");
-  const notesIdx = header.findIndex((h) => ["notes", "memo", "note"].includes(h));
-  const accountIdx = header.findIndex((h) =>
-    ["account", "account_name"].includes(h),
-  );
-
-  if (dateIdx === -1 || amountIdx === -1 || merchantIdx === -1) return [];
-
-  const rows: ParsedRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-    const amount = parseFloat(cols[amountIdx]);
-    if (isNaN(amount)) continue;
-    rows.push({
-      date: cols[dateIdx],
-      amount,
-      merchant_name: cols[merchantIdx] || "Unknown",
-      category: categoryIdx >= 0 ? cols[categoryIdx] || undefined : undefined,
-      notes: notesIdx >= 0 ? cols[notesIdx] || undefined : undefined,
-      account_name: accountIdx >= 0 ? cols[accountIdx] || undefined : undefined,
-    });
-  }
-  return rows;
-}
+type Step = "upload" | "columns" | "accounts" | "categories" | "preview" | "importing" | "result";
 
 export default function BulkCsvImportDialog({ onClose }: Props) {
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [rows, setRows] = useState<ParsedRow[]>([]);
-  const [importing, setImporting] = useState(false);
+  const { household } = useHousehold();
+  const [step, setStep] = useState<Step>("upload");
+  const [rawRows, setRawRows] = useState<string[][]>([]);
+  const [columnRoles, setColumnRoles] = useState<ColumnRole[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
   const [result, setResult] = useState<ImportCompleteEvent | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  const accountNames = [...new Set(rows.map((r) => r.account_name).filter(Boolean))] as string[];
+  const { data: existingAccounts } = useQuery({
+    queryKey: ["accounts"],
+    queryFn: () => api.getAccounts(),
+  });
+
+  const { data: existingCategories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => api.getCategories(),
+  });
+
+  const headers = rawRows[0] ?? [];
+
+  const hasRequired =
+    columnRoles.includes("date") &&
+    columnRoles.includes("merchant") &&
+    (columnRoles.includes("amount") || columnRoles.includes("debit") || columnRoles.includes("credit"));
+
+  const mappedRows = useMemo<BulkMappedRow[]>(() => {
+    if (!hasRequired || rawRows.length < 2) return [];
+    return buildBulkMappedRows(rawRows, columnRoles);
+  }, [rawRows, columnRoles, hasRequired]);
+
+  const csvAccountNames = useMemo(() => {
+    const names = new Set(mappedRows.map((r) => r.account_name).filter(Boolean));
+    return [...names] as string[];
+  }, [mappedRows]);
+
+  const existingAccountNames = useMemo(
+    () => new Set((existingAccounts ?? []).map((a) => a.name.toLowerCase())),
+    [existingAccounts],
+  );
+
+  const csvCategories = useMemo(() => {
+    const cats = new Set(mappedRows.map((r) => r.category).filter(Boolean));
+    return [...cats] as string[];
+  }, [mappedRows]);
+
+  const categoryMatches = useMemo<CategoryMatch[]>(() => {
+    if (csvCategories.length === 0 || !existingCategories) return [];
+    return matchCategories(csvCategories, existingCategories);
+  }, [csvCategories, existingCategories]);
+
+  const hasOwnerColumn = columnRoles.includes("owner");
+  const showOwnersStep = hasOwnerColumn && !!household;
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -70,44 +84,100 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
     const reader = new FileReader();
     reader.onload = () => {
       const parsed = parseCsv(reader.result as string);
-      if (parsed.length === 0) {
-        setError("Could not parse CSV. Ensure it has date, amount, and merchant/description columns.");
+      if (parsed.length < 2) {
+        setError("CSV must contain a header row and at least one data row.");
         return;
       }
       setError(null);
-      setRows(parsed);
+      setRawRows(parsed);
+      setColumnRoles(parsed[0].map((h) => guessRole(h)));
+      setStep("columns");
     };
     reader.readAsText(file);
   }
 
+  function handleRoleChange(idx: number, role: ColumnRole) {
+    setColumnRoles((prev) => {
+      const next = [...prev];
+      next[idx] = role;
+      return next;
+    });
+  }
+
+  function nextFromColumns() {
+    if (csvAccountNames.length > 0) {
+      setStep("accounts");
+    } else if (csvCategories.length > 0) {
+      setStep("categories");
+    } else {
+      setStep("preview");
+    }
+  }
+
+  function nextFromAccounts() {
+    if (csvCategories.length > 0) {
+      setStep("categories");
+    } else {
+      setStep("preview");
+    }
+  }
+
+  function backFromAccounts() {
+    setStep("columns");
+  }
+
+  function backFromCategories() {
+    if (csvAccountNames.length > 0) {
+      setStep("accounts");
+    } else {
+      setStep("columns");
+    }
+  }
+
   async function handleImport() {
-    setImporting(true);
+    setStep("importing");
     setError(null);
     try {
+      const newAccountNames = csvAccountNames.filter(
+        (n) => !existingAccountNames.has(n.toLowerCase()),
+      );
+      const newCategories = categoryMatches
+        .filter((m) => m.isNew)
+        .map((m) => m.csvCategory);
+
       const payload: BulkImportPayload = {
-        accounts: accountNames.map((name) => ({ name, type: "depository" })),
-        transactions: rows,
-        new_categories: [],
+        accounts: newAccountNames.map((name) => ({ name, type: "depository" })),
+        transactions: mappedRows,
+        new_categories: newCategories,
       };
-      const complete = await api.bulkImportTransactions(
-        payload,
-        (evt) => setProgress(evt),
+
+      const complete = await api.bulkImportTransactions(payload, (evt) =>
+        setProgress(evt),
       );
       setResult(complete);
+      setStep("result");
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
-    } finally {
-      setImporting(false);
+      setStep("preview");
     }
   }
 
+  const selectClass =
+    "rounded-md bg-muted px-2 py-1 text-xs font-medium text-foreground outline-none focus:ring-1 focus:ring-ring cursor-pointer w-full";
+
+  const stepLabels = ["Upload", "Map Columns", "Accounts", "Categories", "Preview"];
+  const stepOrder: Step[] = ["upload", "columns", "accounts", "categories", "preview"];
+  const currentStepIdx = stepOrder.indexOf(
+    step === "importing" || step === "result" ? "preview" : step,
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-xl">
+      <div className="w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Bulk Import Transactions</h2>
           <button
@@ -118,9 +188,268 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
           </button>
         </div>
 
-        {result ? (
+        {/* Step indicator */}
+        <div className="mb-4 flex gap-1">
+          {stepLabels.map((_, i) => (
+            <div key={i} className={`h-1 flex-1 rounded-full ${currentStepIdx >= i ? "bg-accent" : "bg-muted"}`} />
+          ))}
+        </div>
+
+        {/* ── Upload ── */}
+        {step === "upload" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Upload a CSV with transactions. Columns for date, amount, and merchant/description are required.
+              Optional: category, account, notes, owner.
+            </p>
+            <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="inline-flex items-center gap-2 rounded-lg border-2 border-dashed border-border px-6 py-8 text-sm text-muted-foreground hover:border-accent hover:text-foreground w-full justify-center transition-colors"
+            >
+              <Upload className="h-5 w-5" />
+              Choose CSV file
+            </button>
+            {error && (
+              <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-xs text-red-400">
+                <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Column mapping ── */}
+        {step === "columns" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Verify column assignments. Supports separate Debit/Credit columns.
+            </p>
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Column</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Sample</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Role</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {headers.map((header, i) => (
+                    <tr key={i} className="border-t border-border">
+                      <td className="px-3 py-2 font-medium">{header}</td>
+                      <td className="px-3 py-2 text-muted-foreground truncate max-w-[150px]">
+                        {rawRows[1]?.[i] ?? "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        <select
+                          value={columnRoles[i]}
+                          onChange={(e) => handleRoleChange(i, e.target.value as ColumnRole)}
+                          className={selectClass}
+                        >
+                          {ROLE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {!hasRequired && (
+              <p className="text-xs text-amber-400">
+                Assign at least Date, Merchant, and Amount (or Debit/Credit) to continue.
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setStep("upload"); setRawRows([]); setColumnRoles([]); }}
+                className="inline-flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                <ArrowLeft className="h-4 w-4" /> Back
+              </button>
+              <div className="flex-1" />
+              <button
+                onClick={nextFromColumns}
+                disabled={!hasRequired || mappedRows.length === 0}
+                className="inline-flex items-center gap-1 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground disabled:opacity-50"
+              >
+                Next <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Accounts review ── */}
+        {step === "accounts" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {csvAccountNames.length} account{csvAccountNames.length !== 1 ? "s" : ""} found in CSV.
+              New accounts will be created automatically.
+            </p>
+            <div className="space-y-2">
+              {csvAccountNames.map((name) => {
+                const exists = existingAccountNames.has(name.toLowerCase());
+                return (
+                  <div key={name} className="flex items-center justify-between rounded-lg border border-border px-4 py-2.5">
+                    <span className="text-sm font-medium">{name}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${exists ? "bg-muted text-muted-foreground" : "bg-accent/20 text-accent"}`}>
+                      {exists ? "Existing" : "New"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={backFromAccounts} className="inline-flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+                <ArrowLeft className="h-4 w-4" /> Back
+              </button>
+              <div className="flex-1" />
+              <button onClick={nextFromAccounts} className="inline-flex items-center gap-1 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground">
+                Next <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Category matching ── */}
+        {step === "categories" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {csvCategories.length} categories found in CSV. Matched against your existing categories.
+            </p>
+            <div className="max-h-64 overflow-y-auto space-y-2">
+              {categoryMatches.map((m) => (
+                <div key={m.csvCategory} className="flex items-center justify-between rounded-lg border border-border px-4 py-2.5">
+                  <div>
+                    <span className="text-sm font-medium">{m.csvCategory}</span>
+                    {m.suggestion && (
+                      <span className="ml-2 text-xs text-muted-foreground">→ {m.suggestion}</span>
+                    )}
+                  </div>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    m.confidence === "exact" ? "bg-green-500/20 text-green-400" :
+                    m.confidence === "fuzzy" ? "bg-amber-500/20 text-amber-400" :
+                    "bg-accent/20 text-accent"
+                  }`}>
+                    {m.confidence === "exact" ? "Exact" : m.confidence === "fuzzy" ? "~Fuzzy" : "New"}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={backFromCategories} className="inline-flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+                <ArrowLeft className="h-4 w-4" /> Back
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setStep("preview")} className="inline-flex items-center gap-1 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground">
+                Next <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Preview ── */}
+        {step === "preview" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {mappedRows.length} transactions ready to import
+              {csvAccountNames.length > 0 && ` across ${csvAccountNames.length} accounts`}.
+            </p>
+            <div className="max-h-60 overflow-y-auto rounded-lg border border-border text-xs">
+              <table className="w-full">
+                <thead className="bg-muted sticky top-0">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left font-medium">Date</th>
+                    <th className="px-2 py-1.5 text-left font-medium">Merchant</th>
+                    <th className="px-2 py-1.5 text-right font-medium">Amount</th>
+                    {csvAccountNames.length > 0 && <th className="px-2 py-1.5 text-left font-medium">Account</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {mappedRows.slice(0, 20).map((r, i) => (
+                    <tr key={i} className="border-t border-border">
+                      <td className="px-2 py-1">{r.date}</td>
+                      <td className="px-2 py-1 truncate max-w-[150px]">{r.merchant_name}</td>
+                      <td className={`px-2 py-1 text-right tabular-nums ${r.amount < 0 ? "text-green-400" : ""}`}>
+                        {r.amount < 0 ? "+" : ""}{Math.abs(r.amount).toFixed(2)}
+                      </td>
+                      {csvAccountNames.length > 0 && (
+                        <td className="px-2 py-1 text-muted-foreground">{r.account_name ?? "—"}</td>
+                      )}
+                    </tr>
+                  ))}
+                  {mappedRows.length > 20 && (
+                    <tr className="border-t border-border">
+                      <td colSpan={csvAccountNames.length > 0 ? 4 : 3} className="px-2 py-1 text-center text-muted-foreground">
+                        ...and {mappedRows.length - 20} more
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-xs text-red-400">
+                <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (csvCategories.length > 0) setStep("categories");
+                  else if (csvAccountNames.length > 0) setStep("accounts");
+                  else setStep("columns");
+                }}
+                className="inline-flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                <ArrowLeft className="h-4 w-4" /> Back
+              </button>
+              <div className="flex-1" />
+              <button
+                onClick={handleImport}
+                disabled={mappedRows.length === 0}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground disabled:opacity-50"
+              >
+                <Upload className="h-4 w-4" />
+                Import {mappedRows.length} transactions
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Importing ── */}
+        {step === "importing" && (
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Importing...
+            </div>
+            {progress && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span className="truncate max-w-[200px]">{progress.merchant}</span>
+                  <span>{progress.current}/{progress.total}</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-accent transition-all"
+                    style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Result ── */}
+        {step === "result" && result && (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-success">
+            <div className="flex items-center gap-2 text-green-400">
               <CheckCircle2 className="h-5 w-5" />
               <span className="font-medium">Import complete</span>
             </div>
@@ -132,9 +461,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
                 {result.errors.slice(0, 5).map((e, i) => (
                   <p key={i}>{e}</p>
                 ))}
-                {result.errors.length > 5 && (
-                  <p>...and {result.errors.length - 5} more</p>
-                )}
+                {result.errors.length > 5 && <p>...and {result.errors.length - 5} more</p>}
               </div>
             )}
             <button
@@ -143,112 +470,6 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
             >
               Done
             </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <p className="text-xs text-muted-foreground">
-              Upload a CSV with columns: date, amount, merchant/description.
-              Optional: category, notes, account_name.
-            </p>
-
-            <div>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".csv"
-                onChange={handleFile}
-                className="hidden"
-              />
-              <button
-                onClick={() => fileRef.current?.click()}
-                disabled={importing}
-                className="inline-flex items-center gap-2 rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground hover:border-accent hover:text-foreground w-full justify-center"
-              >
-                <Upload className="h-4 w-4" />
-                {rows.length > 0 ? `${rows.length} rows parsed` : "Choose CSV file"}
-              </button>
-            </div>
-
-            {rows.length > 0 && (
-              <>
-                {accountNames.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Accounts detected: {accountNames.join(", ")}
-                  </p>
-                )}
-                <div className="max-h-40 overflow-y-auto rounded-lg border border-border text-xs">
-                  <table className="w-full">
-                    <thead className="bg-muted sticky top-0">
-                      <tr>
-                        <th className="px-2 py-1 text-left">Date</th>
-                        <th className="px-2 py-1 text-left">Merchant</th>
-                        <th className="px-2 py-1 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.slice(0, 10).map((r, i) => (
-                        <tr key={i} className="border-t border-border">
-                          <td className="px-2 py-1">{r.date}</td>
-                          <td className="px-2 py-1 truncate max-w-[150px]">{r.merchant_name}</td>
-                          <td className="px-2 py-1 text-right tabular-nums">{r.amount.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                      {rows.length > 10 && (
-                        <tr className="border-t border-border">
-                          <td colSpan={3} className="px-2 py-1 text-center text-muted-foreground">
-                            ...and {rows.length - 10} more rows
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-
-            {importing && progress && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>{progress.merchant}</span>
-                  <span>{progress.current}/{progress.total}</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-accent transition-all"
-                    style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {error && (
-              <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-xs text-red-400">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                {error}
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <button
-                onClick={onClose}
-                disabled={importing}
-                className="flex-1 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleImport}
-                disabled={rows.length === 0 || importing}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground disabled:opacity-50"
-              >
-                {importing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
-                {importing ? "Importing..." : `Import ${rows.length} rows`}
-              </button>
-            </div>
           </div>
         )}
       </div>

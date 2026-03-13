@@ -1,0 +1,35 @@
+---
+description: Treat existing tests as the source of truth -- fix code to pass tests, not the other way around
+globs: "**/tests/**,**/test_*"
+alwaysApply: false
+---
+
+# Tests Are the Source of Truth
+
+When tests fail after a code change, **the code is wrong, not the tests**.
+
+## Default Response to Failing Tests
+
+1. **Fix the code** so it passes the existing tests.
+2. Do NOT rewrite tests to match new (broken) behavior.
+3. If a test checks for behavior that seems wrong, ask the user before changing it.
+
+## When Tests May Be Updated
+
+Tests should only be changed when:
+
+- The user **explicitly requested** different behavior (requirements changed).
+- New functionality is being **added** (new test cases).
+- A test has a genuine bug (e.g., wrong assertion value that never matched the spec).
+
+## When Rewriting Tests
+
+If tests must be rewritten, before proceeding:
+
+1. **State what behavior is being removed** and why.
+2. **Confirm with the user** that the old behavior is no longer needed.
+3. Ensure the new tests cover at least as much functionality as the old ones.
+
+## Why This Matters
+
+The CSV import tests encoded correct multi-step wizard behavior. When the components were rewritten and tests failed, the tests were rewritten to match the simplified (broken) components -- silently dropping column mapping, debit/credit support, and category matching from the test expectations.

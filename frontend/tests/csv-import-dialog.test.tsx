@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, fireEvent } from "@testing-library/react";
+import { screen, waitFor, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CsvImportDialog from "@/components/csv-import-dialog";
 import { renderWithProviders, TEST_SETTINGS } from "./helpers";
@@ -22,6 +22,12 @@ async function uploadCsv(content: string) {
   fireEvent.change(input, { target: { files: [file] } });
 }
 
+async function advanceToPreview(user: ReturnType<typeof userEvent.setup>, csv: string) {
+  await uploadCsv(csv);
+  await waitFor(() => expect(screen.getByText("Next")).toBeInTheDocument());
+  await user.click(screen.getByText("Next"));
+}
+
 describe("CsvImportDialog", () => {
   const onClose = vi.fn();
 
@@ -37,32 +43,31 @@ describe("CsvImportDialog", () => {
     });
   });
 
-  it("renders initial state with file upload button", () => {
+  it("renders upload step with file upload button", () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="My Checking" onClose={onClose} />,
     );
     expect(screen.getByText(/Import CSV to My Checking/)).toBeInTheDocument();
     expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
-    expect(screen.getByText("Cancel")).toBeInTheDocument();
-    expect(screen.getByText("Import 0 rows")).toBeInTheDocument();
+    expect(screen.getByText(/auto-detect columns/)).toBeInTheDocument();
   });
 
-  it("file upload parses CSV and shows preview", async () => {
+  it("file upload goes to column mapping step", async () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
     );
     await uploadCsv("Date,Description,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n");
 
     await waitFor(() => {
-      expect(screen.getByText("2 rows parsed")).toBeInTheDocument();
-      expect(screen.getByText("Coffee")).toBeInTheDocument();
-      expect(screen.getByText("Grocery")).toBeInTheDocument();
-      expect(screen.getByText("4.50")).toBeInTheDocument();
-      expect(screen.getByText("42.00")).toBeInTheDocument();
+      expect(screen.getByText(/Verify column assignments/)).toBeTruthy();
+      const table = screen.getByRole("table");
+      expect(within(table).getByText("Column")).toBeInTheDocument();
+      expect(within(table).getByText("Sample")).toBeInTheDocument();
+      expect(within(table).getByText("Role")).toBeInTheDocument();
     });
   });
 
-  it("shows error for invalid CSV", async () => {
+  it("shows error for CSV with only header row", async () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
     );
@@ -70,29 +75,59 @@ describe("CsvImportDialog", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("Could not parse CSV. Ensure it has date, amount, and merchant/description columns."),
+        screen.getByText("CSV must contain a header row and at least one data row."),
       ).toBeInTheDocument();
     });
   });
 
-  it("Import button disabled when no rows", () => {
+  it("Next button disabled when required columns not assigned", async () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
     );
-    expect(screen.getByText("Import 0 rows")).toBeDisabled();
+    await uploadCsv("Foo,Bar,Baz\n1,2,3\n");
+
+    await waitFor(() => {
+      expect(screen.getByText("Next")).toBeDisabled();
+      expect(screen.getByText(/Assign at least Date, Merchant, and Amount/)).toBeInTheDocument();
+    });
   });
 
-  it("Import calls streamImportTransactions with correct params", async () => {
+  it("navigates through all steps: upload → columns → preview → import → result", async () => {
     const user = userEvent.setup();
     renderWithProviders(
       <CsvImportDialog accountId={42} accountName="Test" onClose={onClose} />,
     );
-    await uploadCsv(
+
+    await advanceToPreview(
+      user,
       "Date,Description,Amount,Category\n2026-01-15,Coffee Shop,4.50,Food\n",
     );
 
-    await waitFor(() => expect(screen.getByText("1 rows parsed")).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 rows/));
+    await waitFor(() => {
+      expect(screen.getByText(/1 transactions ready/)).toBeInTheDocument();
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText(/Import 1 transactions/));
+
+    await waitFor(() => {
+      expect(screen.getByText("Import complete")).toBeInTheDocument();
+    });
+  });
+
+  it("Import calls streamImportTransactions with mapped data", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <CsvImportDialog accountId={42} accountName="Test" onClose={onClose} />,
+    );
+
+    await advanceToPreview(
+      user,
+      "Date,Description,Amount,Category\n2026-01-15,Coffee Shop,4.50,Food\n",
+    );
+
+    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 1 transactions/));
 
     await waitFor(() => {
       expect(mockApi.streamImportTransactions).toHaveBeenCalledWith(
@@ -117,7 +152,6 @@ describe("CsvImportDialog", () => {
     });
     mockApi.streamImportTransactions.mockImplementation(
       (_id: number, _rows: unknown[], onProgress: (evt: unknown) => void) => {
-        // Call progress callback before resolving so progress UI is shown
         queueMicrotask(() => {
           onProgress({ current: 1, total: 1, merchant: "Coffee", status: "", category: null });
         });
@@ -134,9 +168,10 @@ describe("CsvImportDialog", () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
     );
-    await uploadCsv("Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
-    await waitFor(() => expect(screen.getByText(/Import 1 rows/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 rows/));
+
+    await advanceToPreview(user, "Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
+    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 1 transactions/));
 
     await waitFor(() => {
       expect(screen.getByText("Importing...")).toBeInTheDocument();
@@ -158,12 +193,14 @@ describe("CsvImportDialog", () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
     );
-    await uploadCsv(
+
+    await advanceToPreview(
+      user,
       "Date,Description,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n",
     );
 
-    await waitFor(() => expect(screen.getByText(/Import 2 rows/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 2 rows/));
+    await waitFor(() => expect(screen.getByText(/Import 2 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 2 transactions/));
 
     await waitFor(() => {
       expect(screen.getByText("Import complete")).toBeInTheDocument();
@@ -183,10 +220,10 @@ describe("CsvImportDialog", () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
     );
-    await uploadCsv("Date,Description,Amount\n2026-01-15,Coffee,4.50\n");
 
-    await waitFor(() => expect(screen.getByText(/Import 1 rows/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 rows/));
+    await advanceToPreview(user, "Date,Description,Amount\n2026-01-15,Coffee,4.50\n");
+    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 1 transactions/));
 
     await waitFor(() => {
       expect(screen.getByText("Import complete")).toBeInTheDocument();
@@ -199,21 +236,72 @@ describe("CsvImportDialog", () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
     );
-    await uploadCsv("Date,Description,Amount\n2026-01-15,Coffee,4.50\n");
-    await waitFor(() => expect(screen.getByText(/Import 1 rows/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 rows/));
+    await advanceToPreview(user, "Date,Description,Amount\n2026-01-15,Coffee,4.50\n");
+    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 1 transactions/));
 
     await waitFor(() => expect(screen.getByText("Done")).toBeInTheDocument());
     await user.click(screen.getByText("Done"));
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("Cancel button calls onClose", async () => {
+  it("Back button returns to upload step and resets", async () => {
     const user = userEvent.setup();
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
     );
-    await user.click(screen.getByText("Cancel"));
+    await uploadCsv("Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
+
+    await waitFor(() => expect(screen.getByText("Back")).toBeInTheDocument());
+    await user.click(screen.getByText("Back"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
+    });
+  });
+
+  it("handles debit/credit columns correctly", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
+    );
+
+    await advanceToPreview(
+      user,
+      "Date,Description,Debit,Credit\n2026-01-15,Coffee,4.50,\n2026-01-16,Payroll,,1500.00\n",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 transactions ready/)).toBeInTheDocument();
+      expect(screen.getByText("Coffee")).toBeInTheDocument();
+      expect(screen.getByText("Payroll")).toBeInTheDocument();
+    });
+  });
+
+  it("preview shows skipped row count for invalid data", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
+    );
+
+    await advanceToPreview(
+      user,
+      "Date,Merchant,Amount\nbad-date,Coffee,4.50\n2026-01-16,Grocery,42.00\n",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 transactions ready/)).toBeInTheDocument();
+      expect(screen.getByText(/1 rows skipped/)).toBeInTheDocument();
+    });
+  });
+
+  it("close button calls onClose", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
+    );
+    const closeBtn = screen.getByRole("button", { name: "" });
+    await user.click(closeBtn);
     expect(onClose).toHaveBeenCalled();
   });
 });
