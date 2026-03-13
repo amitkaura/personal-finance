@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
-import type { Transaction } from "@/lib/types";
+import type { Account, Transaction } from "@/lib/types";
 import ConfirmDialog from "@/components/confirm-dialog";
 
 export default function TransactionsPage() {
@@ -39,6 +39,7 @@ export default function TransactionsPage() {
   const [dateTo, setDateTo] = useState("");
   const [amountMin, setAmountMin] = useState("");
   const [amountMax, setAmountMax] = useState("");
+  const [selectedAccountId, setSelectedAccountId] = useState("");
 
   const PAGE_SIZE = 50;
 
@@ -56,6 +57,8 @@ export default function TransactionsPage() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [filtersOpen]);
 
+  const accountIdNum = selectedAccountId ? Number(selectedAccountId) : undefined;
+
   const {
     data,
     isLoading,
@@ -63,12 +66,12 @@ export default function TransactionsPage() {
     hasNextPage,
     fetchNextPage,
   } = useInfiniteQuery({
-    queryKey: ["transactions", "list", filter, scope],
+    queryKey: ["transactions", "list", filter, scope, accountIdNum],
     queryFn: ({ pageParam = 0 }) =>
       api.getTransactions(
         filter === "review"
-          ? { uncategorized: true, limit: PAGE_SIZE, offset: pageParam, scope }
-          : { limit: PAGE_SIZE, offset: pageParam, scope }
+          ? { uncategorized: true, limit: PAGE_SIZE, offset: pageParam, scope, account_id: accountIdNum }
+          : { limit: PAGE_SIZE, offset: pageParam, scope, account_id: accountIdNum }
       ),
     initialPageParam: 0,
     getNextPageParam: (lastPage, _allPages, lastPageParam) =>
@@ -99,6 +102,11 @@ export default function TransactionsPage() {
     observer.observe(el);
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const { data: accounts } = useQuery({
+    queryKey: ["accounts", scope],
+    queryFn: () => api.getAccounts(scope === "personal" ? undefined : scope),
+  });
 
   const { data: categories } = useQuery({
     queryKey: ["categories"],
@@ -143,6 +151,7 @@ export default function TransactionsPage() {
     dateTo,
     amountMin,
     amountMax,
+    selectedAccountId,
   ].filter(Boolean).length;
 
   const hasActiveFilters = !!searchQuery || activeFilterCount > 0;
@@ -188,6 +197,7 @@ export default function TransactionsPage() {
     setDateTo("");
     setAmountMin("");
     setAmountMax("");
+    setSelectedAccountId("");
   }
 
   const selectClass =
@@ -351,6 +361,24 @@ export default function TransactionsPage() {
                     <option value="all">All Types</option>
                     <option value="income">Income</option>
                     <option value="expense">Expenses</option>
+                  </select>
+                </div>
+
+                <div className="col-span-2">
+                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                    Account
+                  </label>
+                  <select
+                    value={selectedAccountId}
+                    onChange={(e) => setSelectedAccountId(e.target.value)}
+                    className={`${selectClass} w-full`}
+                  >
+                    <option value="">All Accounts</option>
+                    {accounts?.map((acct) => (
+                      <option key={acct.id} value={String(acct.id)}>
+                        {acct.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

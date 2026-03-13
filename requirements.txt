@@ -8,7 +8,7 @@ psycopg2-binary==2.9.10
 alembic==1.14.0
 
 # Plaid Integration
-plaid-python==18.2.0
+plaid-python==38.4.0
 
 # Python 3.9 compatibility
 eval_type_backport==0.3.1

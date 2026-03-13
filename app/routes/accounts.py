@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
 from app.database import get_session
@@ -245,7 +245,10 @@ def accounts_summary(
     accounts = session.exec(
         select(Account).where(
             Account.user_id.in_(user_ids),  # type: ignore[union-attr]
-            Account.is_linked == True,  # noqa: E712
+            or_(
+                Account.is_linked == True,  # noqa: E712
+                Account.plaid_account_id.startswith("manual-"),  # type: ignore[union-attr]
+            ),
         )
     ).all()
     by_type: dict[str, list] = {}

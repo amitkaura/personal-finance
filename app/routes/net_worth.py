@@ -8,7 +8,7 @@ from typing import Optional
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Query
-from sqlmodel import Session, select
+from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
 from app.database import get_session
@@ -21,7 +21,13 @@ router = APIRouter(prefix="/net-worth", tags=["net-worth"])
 def take_snapshot(session: Session, user_id: int) -> NetWorthSnapshot:
     """Create a net worth snapshot for today (or update if one already exists)."""
     accounts = session.exec(
-        select(Account).where(Account.user_id == user_id)
+        select(Account).where(
+            Account.user_id == user_id,
+            or_(
+                Account.is_linked == True,  # noqa: E712
+                Account.plaid_account_id.startswith("manual-"),  # type: ignore[union-attr]
+            ),
+        )
     ).all()
 
     assets = Decimal("0")
