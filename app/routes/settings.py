@@ -12,8 +12,9 @@ from pydantic import BaseModel
 from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
+from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
-from app.models import Account, CategoryRule, Transaction, User, UserSettings
+from app.models import Account, CategoryRule, Transaction, TransactionTag, User, UserSettings
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -153,7 +154,17 @@ def update_settings(
     sync_fields = {"sync_enabled", "sync_hour", "sync_minute", "sync_timezone"}
     sync_changed = False
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    data = body.model_dump(exclude_unset=True)
+    if "sync_hour" in data and data["sync_hour"] is not None:
+        if not (0 <= data["sync_hour"] <= 23):
+            raise HTTPException(status_code=400, detail="sync_hour must be 0-23")
+    if "sync_minute" in data and data["sync_minute"] is not None:
+        if not (0 <= data["sync_minute"] <= 59):
+            raise HTTPException(status_code=400, detail="sync_minute must be 0-59")
+
+    for field, value in data.items():
+        if field == "llm_api_key" and value:
+            value = encrypt_token(value)
         setattr(settings, field, value)
         if field in sync_fields:
             sync_changed = True
@@ -315,6 +326,15 @@ def clear_transactions(
             )
         )
     ).all()
+    txn_ids = [t.id for t in txns if t.id is not None]
+    if txn_ids:
+        tags = session.exec(
+            select(TransactionTag).where(
+                TransactionTag.transaction_id.in_(txn_ids)  # type: ignore[union-attr]
+            )
+        ).all()
+        for tag_link in tags:
+            session.delete(tag_link)
     for t in txns:
         session.delete(t)
     session.commit()

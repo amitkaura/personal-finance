@@ -8,7 +8,17 @@ from sqlmodel import Session, select
 
 from app.auth import get_current_user
 from app.database import get_session
-from app.models import Household, HouseholdInvitation, HouseholdMember, User
+from app.models import (
+    Budget,
+    Goal,
+    GoalAccountLink,
+    GoalContribution,
+    Household,
+    HouseholdInvitation,
+    HouseholdMember,
+    SpendingPreference,
+    User,
+)
 
 router = APIRouter(prefix="/household", tags=["household"])
 
@@ -327,16 +337,29 @@ def leave_household(
     ).all()
 
     if not remaining:
-        # Cancel pending invitations and delete the household
-        pending = session.exec(
+        shared_goals = session.exec(
+            select(Goal).where(Goal.household_id == household_id)
+        ).all()
+        for g in shared_goals:
+            for link in session.exec(select(GoalAccountLink).where(GoalAccountLink.goal_id == g.id)).all():
+                session.delete(link)
+            for c in session.exec(select(GoalContribution).where(GoalContribution.goal_id == g.id)).all():
+                session.delete(c)
+            session.delete(g)
+
+        shared_budgets = session.exec(
+            select(Budget).where(Budget.household_id == household_id)
+        ).all()
+        for b in shared_budgets:
+            session.delete(b)
+
+        all_invitations = session.exec(
             select(HouseholdInvitation).where(
                 HouseholdInvitation.household_id == household_id,
-                HouseholdInvitation.status == "pending",
             )
         ).all()
-        for inv in pending:
-            inv.status = "declined"
-            session.add(inv)
+        for inv in all_invitations:
+            session.delete(inv)
 
         household = session.get(Household, household_id)
         if household:

@@ -168,7 +168,10 @@ def accounts_summary(
     """Aggregated balance info for the dashboard."""
     user_ids = get_scoped_user_ids(session, user, scope)
     accounts = session.exec(
-        select(Account).where(Account.user_id.in_(user_ids))  # type: ignore[union-attr]
+        select(Account).where(
+            Account.user_id.in_(user_ids),  # type: ignore[union-attr]
+            Account.is_linked == True,  # noqa: E712
+        )
     ).all()
     by_type: dict[str, list] = {}
     for a in accounts:

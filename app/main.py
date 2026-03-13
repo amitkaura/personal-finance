@@ -249,14 +249,21 @@ async def readiness_check():
 
     # Redis readiness is only required when Redis backend is configured.
     if settings.rate_limit_backend == "redis":
+        temp_client = None
         try:
-            redis_client = _redis_client or from_url(
-                settings.redis_url, encoding="utf-8", decode_responses=True
-            )
-            await redis_client.ping()
+            if _redis_client:
+                await _redis_client.ping()
+            else:
+                temp_client = from_url(
+                    settings.redis_url, encoding="utf-8", decode_responses=True
+                )
+                await temp_client.ping()
             checks["redis"] = "ok"
         except Exception:
             checks["redis"] = "error"
+        finally:
+            if temp_client:
+                await temp_client.aclose()
     else:
         checks["redis"] = "skipped"
 

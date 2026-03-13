@@ -187,17 +187,33 @@ def create_goal(
             raise HTTPException(status_code=403, detail="Not a member of this household")
 
     if body.linked_account_ids:
+        allowed_user_ids = [user.id]
+        if body.household_id:
+            hh_members = session.exec(
+                select(HouseholdMember.user_id).where(
+                    HouseholdMember.household_id == body.household_id
+                )
+            ).all()
+            allowed_user_ids = list(hh_members)
         for aid in body.linked_account_ids:
             acct = session.get(Account, aid)
             if not acct:
                 raise HTTPException(status_code=404, detail=f"Account {aid} not found")
+            if acct.user_id not in allowed_user_ids:
+                raise HTTPException(status_code=403, detail=f"Account {aid} does not belong to you or your household")
 
+    parsed_target_date = None
+    if body.target_date:
+        try:
+            parsed_target_date = date.fromisoformat(body.target_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid target_date format, expected YYYY-MM-DD")
     goal = Goal(
         user_id=user.id,
         name=body.name,
         target_amount=Decimal(str(body.target_amount)),
         current_amount=Decimal(str(body.current_amount)),
-        target_date=date.fromisoformat(body.target_date) if body.target_date else None,
+        target_date=parsed_target_date,
         icon=body.icon,
         color=body.color,
         household_id=body.household_id,
@@ -234,7 +250,13 @@ def update_goal(
         if goal.current_amount >= goal.target_amount:
             goal.is_completed = True
     if "target_date" in data:
-        goal.target_date = date.fromisoformat(data["target_date"]) if data["target_date"] else None
+        if data["target_date"]:
+            try:
+                goal.target_date = date.fromisoformat(data["target_date"])
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid target_date format, expected YYYY-MM-DD")
+        else:
+            goal.target_date = None
     if "name" in data and data["name"] is not None:
         goal.name = data["name"]
     if "icon" in data and data["icon"] is not None:
@@ -244,6 +266,20 @@ def update_goal(
     if "is_completed" in data and data["is_completed"] is not None:
         goal.is_completed = data["is_completed"]
     if "linked_account_ids" in data and data["linked_account_ids"] is not None:
+        allowed_user_ids = [user.id]
+        if goal.household_id:
+            hh_members = session.exec(
+                select(HouseholdMember.user_id).where(
+                    HouseholdMember.household_id == goal.household_id
+                )
+            ).all()
+            allowed_user_ids = list(hh_members)
+        for aid in data["linked_account_ids"]:
+            acct = session.get(Account, aid)
+            if not acct:
+                raise HTTPException(status_code=404, detail=f"Account {aid} not found")
+            if acct.user_id not in allowed_user_ids:
+                raise HTTPException(status_code=403, detail=f"Account {aid} does not belong to you or your household")
         _set_linked_accounts(session, goal_id, data["linked_account_ids"])
 
     session.add(goal)

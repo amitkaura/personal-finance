@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { PiggyBank, ArrowRight, Users } from "lucide-react";
 import { api } from "@/lib/api";
-import { useFormatCurrency } from "@/lib/hooks";
+import { useFormatCurrency, useScope } from "@/lib/hooks";
 import { useHousehold } from "@/components/household-provider";
 
 function BudgetMini({
@@ -49,12 +49,13 @@ function BudgetMini({
 export default function BudgetSnippet() {
   const formatCurrency = useFormatCurrency();
   const { household } = useHousehold();
+  const scope = useScope();
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["budgetSummary", month, "personal"],
-    queryFn: () => api.getBudgetSummary(month, "personal"),
+    queryKey: ["budgetSummary", month, scope],
+    queryFn: () => api.getBudgetSummary(month, scope),
   });
 
   const hasPersonal = data && data.items.length > 0;

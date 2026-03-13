@@ -139,9 +139,13 @@ def create_transaction(
         if not acct or acct.user_id != user.id:
             raise HTTPException(status_code=404, detail="Account not found")
 
+    try:
+        parsed_date = date_type.fromisoformat(body.date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format, expected YYYY-MM-DD")
     txn = Transaction(
         plaid_transaction_id=f"manual-{uuid4().hex}",
-        date=date_type.fromisoformat(body.date),
+        date=parsed_date,
         amount=Decimal(str(body.amount)),
         merchant_name=body.merchant_name,
         category=body.category,
@@ -187,7 +191,10 @@ def update_transaction(
     if body.amount is not None:
         txn.amount = Decimal(str(body.amount))
     if body.date is not None:
-        txn.date = date_type.fromisoformat(body.date)
+        try:
+            txn.date = date_type.fromisoformat(body.date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format, expected YYYY-MM-DD")
     if body.notes is not None:
         txn.notes = body.notes
     session.add(txn)

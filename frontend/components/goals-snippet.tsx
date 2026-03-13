@@ -4,13 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { Target, ArrowRight, Users } from "lucide-react";
 import { api } from "@/lib/api";
-import { useFormatCurrency } from "@/lib/hooks";
+import { useFormatCurrency, useScope } from "@/lib/hooks";
 
 export default function GoalsSnippet() {
   const formatCurrency = useFormatCurrency();
+  const scope = useScope();
   const { data: goalsResponse, isLoading } = useQuery({
-    queryKey: ["goals", "personal"],
-    queryFn: () => api.getGoals("personal"),
+    queryKey: ["goals", scope],
+    queryFn: () => api.getGoals(scope),
   });
 
   const goals = goalsResponse?.goals ?? [];

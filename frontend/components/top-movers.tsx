@@ -14,7 +14,7 @@ export default function TopMovers() {
     queryFn: () => api.getAccounts(scope),
   });
 
-  const investments = (accounts ?? []).filter((a: Account) => a.type === "investment");
+  const investments = (accounts ?? []).filter((a: Account) => a.type === "investment" && a.is_linked);
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">

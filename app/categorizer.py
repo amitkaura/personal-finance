@@ -15,6 +15,7 @@ import httpx
 from sqlmodel import Session, select
 
 from app.config import get_settings
+from app.crypto import decrypt_token
 from app.database import engine
 from app.models import Account, CategoryRule, Transaction, UserSettings
 
@@ -85,7 +86,11 @@ def _get_llm_config(user_id: int) -> tuple[str, str, str]:
                 select(UserSettings).where(UserSettings.user_id == user_id)
             ).first()
             if db and db.llm_api_key:
-                return db.llm_base_url, db.llm_api_key, db.llm_model
+                try:
+                    api_key = decrypt_token(db.llm_api_key)
+                except Exception:
+                    api_key = db.llm_api_key
+                return db.llm_base_url, api_key, db.llm_model
     except Exception:
         pass
     env = get_settings()

@@ -368,6 +368,7 @@ def _compute_rollover(
     user_account_ids: list[int],
     year: int,
     mo: int,
+    user_ids: list[int] | None = None,
 ) -> float:
     """Compute rollover for a single budget from previous month."""
     if not budget.rollover:
@@ -410,6 +411,18 @@ def _compute_rollover(
             Transaction.category == budget.category,
         )
     ).all()
+    seen_ids = {t.id for t in prev_txns}
+    if user_ids:
+        manual_txns = session.exec(
+            select(Transaction).where(
+                Transaction.user_id.in_(user_ids),  # type: ignore[union-attr]
+                Transaction.is_manual == True,  # noqa: E712
+                Transaction.date >= prev_start,
+                Transaction.date < prev_end,
+                Transaction.category == budget.category,
+            )
+        ).all()
+        prev_txns = list(prev_txns) + [t for t in manual_txns if t.id not in seen_ids]
     prev_spent = sum(float(t.amount) for t in prev_txns if t.amount > 0)
     leftover = float(prev_budget.amount) - prev_spent
     return max(0.0, leftover)
@@ -423,6 +436,7 @@ def _build_section_items(
     year: int,
     mo: int,
     breakdown: dict[str, dict[str, float]] | None = None,
+    user_ids: list[int] | None = None,
 ) -> tuple[list[dict], float, float]:
     """Build summary items from budgets, returns (items, total_budgeted, total_spent)."""
     budgeted_by_cat: dict[str, float] = {}
@@ -437,7 +451,7 @@ def _build_section_items(
         budget_by_cat[b.category] = b
 
     for cat, b in budget_by_cat.items():
-        rollover_by_cat[cat] = _compute_rollover(session, b, user_account_ids, year, mo)
+        rollover_by_cat[cat] = _compute_rollover(session, b, user_account_ids, year, mo, user_ids)
 
     items = []
     total_budgeted = 0.0
@@ -575,9 +589,9 @@ def budget_summary(
             select(Account.id).where(Account.user_id.in_(partner_ids))  # type: ignore[union-attr]
         ).all()) if partner_ids else []
 
-        pi, pb, ps = _build_section_items(my_budgets, my_spent, session, my_acct_ids, year, mo)
-        pai, pab, pas_ = _build_section_items(partner_budgets, partner_spent, session, partner_acct_ids, year, mo)
-        si, sb, ss = _build_section_items(shared_budgets, shared_spent, session, all_acct_ids, year, mo, shared_breakdown)
+        pi, pb, ps = _build_section_items(my_budgets, my_spent, session, my_acct_ids, year, mo, user_ids=[user.id])
+        pai, pab, pas_ = _build_section_items(partner_budgets, partner_spent, session, partner_acct_ids, year, mo, user_ids=partner_ids)
+        si, sb, ss = _build_section_items(shared_budgets, shared_spent, session, all_acct_ids, year, mo, shared_breakdown, user_ids=household_user_ids)
 
         return {
             "month": m,
@@ -617,7 +631,7 @@ def budget_summary(
         ).all())
 
     items, total_budgeted, total_spent = _build_section_items(
-        budgets, spent_by_cat, session, user_account_ids, year, mo
+        budgets, spent_by_cat, session, user_account_ids, year, mo, user_ids=user_ids
     )
 
     result: dict = {
@@ -640,7 +654,7 @@ def budget_summary(
             select(Account.id).where(Account.user_id.in_(all_household_ids))  # type: ignore[union-attr]
         ).all())
         shared_spent = _get_spending_by_category(session, all_acct_ids, all_household_ids, month_start, month_end)
-        si, sb, ss = _build_section_items(shared_budgets, shared_spent, session, all_acct_ids, year, mo)
+        si, sb, ss = _build_section_items(shared_budgets, shared_spent, session, all_acct_ids, year, mo, user_ids=all_household_ids)
         result["shared_summary"] = {
             "items": si,
             "total_budgeted": sb,
