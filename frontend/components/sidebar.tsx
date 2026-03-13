@@ -11,7 +11,6 @@ import {
   Cable,
   Settings,
   LogOut,
-  Wallet,
   PiggyBank,
   Target,
   BarChart3,
@@ -39,9 +38,10 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col bg-sidebar border-r border-border">
-      <div className="flex h-16 items-center gap-2 px-6">
-        <Wallet className="h-6 w-6 text-accent" />
-        <span className="text-lg font-semibold tracking-tight">Finance</span>
+      <div className="flex h-16 items-center px-6">
+        <span className="text-xl font-extrabold tracking-tight gradient-text-warm">
+          fino
+        </span>
       </div>
 
       <ViewSwitcher />

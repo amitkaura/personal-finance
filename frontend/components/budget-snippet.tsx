@@ -2,19 +2,64 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { PiggyBank, ArrowRight } from "lucide-react";
+import { PiggyBank, ArrowRight, Users } from "lucide-react";
 import { api } from "@/lib/api";
-import { useFormatCurrency, useScope } from "@/lib/hooks";
+import { useFormatCurrency } from "@/lib/hooks";
+import { useHousehold } from "@/components/household-provider";
+
+function BudgetMini({
+  label,
+  spent,
+  budgeted,
+  formatCurrency,
+  icon,
+}: {
+  label: string;
+  spent: number;
+  budgeted: number;
+  formatCurrency: (n: number) => string;
+  icon?: React.ReactNode;
+}) {
+  const ratio = budgeted > 0 ? spent / budgeted : 0;
+  const barColor =
+    ratio > 0.9 ? "bg-danger" : ratio > 0.75 ? "bg-amber-500" : "bg-success";
+
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-1 flex items-baseline justify-between">
+        <span className="text-lg font-bold">{formatCurrency(spent)}</span>
+        <span className="text-[10px] text-muted-foreground">
+          of {formatCurrency(budgeted)}
+        </span>
+      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full transition-all ${barColor}`}
+          style={{ width: `${Math.min(ratio * 100, 100)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function BudgetSnippet() {
   const formatCurrency = useFormatCurrency();
-  const scope = useScope();
+  const { household } = useHousehold();
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
   const { data, isLoading } = useQuery({
-    queryKey: ["budgetSummary", month, scope],
-    queryFn: () => api.getBudgetSummary(month, scope),
+    queryKey: ["budgetSummary", month, "personal"],
+    queryFn: () => api.getBudgetSummary(month, "personal"),
   });
+
+  const hasPersonal = data && data.items.length > 0;
+  const hasShared = data?.shared_summary && data.shared_summary.items.length > 0;
+  const isEmpty = !hasPersonal && !hasShared;
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
@@ -39,7 +84,7 @@ export default function BudgetSnippet() {
             <div key={i} className="h-8 animate-pulse rounded bg-muted" />
           ))}
         </div>
-      ) : !data || data.items.length === 0 ? (
+      ) : isEmpty ? (
         <p className="mt-4 text-sm text-muted-foreground">
           No budgets set for this month.{" "}
           <Link href="/budgets" className="text-accent hover:underline">
@@ -47,56 +92,57 @@ export default function BudgetSnippet() {
           </Link>
         </p>
       ) : (
-        <>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-2xl font-bold">
-              {formatCurrency(data.total_spent)}
-            </span>
-            <span className="text-sm text-muted-foreground">
-              of {formatCurrency(data.total_budgeted)}
-            </span>
+        <div className="mt-4">
+          <div className={`flex gap-4 ${hasShared && hasPersonal ? "" : ""}`}>
+            {hasPersonal && (
+              <BudgetMini
+                label="Personal"
+                spent={data.total_spent}
+                budgeted={data.total_budgeted}
+                formatCurrency={formatCurrency}
+                icon={<PiggyBank className="h-3 w-3" />}
+              />
+            )}
+            {hasShared && data.shared_summary && (
+              <BudgetMini
+                label="Shared"
+                spent={data.shared_summary.total_spent}
+                budgeted={data.shared_summary.total_budgeted}
+                formatCurrency={formatCurrency}
+                icon={<Users className="h-3 w-3" />}
+              />
+            )}
           </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-            <div
-              className={`h-full rounded-full transition-all ${
-                data.total_spent / data.total_budgeted > 0.9
-                  ? "bg-danger"
-                  : data.total_spent / data.total_budgeted > 0.75
-                    ? "bg-amber-500"
-                    : "bg-success"
-              }`}
-              style={{
-                width: `${Math.min((data.total_spent / data.total_budgeted) * 100, 100)}%`,
-              }}
-            />
-          </div>
-          <ul className="mt-4 space-y-2">
-            {data.items
-              .sort((a, b) => b.percent_used - a.percent_used)
-              .slice(0, 3)
-              .map((item) => (
-                <li
-                  key={item.id}
-                  className="flex items-center justify-between text-xs"
-                >
-                  <span className="truncate text-muted-foreground">
-                    {item.category}
-                  </span>
-                  <span
-                    className={`font-medium ${
-                      item.percent_used > 100
-                        ? "text-danger"
-                        : item.percent_used > 90
-                          ? "text-amber-500"
-                          : "text-foreground"
-                    }`}
+
+          {hasPersonal && (
+            <ul className="mt-3 space-y-1.5">
+              {data.items
+                .sort((a, b) => b.percent_used - a.percent_used)
+                .slice(0, 3)
+                .map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex items-center justify-between text-xs"
                   >
-                    {item.percent_used}%
-                  </span>
-                </li>
-              ))}
-          </ul>
-        </>
+                    <span className="truncate text-muted-foreground">
+                      {item.category}
+                    </span>
+                    <span
+                      className={`font-medium ${
+                        item.percent_used > 100
+                          ? "text-danger"
+                          : item.percent_used > 90
+                            ? "text-amber-500"
+                            : "text-foreground"
+                      }`}
+                    >
+                      {item.percent_used}%
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );

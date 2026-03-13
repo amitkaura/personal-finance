@@ -138,9 +138,9 @@ function ProfileSection() {
 
   function handleSave() {
     const payload: { display_name?: string; avatar_url?: string; bio?: string } = {};
-    if (form.display_name !== undefined) payload.display_name = form.display_name;
-    if (form.avatar_url !== undefined) payload.avatar_url = form.avatar_url;
-    if (form.bio !== undefined) payload.bio = form.bio;
+    if (form.display_name !== undefined) payload.display_name = form.display_name ?? "";
+    if (form.avatar_url !== undefined) payload.avatar_url = form.avatar_url ?? "";
+    if (form.bio !== undefined) payload.bio = form.bio ?? "";
     mutation.mutate(payload);
   }
 
@@ -299,6 +299,14 @@ function HouseholdSection() {
   const [email, setEmail] = useState("");
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+
+  function showFeedback(msg: string) {
+    setFeedback(msg);
+    setTimeout(() => setFeedback(null), 3000);
+  }
 
   const inviteMutation = useMutation({
     mutationFn: api.invitePartner,
@@ -306,6 +314,25 @@ function HouseholdSection() {
       setEmail("");
       queryClient.invalidateQueries({ queryKey: ["household"] });
       refetch();
+      showFeedback("Invitation sent! Your partner will see it when they log in.");
+    },
+  });
+
+  const cancelInviteMutation = useMutation({
+    mutationFn: api.cancelInvitation,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["household"] });
+      refetch();
+      showFeedback("Invitation cancelled.");
+    },
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: api.updateHouseholdName,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["household"] });
+      refetch();
+      setEditingName(false);
     },
   });
 
@@ -332,8 +359,68 @@ function HouseholdSection() {
         Yours, and Ours views.
       </p>
 
+      {feedback && (
+        <div className="mt-3 rounded-lg bg-green-500/10 border border-green-500/20 px-4 py-2.5">
+          <p className="text-xs font-medium text-green-400">{feedback}</p>
+        </div>
+      )}
+
       {household ? (
         <div className="mt-5 space-y-4">
+          {/* Household Name */}
+          <div>
+            <label className={labelClass}>Household Name</label>
+            {editingName ? (
+              <div className="flex gap-2">
+                <input
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  className={`${inputClass} flex-1`}
+                  maxLength={100}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && nameInput.trim())
+                      renameMutation.mutate(nameInput.trim());
+                    if (e.key === "Escape") setEditingName(false);
+                  }}
+                />
+                <button
+                  onClick={() =>
+                    nameInput.trim() && renameMutation.mutate(nameInput.trim())
+                  }
+                  disabled={!nameInput.trim() || renameMutation.isPending}
+                  className="rounded p-1.5 text-green-400 hover:bg-green-500/15"
+                >
+                  {renameMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4" />
+                  )}
+                </button>
+                <button
+                  onClick={() => setEditingName(false)}
+                  className="rounded p-1.5 text-muted-foreground hover:bg-muted"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-sm">{household.name}</span>
+                <button
+                  onClick={() => {
+                    setNameInput(household.name);
+                    setEditingName(true);
+                  }}
+                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Members */}
           <div>
             <label className={labelClass}>Members</label>
             <div className="space-y-2">
@@ -370,52 +457,75 @@ function HouseholdSection() {
             </div>
           </div>
 
+          {/* Pending Invitations */}
           {household.pending_invitations.length > 0 && (
             <div>
               <label className={labelClass}>Pending Invitations</label>
-              {household.pending_invitations.map((inv) => (
-                <div
-                  key={inv.id}
-                  className="flex items-center gap-2 rounded-lg bg-amber-500/5 border border-amber-500/20 px-4 py-2.5"
-                >
-                  <Mail className="h-4 w-4 text-amber-400" />
-                  <span className="text-sm text-muted-foreground">
-                    {inv.invited_email}
-                  </span>
-                  <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
-                    Pending
-                  </span>
-                </div>
-              ))}
+              <div className="space-y-2">
+                {household.pending_invitations.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="flex items-center gap-2 rounded-lg bg-amber-500/5 border border-amber-500/20 px-4 py-2.5"
+                  >
+                    <Mail className="h-4 w-4 text-amber-400" />
+                    <span className="flex-1 text-sm text-muted-foreground">
+                      {inv.invited_email}
+                    </span>
+                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+                      Pending
+                    </span>
+                    <button
+                      onClick={() => cancelInviteMutation.mutate(inv.token)}
+                      disabled={cancelInviteMutation.isPending}
+                      className="rounded p-1 text-muted-foreground hover:bg-red-500/15 hover:text-red-400"
+                      title="Cancel invitation"
+                    >
+                      {cancelInviteMutation.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <X className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[10px] text-muted-foreground">
+                Your partner needs to sign in with the email above to see and accept
+                the invitation.
+              </p>
             </div>
           )}
 
-          {household.members.length < 2 && (
-            <div className="flex items-end gap-3">
-              <div className="flex-1">
-                <label className={labelClass}>Invite Partner</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="partner@email.com"
-                  className={`${inputClass} w-full`}
-                />
+          {/* Invite form (when less than 2 members and no pending invites) */}
+          {household.members.length < 2 &&
+            household.pending_invitations.length === 0 && (
+              <div className="flex items-end gap-3">
+                <div className="flex-1">
+                  <label className={labelClass}>Invite Partner</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="partner@email.com"
+                    className={`${inputClass} w-full`}
+                  />
+                </div>
+                <button
+                  onClick={() =>
+                    email.trim() && inviteMutation.mutate(email.trim())
+                  }
+                  disabled={!email.trim() || inviteMutation.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+                >
+                  {inviteMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <UserPlus className="h-4 w-4" />
+                  )}
+                  Invite
+                </button>
               </div>
-              <button
-                onClick={() => email.trim() && inviteMutation.mutate(email.trim())}
-                disabled={!email.trim() || inviteMutation.isPending}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
-              >
-                {inviteMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <UserPlus className="h-4 w-4" />
-                )}
-                Invite
-              </button>
-            </div>
-          )}
+            )}
 
           {inviteMutation.isError && (
             <p className="text-xs text-red-400">
@@ -446,6 +556,10 @@ function HouseholdSection() {
         </div>
       ) : (
         <div className="mt-5">
+          <p className="mb-3 text-xs text-muted-foreground">
+            You are not part of a household yet. Invite a partner by email to get
+            started.
+          </p>
           <div className="flex items-end gap-3">
             <div className="flex-1">
               <label className={labelClass}>Partner&apos;s Email</label>
@@ -458,7 +572,9 @@ function HouseholdSection() {
               />
             </div>
             <button
-              onClick={() => email.trim() && inviteMutation.mutate(email.trim())}
+              onClick={() =>
+                email.trim() && inviteMutation.mutate(email.trim())
+              }
               disabled={!email.trim() || inviteMutation.isPending}
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
             >

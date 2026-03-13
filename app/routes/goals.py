@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 
@@ -11,8 +12,8 @@ from sqlmodel import Session, select
 
 from app.auth import get_current_user
 from app.database import get_session
-from app.household import get_scoped_user_ids
-from app.models import Goal, User
+from app.household import get_household_for_user, get_scoped_user_ids
+from app.models import Account, Goal, GoalAccountLink, GoalContribution, HouseholdMember, User
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
@@ -24,6 +25,8 @@ class GoalCreate(BaseModel):
     target_date: Optional[str] = None
     icon: str = "target"
     color: str = "#6d28d9"
+    household_id: Optional[int] = None
+    linked_account_ids: Optional[list[int]] = None
 
 
 class GoalUpdate(BaseModel):
@@ -34,20 +37,47 @@ class GoalUpdate(BaseModel):
     icon: Optional[str] = None
     color: Optional[str] = None
     is_completed: Optional[bool] = None
+    linked_account_ids: Optional[list[int]] = None
 
 
-def _goal_to_dict(g: Goal) -> dict:
-    progress = (
-        round(float(g.current_amount) / float(g.target_amount) * 100, 1)
-        if g.target_amount > 0
-        else 0
-    )
-    remaining = float(g.target_amount) - float(g.current_amount)
+class ContributionCreate(BaseModel):
+    amount: float
+    note: Optional[str] = None
+
+
+def _get_linked_account_ids(session: Session, goal_id: int) -> list[int]:
+    links = session.exec(
+        select(GoalAccountLink.account_id).where(GoalAccountLink.goal_id == goal_id)
+    ).all()
+    return list(links)
+
+
+def _compute_linked_balance(session: Session, goal_id: int) -> Decimal | None:
+    """Sum current_balance of all linked accounts. Returns None if no links."""
+    account_ids = _get_linked_account_ids(session, goal_id)
+    if not account_ids:
+        return None
+    accounts = session.exec(
+        select(Account).where(Account.id.in_(account_ids))  # type: ignore[union-attr]
+    ).all()
+    return sum((a.current_balance for a in accounts), Decimal("0"))
+
+
+def _goal_to_dict(g: Goal, session: Session) -> dict:
+    linked_ids = _get_linked_account_ids(session, g.id) if g.id else []
+    is_linked = len(linked_ids) > 0
+
+    current = float(g.current_amount)
+    if is_linked:
+        bal = _compute_linked_balance(session, g.id)  # type: ignore[arg-type]
+        if bal is not None:
+            current = float(bal)
+
+    progress = round(current / float(g.target_amount) * 100, 1) if g.target_amount > 0 else 0
+    remaining = float(g.target_amount) - current
 
     months_left = None
     if g.target_date:
-        from datetime import date
-
         days = (g.target_date - date.today()).days
         months_left = max(0, round(days / 30.44, 1))
 
@@ -59,7 +89,7 @@ def _goal_to_dict(g: Goal) -> dict:
         "id": g.id,
         "name": g.name,
         "target_amount": float(g.target_amount),
-        "current_amount": float(g.current_amount),
+        "current_amount": current,
         "target_date": g.target_date.isoformat() if g.target_date else None,
         "icon": g.icon,
         "color": g.color,
@@ -69,7 +99,29 @@ def _goal_to_dict(g: Goal) -> dict:
         "months_left": months_left,
         "monthly_needed": monthly_needed,
         "created_at": g.created_at.isoformat(),
+        "household_id": g.household_id,
+        "linked_account_ids": linked_ids,
+        "is_account_linked": is_linked,
     }
+
+
+def _can_edit_goal(goal: Goal, user: User, session: Session) -> bool:
+    """Shared goals editable by any household member; personal only by owner."""
+    if goal.household_id:
+        member = get_household_for_user(session, user.id)
+        return member is not None and member.household_id == goal.household_id
+    return goal.user_id == user.id
+
+
+def _set_linked_accounts(session: Session, goal_id: int, account_ids: list[int]) -> None:
+    """Replace linked accounts for a goal."""
+    existing = session.exec(
+        select(GoalAccountLink).where(GoalAccountLink.goal_id == goal_id)
+    ).all()
+    for link in existing:
+        session.delete(link)
+    for aid in account_ids:
+        session.add(GoalAccountLink(goal_id=goal_id, account_id=aid))
 
 
 @router.get("")
@@ -79,12 +131,48 @@ def list_goals(
     user: User = Depends(get_current_user),
 ):
     user_ids = get_scoped_user_ids(session, user, scope)
-    goals = session.exec(
+
+    personal_goals = list(session.exec(
         select(Goal)
-        .where(Goal.user_id.in_(user_ids))  # type: ignore[union-attr]
+        .where(
+            Goal.user_id.in_(user_ids),  # type: ignore[union-attr]
+            Goal.household_id == None,  # noqa: E711
+        )
         .order_by(Goal.created_at.desc())
-    ).all()
-    return [_goal_to_dict(g) for g in goals]
+    ).all())
+
+    shared_goals: list[Goal] = []
+    member = get_household_for_user(session, user.id)
+    if member and scope in ("household", "partner"):
+        shared_goals = list(session.exec(
+            select(Goal)
+            .where(Goal.household_id == member.household_id)
+            .order_by(Goal.created_at.desc())
+        ).all())
+
+    all_goals = personal_goals + [g for g in shared_goals if g not in personal_goals]
+    result = [_goal_to_dict(g, session) for g in all_goals]
+
+    if scope == "personal" and member:
+        household_goals = session.exec(
+            select(Goal).where(
+                Goal.household_id == member.household_id,
+                Goal.is_completed == False,  # noqa: E712
+            )
+        ).all()
+        if household_goals:
+            avg_progress = sum(
+                _goal_to_dict(g, session)["progress"] for g in household_goals
+            ) / len(household_goals)
+            return {
+                "goals": result,
+                "shared_goals_summary": {
+                    "count": len(household_goals),
+                    "total_progress_pct": round(avg_progress, 1),
+                },
+            }
+
+    return {"goals": result, "shared_goals_summary": None}
 
 
 @router.post("", status_code=201)
@@ -93,7 +181,16 @@ def create_goal(
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    from datetime import date
+    if body.household_id:
+        member = get_household_for_user(session, user.id)
+        if not member or member.household_id != body.household_id:
+            raise HTTPException(status_code=403, detail="Not a member of this household")
+
+    if body.linked_account_ids:
+        for aid in body.linked_account_ids:
+            acct = session.get(Account, aid)
+            if not acct:
+                raise HTTPException(status_code=404, detail=f"Account {aid} not found")
 
     goal = Goal(
         user_id=user.id,
@@ -103,11 +200,17 @@ def create_goal(
         target_date=date.fromisoformat(body.target_date) if body.target_date else None,
         icon=body.icon,
         color=body.color,
+        household_id=body.household_id,
     )
     session.add(goal)
+    session.flush()
+
+    if body.linked_account_ids:
+        _set_linked_accounts(session, goal.id, body.linked_account_ids)  # type: ignore[arg-type]
+
     session.commit()
     session.refresh(goal)
-    return _goal_to_dict(goal)
+    return _goal_to_dict(goal, session)
 
 
 @router.patch("/{goal_id}")
@@ -117,11 +220,11 @@ def update_goal(
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    from datetime import date
-
     goal = session.get(Goal, goal_id)
-    if not goal or goal.user_id != user.id:
+    if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
+    if not _can_edit_goal(goal, user, session):
+        raise HTTPException(status_code=403, detail="Not authorized to edit this goal")
 
     data = body.model_dump(exclude_unset=True)
     if "target_amount" in data and data["target_amount"] is not None:
@@ -140,11 +243,13 @@ def update_goal(
         goal.color = data["color"]
     if "is_completed" in data and data["is_completed"] is not None:
         goal.is_completed = data["is_completed"]
+    if "linked_account_ids" in data and data["linked_account_ids"] is not None:
+        _set_linked_accounts(session, goal_id, data["linked_account_ids"])
 
     session.add(goal)
     session.commit()
     session.refresh(goal)
-    return _goal_to_dict(goal)
+    return _goal_to_dict(goal, session)
 
 
 @router.delete("/{goal_id}", status_code=204)
@@ -154,7 +259,114 @@ def delete_goal(
     user: User = Depends(get_current_user),
 ):
     goal = session.get(Goal, goal_id)
-    if not goal or goal.user_id != user.id:
+    if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
+    if not _can_edit_goal(goal, user, session):
+        raise HTTPException(status_code=403, detail="Not authorized to delete this goal")
+
+    links = session.exec(
+        select(GoalAccountLink).where(GoalAccountLink.goal_id == goal_id)
+    ).all()
+    for link in links:
+        session.delete(link)
+    contribs = session.exec(
+        select(GoalContribution).where(GoalContribution.goal_id == goal_id)
+    ).all()
+    for c in contribs:
+        session.delete(c)
+
     session.delete(goal)
     session.commit()
+
+
+# ── Contributions ─────────────────────────────────────────────
+
+
+@router.post("/{goal_id}/contributions", status_code=201)
+def add_contribution(
+    goal_id: int,
+    body: ContributionCreate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    goal = session.get(Goal, goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if not _can_edit_goal(goal, user, session):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    linked = _get_linked_account_ids(session, goal_id)
+    if linked:
+        raise HTTPException(status_code=400, detail="Cannot add manual contributions to account-linked goals")
+
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+
+    contribution = GoalContribution(
+        goal_id=goal_id,
+        user_id=user.id,
+        amount=Decimal(str(body.amount)),
+        note=body.note,
+    )
+    session.add(contribution)
+
+    goal.current_amount += Decimal(str(body.amount))
+    if goal.current_amount >= goal.target_amount:
+        goal.is_completed = True
+    session.add(goal)
+
+    session.commit()
+    session.refresh(contribution)
+    session.refresh(goal)
+
+    u = session.get(User, contribution.user_id)
+    return {
+        "id": contribution.id,
+        "goal_id": contribution.goal_id,
+        "user_id": contribution.user_id,
+        "user_name": (u.display_name or u.name) if u else "",
+        "user_picture": (u.avatar_url or u.picture) if u else None,
+        "amount": float(contribution.amount),
+        "note": contribution.note,
+        "created_at": contribution.created_at.isoformat(),
+        "goal": _goal_to_dict(goal, session),
+    }
+
+
+@router.get("/{goal_id}/contributions")
+def get_contributions(
+    goal_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    goal = session.get(Goal, goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+
+    can_view = goal.user_id == user.id
+    if not can_view and goal.household_id:
+        member = get_household_for_user(session, user.id)
+        can_view = member is not None and member.household_id == goal.household_id
+    if not can_view:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    contribs = session.exec(
+        select(GoalContribution)
+        .where(GoalContribution.goal_id == goal_id)
+        .order_by(GoalContribution.created_at.desc())
+    ).all()
+
+    result = []
+    for c in contribs:
+        u = session.get(User, c.user_id)
+        result.append({
+            "id": c.id,
+            "goal_id": c.goal_id,
+            "user_id": c.user_id,
+            "user_name": (u.display_name or u.name) if u else "",
+            "user_picture": (u.avatar_url or u.picture) if u else None,
+            "amount": float(c.amount),
+            "note": c.note,
+            "created_at": c.created_at.isoformat(),
+        })
+    return result

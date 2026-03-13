@@ -27,21 +27,24 @@ def list_accounts(
     accounts = session.exec(
         select(Account).where(Account.user_id.in_(user_ids))  # type: ignore[union-attr]
     ).all()
-    owner_names = _build_owner_names(session, user_ids)
-    return [_acct_to_dict(a, owner_names) for a in accounts]
+    owner_info = _build_owner_info(session, user_ids)
+    return [_acct_to_dict(a, owner_info) for a in accounts]
 
 
-def _build_owner_names(session: Session, user_ids: list[int]) -> dict[int, str]:
-    """Map user_id -> name for badge display."""
-    owners: dict[int, str] = {}
+def _build_owner_info(session: Session, user_ids: list[int]) -> dict[int, dict]:
+    """Map user_id -> {name, picture} for badge display."""
+    owners: dict[int, dict] = {}
     for uid in user_ids:
         u = session.get(User, uid)
         if u:
-            owners[uid] = u.name
+            owners[uid] = {
+                "name": u.display_name or u.name,
+                "picture": u.avatar_url or u.picture,
+            }
     return owners
 
 
-def _acct_to_dict(a: Account, owner_names: dict[int, str] | None = None) -> dict:
+def _acct_to_dict(a: Account, owner_names: dict[int, dict] | None = None) -> dict:
     d = {
         "id": a.id,
         "user_id": a.user_id,
@@ -58,7 +61,9 @@ def _acct_to_dict(a: Account, owner_names: dict[int, str] | None = None) -> dict
         "is_linked": a.is_linked,
     }
     if owner_names:
-        d["owner_name"] = owner_names.get(a.user_id, "")
+        info = owner_names.get(a.user_id, {})
+        d["owner_name"] = info.get("name", "")
+        d["owner_picture"] = info.get("picture")
     return d
 
 

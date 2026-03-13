@@ -72,15 +72,18 @@ def list_transactions(
     stmt = stmt.offset(offset).limit(limit)
     txns = session.exec(stmt).all()
 
-    owner_map: dict[int, str] = {}
-    user_name_map: dict[int, str] = {}
+    owner_map: dict[int, dict] = {}
+    user_info_map: dict[int, dict] = {}
     if scope != "personal":
-        user_name_cache: dict[int, str] = {}
+        user_cache: dict[int, dict] = {}
         for uid in user_ids:
-            if uid not in user_name_cache:
+            if uid not in user_cache:
                 u = session.get(User, uid)
-                user_name_cache[uid] = u.name if u else ""
-            user_name_map[uid] = user_name_cache[uid]
+                user_cache[uid] = {
+                    "name": (u.display_name or u.name) if u else "",
+                    "picture": (u.avatar_url or u.picture) if u else None,
+                }
+            user_info_map[uid] = user_cache[uid]
 
         accounts_with_owners = session.exec(
             select(Account.id, Account.user_id).where(
@@ -88,13 +91,13 @@ def list_transactions(
             )
         ).all()
         for aid, uid in accounts_with_owners:
-            owner_map[aid] = user_name_cache.get(uid, "")
+            owner_map[aid] = user_cache.get(uid, {"name": "", "picture": None})
 
     txn_ids = [t.id for t in txns if t.id is not None]
     tags_by_txn = _load_tags_for_transactions(session, txn_ids)
 
     return [
-        _txn_to_dict(t, owner_map, user_name_map, tags_by_txn)
+        _txn_to_dict(t, owner_map, user_info_map, tags_by_txn)
         for t in txns
     ]
 
@@ -313,8 +316,8 @@ def recurring_transactions(
 
 def _txn_to_dict(
     t: Transaction,
-    owner_map: dict[int, str] | None = None,
-    user_name_map: dict[int, str] | None = None,
+    owner_map: dict[int, dict] | None = None,
+    user_info_map: dict[int, dict] | None = None,
     tags_by_txn: dict[int, list[dict]] | None = None,
 ) -> dict:
     tags = tags_by_txn.get(t.id, []) if tags_by_txn and t.id else []
@@ -334,10 +337,14 @@ def _txn_to_dict(
         "notes": t.notes,
         "tags": tags,
     }
+    info: dict | None = None
     if owner_map and t.account_id:
-        d["owner_name"] = owner_map.get(t.account_id, "")
-    elif user_name_map and t.user_id:
-        d["owner_name"] = user_name_map.get(t.user_id, "")
+        info = owner_map.get(t.account_id)
+    elif user_info_map and t.user_id:
+        info = user_info_map.get(t.user_id)
+    if info:
+        d["owner_name"] = info.get("name", "")
+        d["owner_picture"] = info.get("picture")
     return d
 
 

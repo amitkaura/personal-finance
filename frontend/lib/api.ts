@@ -1,8 +1,9 @@
 import type {
-  Account, AccountSummary, Budget, BudgetSummary, CategoryRule, Goal,
+  Account, AccountSummary, Budget, BudgetConflict, BudgetSummary,
+  CategoryRule, Goal, GoalContribution, GoalsResponse,
   Household, HouseholdInvitation, MonthlyTrend, NetWorthSnapshot,
-  PlaidConnection, RecurringTransaction, SpendingByCategory, Tag,
-  TopMerchant, Transaction, User, UserProfile, UserSettings, ViewScope,
+  PlaidConnection, RecurringTransaction, SpendingByCategory, SpendingPreference,
+  Tag, TopMerchant, Transaction, User, UserProfile, UserSettings, ViewScope,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -11,6 +12,7 @@ async function fetcher<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     credentials: "include",
+    cache: "no-store",
     ...init,
   });
   if (!res.ok) {
@@ -23,6 +25,7 @@ async function fetchVoid(path: string, init?: RequestInit): Promise<void> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     credentials: "include",
+    cache: "no-store",
     ...init,
   });
   if (!res.ok) {
@@ -192,10 +195,22 @@ export const api = {
   // Household
   getHousehold: () => fetcher<Household | null>("/household"),
 
+  updateHouseholdName: (name: string) =>
+    fetcher<{ id: number; name: string }>("/household", {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
   invitePartner: (email: string) =>
     fetcher<{ id: number; token: string; invited_email: string; status: string }>(
       "/household/invite",
       { method: "POST", body: JSON.stringify({ email }) }
+    ),
+
+  cancelInvitation: (token: string) =>
+    fetcher<{ status: string }>(
+      `/household/invitations/${token}`,
+      { method: "DELETE" }
     ),
 
   getPendingInvitations: () =>
@@ -233,7 +248,10 @@ export const api = {
     return fetcher<BudgetSummary>(`/budgets/summary${qs ? `?${qs}` : ""}`);
   },
 
-  createBudget: (body: { category: string; amount: number; month?: string; rollover?: boolean }) =>
+  createBudget: (body: {
+    category: string; amount: number; month?: string;
+    rollover?: boolean; household_id?: number;
+  }) =>
     fetcher<Budget>("/budgets", { method: "POST", body: JSON.stringify(body) }),
 
   updateBudget: (id: number, body: { amount?: number; rollover?: boolean }) =>
@@ -245,13 +263,28 @@ export const api = {
   copyBudgets: (sourceMonth: string, targetMonth: string) =>
     fetcher<{ copied: number }>(`/budgets/copy?source_month=${sourceMonth}&target_month=${targetMonth}`, { method: "POST" }),
 
+  getSpendingPreferences: () =>
+    fetcher<SpendingPreference[]>("/budgets/preferences"),
+
+  setSpendingPreference: (category: string, target: "personal" | "shared") =>
+    fetcher<SpendingPreference>("/budgets/preferences", {
+      method: "PUT",
+      body: JSON.stringify({ category, target }),
+    }),
+
+  getBudgetConflicts: (month?: string) => {
+    const qs = month ? `?month=${month}` : "";
+    return fetcher<BudgetConflict[]>(`/budgets/conflicts${qs}`);
+  },
+
   // Goals
   getGoals: (scope?: ViewScope) =>
-    fetcher<Goal[]>(`/goals${scope && scope !== "personal" ? `?scope=${scope}` : ""}`),
+    fetcher<GoalsResponse>(`/goals${scope && scope !== "personal" ? `?scope=${scope}` : ""}`),
 
   createGoal: (body: {
     name: string; target_amount: number; current_amount?: number;
     target_date?: string; icon?: string; color?: string;
+    household_id?: number; linked_account_ids?: number[];
   }) =>
     fetcher<Goal>("/goals", { method: "POST", body: JSON.stringify(body) }),
 
@@ -260,6 +293,15 @@ export const api = {
 
   deleteGoal: (id: number) =>
     fetchVoid(`/goals/${id}`, { method: "DELETE" }),
+
+  addGoalContribution: (goalId: number, amount: number, note?: string) =>
+    fetcher<{ goal: Goal } & GoalContribution>(
+      `/goals/${goalId}/contributions`,
+      { method: "POST", body: JSON.stringify({ amount, note }) }
+    ),
+
+  getGoalContributions: (goalId: number) =>
+    fetcher<GoalContribution[]>(`/goals/${goalId}/contributions`),
 
   // Reports
   getSpendingByCategory: (months?: number, scope?: ViewScope) => {

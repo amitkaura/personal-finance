@@ -15,8 +15,7 @@ export default function InvitationBanner() {
   const acceptMutation = useMutation({
     mutationFn: api.acceptInvitation,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["household"] });
-      queryClient.invalidateQueries({ queryKey: ["pendingInvitations"] });
+      queryClient.invalidateQueries();
       refetch();
     },
   });

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Personal Finance",
+  title: "Fino",
   description: "Self-hosted personal finance dashboard",
 };
 

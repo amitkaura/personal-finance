@@ -1,27 +1,44 @@
 "use client";
 
 import Image from "next/image";
-import { User, Users, Heart } from "lucide-react";
+import { Users, Heart } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import type { ViewScope } from "@/lib/types";
 
-const SCOPES: { value: ViewScope; label: string; icon: typeof User }[] = [
-  { value: "personal", label: "Mine", icon: User },
-  { value: "partner", label: "Yours", icon: Heart },
-  { value: "household", label: "Ours", icon: Users },
+const SCOPES: { value: ViewScope; icon: typeof Users }[] = [
+  { value: "personal", icon: Users },
+  { value: "partner", icon: Heart },
+  { value: "household", icon: Users },
 ];
 
 export default function ViewSwitcher() {
+  const { user } = useAuth();
   const { household, partner, scope, setScope } = useHousehold();
 
   if (!household) return null;
 
+  const firstName = (name: string) => name.split(" ")[0];
+
+  function labelFor(value: ViewScope): string {
+    if (value === "personal") return user ? firstName(user.name) : "Mine";
+    if (value === "partner") return partner ? firstName(partner.name) : "Yours";
+    return household?.name ?? "Ours";
+  }
+
+  function pictureFor(value: ViewScope): string | null {
+    if (value === "personal") return user?.picture ?? null;
+    if (value === "partner") return partner?.picture ?? null;
+    return null;
+  }
+
   return (
     <div className="px-3 pb-2">
       <div className="flex gap-0.5 rounded-lg bg-muted p-0.5">
-        {SCOPES.map(({ value, label, icon: Icon }) => {
+        {SCOPES.map(({ value, icon: Icon }) => {
           const active = scope === value;
-          const isPartner = value === "partner";
+          const pic = pictureFor(value);
+          const label = labelFor(value);
 
           return (
             <button
@@ -33,15 +50,15 @@ export default function ViewSwitcher() {
                   : "text-muted-foreground hover:text-foreground"
               }`}
               title={
-                isPartner && partner
-                  ? `${partner.name}'s data`
-                  : undefined
+                value !== "household"
+                  ? `${label}'s data`
+                  : "Combined household data"
               }
             >
-              {isPartner && partner?.picture ? (
+              {pic ? (
                 <Image
-                  src={partner.picture}
-                  alt={partner.name}
+                  src={pic}
+                  alt={label}
                   width={14}
                   height={14}
                   className="rounded-full"
@@ -50,7 +67,7 @@ export default function ViewSwitcher() {
               ) : (
                 <Icon className="h-3.5 w-3.5" />
               )}
-              <span>{isPartner && partner ? partner.name.split(" ")[0] : label}</span>
+              <span>{label}</span>
             </button>
           );
         })}

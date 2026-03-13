@@ -15,6 +15,7 @@ export interface Account {
   plaid_item_id: number | null;
   is_linked: boolean;
   owner_name?: string;
+  owner_picture?: string | null;
 }
 
 export interface PlaidConnectionAccount {
@@ -30,6 +31,8 @@ export interface PlaidConnection {
   id: number;
   item_id: string;
   institution_name: string | null;
+  owner_name?: string;
+  owner_picture?: string | null;
   accounts: PlaidConnectionAccount[];
 }
 
@@ -80,6 +83,7 @@ export interface Transaction {
   account_id: number | null;
   plaid_transaction_id: string;
   owner_name?: string;
+  owner_picture?: string | null;
   is_manual: boolean;
   notes: string | null;
   tags: TagInfo[];
@@ -91,6 +95,7 @@ export interface Budget {
   amount: number;
   month: string;
   rollover: boolean;
+  household_id?: number | null;
 }
 
 export interface BudgetSummaryItem {
@@ -102,6 +107,14 @@ export interface BudgetSummaryItem {
   spent: number;
   remaining: number;
   percent_used: number;
+  breakdown?: Record<string, number>;
+}
+
+export interface BudgetSectionSummary {
+  items: BudgetSummaryItem[];
+  total_budgeted: number;
+  total_spent: number;
+  total_remaining: number;
 }
 
 export interface BudgetSummary {
@@ -110,6 +123,22 @@ export interface BudgetSummary {
   total_budgeted: number;
   total_spent: number;
   total_remaining: number;
+  sections?: {
+    personal: BudgetSectionSummary;
+    partner: BudgetSectionSummary;
+    shared: BudgetSectionSummary;
+  };
+  shared_summary?: BudgetSectionSummary | null;
+}
+
+export interface SpendingPreference {
+  category: string;
+  target: "personal" | "shared";
+}
+
+export interface BudgetConflict {
+  category: string;
+  current_preference: "personal" | "shared" | null;
 }
 
 export interface Goal {
@@ -125,6 +154,28 @@ export interface Goal {
   remaining: number;
   months_left: number | null;
   monthly_needed: number | null;
+  created_at: string;
+  household_id?: number | null;
+  linked_account_ids?: number[];
+  is_account_linked?: boolean;
+}
+
+export interface GoalsResponse {
+  goals: Goal[];
+  shared_goals_summary: {
+    count: number;
+    total_progress_pct: number;
+  } | null;
+}
+
+export interface GoalContribution {
+  id: number;
+  goal_id: number;
+  user_id: number;
+  user_name: string;
+  user_picture: string | null;
+  amount: number;
+  note: string | null;
   created_at: string;
 }
 
@@ -237,7 +288,7 @@ export interface Household {
   id: number;
   name: string;
   members: HouseholdMember[];
-  pending_invitations: { id: number; invited_email: string; status: string }[];
+  pending_invitations: { id: number; token: string; invited_email: string; status: string }[];
 }
 
 export interface HouseholdInvitation {

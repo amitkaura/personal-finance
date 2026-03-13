@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
+import Image from "next/image";
 import {
   Landmark,
   TrendingUp,
@@ -199,8 +200,17 @@ function AccountRow({
             <div className="flex items-center gap-2">
               <p className="font-medium">{account.name}</p>
               {showOwner && account.owner_name && (
-                <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
-                  {account.owner_name}
+                <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+                  {account.owner_picture ? (
+                    <Image
+                      src={account.owner_picture}
+                      alt={account.owner_name}
+                      width={14}
+                      height={14}
+                      className="rounded-full"
+                    />
+                  ) : null}
+                  {account.owner_name.split(" ")[0]}
                 </span>
               )}
               {!account.is_linked && (

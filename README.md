@@ -47,12 +47,20 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Monthly category budgets with configurable amounts
 - Optional rollover of unspent budget to the next month
 - Copy all budgets from one month to another
-- Dashboard snippet shows top budgets with spent-vs-limit progress bars
+- **Shared budgets** -- create household-level budgets editable by either partner
+- **Per-person spending breakdown** -- shared budget rows show a two-tone progress bar with per-person contribution amounts
+- **Spending preferences** -- when both a personal and shared budget exist for the same category, choose where your spending counts
+- **Sectioned household view** -- household scope groups budgets into "Your Budgets", "Partner's Budgets", and "Shared Budgets" sections
+- Dashboard snippet shows personal and shared budget progress side-by-side
 
 ### Financial Goals
 - Set savings goals with target amount, target date, icon, and color
 - Track current progress toward each goal
-- Dashboard snippet with progress rings and projected completion dates
+- **Shared goals** -- create household-level goals that either partner can contribute to
+- **Account-linked goals** -- link one or more accounts to auto-track progress from balances (updated on every Plaid sync)
+- **Contribution history** -- expandable log showing who added what, with user avatar, amount, note, and date
+- **Collapsed shared summary** -- personal scope shows a compact "N shared goals — X% avg progress" banner
+- Dashboard snippet shows personal goals plus a shared goals summary
 
 ### Net Worth Tracking
 - Automatic net worth snapshots taken after every Plaid sync
@@ -79,11 +87,14 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Household Sharing
 - Invite a partner by email to form a household
 - Three view modes across the entire app:
-  - **Mine** -- only your accounts, transactions, and budgets
+  - **Mine** -- only your accounts, transactions, budgets, and goals
   - **Yours** -- view-only access to your partner's data
-  - **Ours** -- combined household view
-- Owner badges on accounts and transactions in shared views
-- Invitation accept/decline flow with banner notifications
+  - **Ours** -- combined household view with shared budgets/goals
+- Owner badges (name + avatar) on accounts, transactions, and connections in shared views
+- Shared budgets and goals are editable by either household member
+- Partner's personal budgets and goals are visible but read-only
+- Invitation accept/decline/cancel flow with banner notifications
+- Editable household name (displayed in ViewSwitcher)
 - Leave household at any time; personal data is unaffected
 
 ### Profile Management
@@ -97,7 +108,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Authentication & Multi-User
 - Google Sign-In with one-tap and popup flows
 - JWT session stored as an HttpOnly cookie
-- All data is scoped per-user (accounts, transactions, rules, settings, budgets, goals)
+- All data is scoped per-user (accounts, transactions, rules, settings, budgets, goals) with household-aware sharing
 - User profile display in sidebar with avatar (prefers profile overrides)
 
 ### Security & Reliability
@@ -189,13 +200,38 @@ personal-finance/
 │   │   ├── cashflow-bar-chart.tsx  # Income vs expenses bar chart
 │   │   ├── sankey-diagram.tsx      # Cash flow Sankey
 │   │   └── confirm-dialog.tsx      # Reusable confirmation modal
-│   └── lib/
-│       ├── api.ts                  # API client (fetch with credentials)
-│       ├── types.ts                # TypeScript interfaces
-│       └── hooks.ts                # useSettings, useFormatCurrency, useScope
+│   ├── lib/
+│   │   ├── api.ts                  # API client (fetch with credentials)
+│   │   ├── types.ts                # TypeScript interfaces
+│   │   └── hooks.ts                # useSettings, useFormatCurrency, useScope
+│   └── tests/                      # Frontend test suite (Vitest + RTL)
+│       ├── setup.tsx               # Global mocks (next/image, next/link, next/navigation)
+│       ├── helpers.tsx             # Fixtures, mock API factory, renderWithProviders
+│       ├── auth-provider.test.tsx  # Login, logout, cache clearing, loading states
+│       ├── household-provider.test.tsx # Scope persistence, reset on no household
+│       ├── view-switcher.test.tsx  # Labels, pictures, scope switching, visibility
+│       ├── invitation-banner.test.tsx  # Accept/decline, dismiss, multiple invites
+│       ├── settings-page.test.tsx  # Profile, household, general, data management
+│       ├── sidebar.test.tsx        # Nav links, branding, active state, user section
+│       └── hooks.test.tsx          # useFormatCurrency, useFormatCurrencyPrecise, useScope
+├── tests/                          # Backend test suite (pytest)
+│   ├── conftest.py                 # Fixtures, in-memory SQLite, auth mocks
+│   ├── test_health.py              # Health/readiness endpoints
+│   ├── test_auth.py                # Google OAuth login, session, /me
+│   ├── test_transactions.py        # CRUD, filters, pagination
+│   ├── test_accounts.py            # List, update, unlink, summary
+│   ├── test_budgets.py             # CRUD, copy, summary
+│   ├── test_goals.py               # CRUD, ownership
+│   ├── test_tags.py                # CRUD, transaction tagging
+│   ├── test_household.py           # Invite, accept, decline, leave, scope
+│   ├── test_settings.py            # Profile, rules, export, clear
+│   ├── test_reports.py             # Spending, trends, merchants
+│   ├── test_net_worth.py           # Snapshots, history
+│   └── test_plaid.py               # Link token, exchange, sync (mocked)
 ├── docker-compose.yml              # Postgres + Redis + API services
 ├── Dockerfile                      # Python 3.12-slim, uvicorn
 ├── requirements.txt                # Python dependencies
+├── pytest.ini                      # Pytest configuration
 └── .env.example                    # All required environment variables
 ```
 
@@ -209,8 +245,11 @@ personal-finance/
 | `Transaction` | Financial transaction (Plaid-synced or manual) |
 | `CategoryRule` | Keyword-to-category mapping for auto-categorization |
 | `UserSettings` | Per-user preferences (currency, locale, sync, LLM config) |
-| `Budget` | Monthly category budget with optional rollover |
-| `Goal` | Savings goal with target amount and date |
+| `Budget` | Monthly category budget with optional rollover and household sharing |
+| `SpendingPreference` | Per-user preference for routing category spending (personal vs shared) |
+| `Goal` | Savings goal with target amount, date, and household sharing |
+| `GoalAccountLink` | Links a goal to accounts for auto-tracking progress |
+| `GoalContribution` | Tracks individual contributions to a goal with attribution |
 | `NetWorthSnapshot` | Point-in-time assets, liabilities, and net worth |
 | `Tag` | User-defined label with color |
 | `TransactionTag` | Many-to-many link between transactions and tags |
@@ -234,9 +273,11 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 |--------|------|-------------|
 | GET | `/` | Get current household with members and invitations |
 | POST | `/invite` | Invite a partner by email |
+| PATCH | `/` | Update household name |
 | GET | `/invitations/pending` | List pending invitations for current user |
 | POST | `/invitations/:token/accept` | Accept an invitation |
 | POST | `/invitations/:token/decline` | Decline an invitation |
+| DELETE | `/invitations/:token` | Cancel an outgoing invitation |
 | DELETE | `/leave` | Leave the current household |
 
 ### Plaid (`/plaid`)
@@ -285,20 +326,25 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 ### Budgets (`/budgets`)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/` | List budgets for a month |
-| POST | `/` | Create a budget |
-| PATCH | `/:id` | Update a budget |
-| DELETE | `/:id` | Delete a budget |
-| POST | `/copy` | Copy budgets from one month to another |
-| GET | `/summary` | Budget vs. actual spending summary |
+| GET | `/` | List budgets for a month (personal + shared) |
+| POST | `/` | Create a budget (optional `household_id` for shared) |
+| PATCH | `/:id` | Update a budget (shared editable by any member) |
+| DELETE | `/:id` | Delete a budget (shared deletable by any member) |
+| POST | `/copy` | Copy personal budgets from one month to another |
+| GET | `/summary` | Budget vs. actual with sectioned household view |
+| GET | `/preferences` | Get spending preferences for current user |
+| PUT | `/preferences` | Upsert a spending preference (category → personal/shared) |
+| GET | `/conflicts` | Categories with both personal and shared budgets |
 
 ### Goals (`/goals`)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/` | List all goals |
-| POST | `/` | Create a goal |
-| PATCH | `/:id` | Update a goal |
-| DELETE | `/:id` | Delete a goal |
+| GET | `/` | List goals with shared summary (personal + household) |
+| POST | `/` | Create a goal (optional `household_id`, `linked_account_ids`) |
+| PATCH | `/:id` | Update a goal (shared editable by any member) |
+| DELETE | `/:id` | Delete a goal (cascades links and contributions) |
+| POST | `/:id/contributions` | Add manual contribution (non-account-linked only) |
+| GET | `/:id/contributions` | Contribution history with user name/avatar |
 
 ### Reports (`/reports`)
 | Method | Path | Description |
@@ -393,6 +439,74 @@ Container health checks:
 - `db`: `pg_isready`
 - `redis`: `redis-cli ping`
 - `api`: probes `http://127.0.0.1:8000/health/ready`
+
+## Testing
+
+### Backend (pytest)
+
+The backend test suite uses pytest with an in-memory SQLite database, so no external services are needed.
+
+```bash
+cd personal-finance
+pip install -r requirements.txt   # includes pytest
+python3 -m pytest                 # run all tests
+python3 -m pytest -v              # verbose output
+python3 -m pytest tests/test_auth.py  # run a single file
+```
+
+**What's tested (175 tests across 12 files):**
+
+| File | Tests | Coverage |
+|------|-------|----------|
+| `test_health` | 2 | Liveness and readiness endpoints |
+| `test_auth` | 6 | Google OAuth login (mocked), session, `/me`, logout |
+| `test_transactions` | 18 | CRUD, search, filters, pagination, manual vs. Plaid |
+| `test_accounts` | 11 | List, update type/name, unlink, summary aggregation |
+| `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
+| `test_goals` | 30 | CRUD, shared goals, linked accounts, contributions, ownership |
+| `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
+| `test_household` | 21 | Invite, accept, decline, cancel, rename, leave, scope |
+| `test_settings` | 19 | Profile, user settings, category rules, export, clear |
+| `test_reports` | 8 | Spending by category, monthly trends, top merchants |
+| `test_net_worth` | 5 | Snapshots, history |
+| `test_plaid` | 10 | Link token, exchange, sync, items (all Plaid calls mocked) |
+
+**Test infrastructure:**
+- In-memory SQLite with per-test isolation (fresh tables for each test)
+- Google OAuth ID token verification is mocked
+- `get_current_user` dependency is overridden to inject a test user
+- Factory helpers for creating users, accounts, transactions, households, budgets, goals, tags, and settings
+- No network calls — all external services (Plaid, Google) are mocked
+
+### Frontend (Vitest + React Testing Library)
+
+The frontend test suite uses Vitest with jsdom and React Testing Library. All API calls and providers are mocked — no backend needed.
+
+```bash
+cd personal-finance/frontend
+npm install                       # includes vitest, @testing-library/*
+npm test                          # run all tests (single run)
+npm run test:watch                # watch mode
+npx vitest run tests/sidebar.test.tsx  # run a single file
+```
+
+**What's tested (59 tests across 7 files):**
+
+| File | Tests | Coverage |
+|------|-------|----------|
+| `auth-provider` | 6 | Loading state, login/logout, cache clearing, default context |
+| `household-provider` | 6 | Load household/partner, scope persistence per user in localStorage, reset |
+| `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
+| `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
+| `settings-page` | 14 | All sections: profile, household, general, data management |
+| `sidebar` | 10 | Brand, nav links, active state, user avatar, logout, hrefs |
+| `hooks` | 6 | `useFormatCurrency`, `useFormatCurrencyPrecise`, `useScope` |
+
+**Test infrastructure:**
+- jsdom environment with global mocks for `next/image`, `next/link`, `next/navigation`
+- Shared fixtures for users, households, invitations, and settings
+- Mock API factory with `vi.hoisted()` for proper hoisting with `vi.mock`
+- `renderWithProviders` wrapper with isolated `QueryClient` per test
 
 ## Environment Variables
 

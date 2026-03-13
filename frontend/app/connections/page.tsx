@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import Image from "next/image";
 import {
   Building2,
   Landmark,
@@ -73,7 +74,11 @@ export default function ConnectionsPage() {
       ) : (
         <div className="mt-8 space-y-4">
           {connections.map((conn) => (
-            <ConnectionCard key={conn.id} connection={conn} />
+            <ConnectionCard
+              key={conn.id}
+              connection={conn}
+              showOwner={scope !== "personal"}
+            />
           ))}
         </div>
       )}
@@ -81,7 +86,13 @@ export default function ConnectionsPage() {
   );
 }
 
-function ConnectionCard({ connection }: { connection: PlaidConnection }) {
+function ConnectionCard({
+  connection,
+  showOwner = false,
+}: {
+  connection: PlaidConnection;
+  showOwner?: boolean;
+}) {
   const queryClient = useQueryClient();
   const [confirmUnlink, setConfirmUnlink] = useState(false);
 
@@ -118,9 +129,25 @@ function ConnectionCard({ connection }: { connection: PlaidConnection }) {
               <Building2 className="h-5 w-5 text-accent" />
             </div>
             <div>
-              <p className="font-semibold">
-                {connection.institution_name || "Unknown Institution"}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="font-semibold">
+                  {connection.institution_name || "Unknown Institution"}
+                </p>
+                {showOwner && connection.owner_name && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+                    {connection.owner_picture ? (
+                      <Image
+                        src={connection.owner_picture}
+                        alt={connection.owner_name}
+                        width={14}
+                        height={14}
+                        className="rounded-full"
+                      />
+                    ) : null}
+                    {connection.owner_name.split(" ")[0]}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
                 {linkedCount} account{linkedCount !== 1 ? "s" : ""} linked
               </p>

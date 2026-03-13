@@ -5,7 +5,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -37,7 +36,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const queryClient = useQueryClient();
-  const lastUserIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     api
@@ -46,15 +44,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => setUser(null))
       .finally(() => setIsLoading(false));
   }, []);
-
-  useEffect(() => {
-    const currentUserId = user?.id ?? null;
-    if (lastUserIdRef.current !== currentUserId) {
-      // Prevent cross-user data leakage from stale client cache.
-      queryClient.clear();
-      lastUserIdRef.current = currentUserId;
-    }
-  }, [user?.id, queryClient]);
 
   const login = useCallback(async (idToken: string) => {
     const u = await api.loginWithGoogle(idToken);

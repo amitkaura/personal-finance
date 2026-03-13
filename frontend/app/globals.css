@@ -38,3 +38,124 @@ body {
   background: #3f3f46;
   border-radius: 3px;
 }
+
+/* Landing page: animated gradient mesh */
+.landing-mesh {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #09090b;
+}
+
+.landing-mesh::before,
+.landing-mesh::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.5;
+  animation: mesh-drift 12s ease-in-out infinite alternate;
+}
+
+.landing-mesh::before {
+  width: 60vw;
+  height: 60vw;
+  top: -20%;
+  left: -10%;
+  background: radial-gradient(circle, #6d28d9 0%, transparent 70%);
+}
+
+.landing-mesh::after {
+  width: 50vw;
+  height: 50vw;
+  bottom: -15%;
+  right: -10%;
+  background: radial-gradient(circle, #2563eb 0%, transparent 70%);
+  animation-delay: -6s;
+}
+
+@keyframes mesh-drift {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(5vw, 3vh) scale(1.15);
+  }
+}
+
+/* Third blob for depth */
+.landing-mesh-extra {
+  position: absolute;
+  width: 40vw;
+  height: 40vw;
+  top: 40%;
+  left: 50%;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.3;
+  background: radial-gradient(circle, #db2777 0%, transparent 70%);
+  animation: mesh-drift-alt 15s ease-in-out infinite alternate;
+}
+
+@keyframes mesh-drift-alt {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    transform: translate(-40%, -45%) scale(1.2);
+  }
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #a78bfa 0%, #6d28d9 40%, #2563eb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-warm {
+  background: linear-gradient(135deg, #6d28d9 0%, #db2777 50%, #f97316 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow wrapper for CTA */
+.glow-wrapper {
+  position: relative;
+}
+
+.glow-wrapper::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #6d28d9, #2563eb, #db2777);
+  opacity: 0.6;
+  filter: blur(12px);
+  z-index: -1;
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    opacity: 0.5;
+    filter: blur(12px);
+  }
+  50% {
+    opacity: 0.8;
+    filter: blur(18px);
+  }
+}
+
+/* Feature card hover */
+.feature-card {
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 32px rgba(109, 40, 217, 0.15);
+}

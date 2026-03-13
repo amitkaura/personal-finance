@@ -177,13 +177,27 @@ def list_plaid_items(
             if account.plaid_item_id is not None:
                 accounts_by_item.setdefault(account.plaid_item_id, []).append(account)
 
+    owner_cache: dict[int, dict] = {}
+    for item in items:
+        uid = item.user_id
+        if uid and uid not in owner_cache:
+            u = session.get(User, uid)
+            if u:
+                owner_cache[uid] = {
+                    "name": u.display_name or u.name,
+                    "picture": u.avatar_url or u.picture,
+                }
+
     result = []
     for item in items:
         accounts = accounts_by_item.get(item.id or -1, [])
+        owner = owner_cache.get(item.user_id or -1, {})
         result.append({
             "id": item.id,
             "item_id": item.item_id,
             "institution_name": item.institution_name,
+            "owner_name": owner.get("name", ""),
+            "owner_picture": owner.get("picture"),
             "accounts": [
                 {
                     "id": a.id,
@@ -349,12 +363,49 @@ def sync_transactions(plaid_item_id: int) -> None:
 
         _update_balances(session, access_token, plaid_item_id, user_id)
 
+        _refresh_linked_goal_balances(session, user_id)
+
         # Take a net worth snapshot after sync
         from app.routes.net_worth import take_snapshot
         try:
             take_snapshot(session, user_id)
         except Exception:
             pass
+
+
+def _refresh_linked_goal_balances(session: Session, user_id: int) -> None:
+    """Update current_amount on account-linked goals whose linked accounts belong to this user."""
+    from app.models import Goal, GoalAccountLink
+
+    user_account_ids = list(session.exec(
+        select(Account.id).where(Account.user_id == user_id)
+    ).all())
+    if not user_account_ids:
+        return
+
+    linked_goal_ids = set(session.exec(
+        select(GoalAccountLink.goal_id).where(
+            GoalAccountLink.account_id.in_(user_account_ids)  # type: ignore[union-attr]
+        )
+    ).all())
+
+    for gid in linked_goal_ids:
+        goal = session.get(Goal, gid)
+        if not goal or goal.is_completed:
+            continue
+        all_linked = list(session.exec(
+            select(GoalAccountLink.account_id).where(GoalAccountLink.goal_id == gid)
+        ).all())
+        accounts = session.exec(
+            select(Account).where(Account.id.in_(all_linked))  # type: ignore[union-attr]
+        ).all()
+        total = sum(a.current_balance for a in accounts)
+        goal.current_amount = total
+        if goal.current_amount >= goal.target_amount:
+            goal.is_completed = True
+        session.add(goal)
+
+    session.commit()
 
 
 def _update_balances(session: Session, access_token: str, plaid_item_id: int, user_id: int) -> None:

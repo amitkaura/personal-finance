@@ -17,9 +17,9 @@ def _member_to_dict(member: HouseholdMember, user: User) -> dict:
     return {
         "id": member.id,
         "user_id": user.id,
-        "name": user.name,
+        "name": user.display_name or user.name,
         "email": user.email,
-        "picture": user.picture,
+        "picture": user.avatar_url or user.picture,
         "role": member.role,
     }
 
@@ -66,6 +66,7 @@ def get_household(
         "pending_invitations": [
             {
                 "id": inv.id,
+                "token": inv.token,
                 "invited_email": inv.invited_email,
                 "status": inv.status,
             }
@@ -169,12 +170,71 @@ def get_pending_invitations(
             "id": inv.id,
             "token": inv.token,
             "household_name": household.name if household else "Household",
-            "invited_by_name": inviter.name if inviter else "Someone",
-            "invited_by_picture": inviter.picture if inviter else None,
+            "invited_by_name": (inviter.display_name or inviter.name) if inviter else "Someone",
+            "invited_by_picture": (inviter.avatar_url or inviter.picture) if inviter else None,
             "status": inv.status,
         })
 
     return result
+
+
+@router.delete("/invitations/{token}")
+def cancel_invitation(
+    token: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Cancel a pending invitation (only the inviter can cancel)."""
+    invitation = session.exec(
+        select(HouseholdInvitation).where(
+            HouseholdInvitation.token == token,
+            HouseholdInvitation.status == "pending",
+        )
+    ).first()
+    if not invitation:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    if invitation.invited_by_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Only the inviter can cancel")
+
+    invitation.status = "cancelled"
+    session.add(invitation)
+    session.commit()
+
+    return {"status": "cancelled"}
+
+
+class HouseholdNameUpdate(BaseModel):
+    name: str
+
+
+@router.patch("")
+def update_household(
+    body: HouseholdNameUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Update the household name."""
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Not in a household")
+
+    name = body.name.strip()
+    if not name or len(name) > 100:
+        raise HTTPException(status_code=400, detail="Name must be 1-100 characters")
+
+    household = session.get(Household, member.household_id)
+    if not household:
+        raise HTTPException(status_code=404, detail="Household not found")
+
+    household.name = name
+    session.add(household)
+    session.commit()
+    session.refresh(household)
+
+    return {"id": household.id, "name": household.name}
 
 
 @router.post("/invitations/{token}/accept")

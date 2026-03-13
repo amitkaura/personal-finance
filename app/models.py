@@ -10,6 +10,7 @@ from typing import Optional
 from uuid import uuid4
 
 import sqlalchemy as sa
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -154,6 +155,19 @@ class Budget(SQLModel, table=True):
     amount: Decimal = Field(max_digits=15, decimal_places=2)
     month: str = Field(index=True)  # "YYYY-MM"
     rollover: bool = Field(default=False)
+    household_id: Optional[int] = Field(default=None, foreign_key="households.id", index=True)
+
+
+class SpendingPreference(SQLModel, table=True):
+    """Per-user preference for routing category spending to personal or shared budget."""
+
+    __tablename__ = "spending_preferences"
+    __table_args__ = (UniqueConstraint("user_id", "category"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    category: str
+    target: str = Field(default="personal")  # "personal" | "shared"
 
 
 # ── Financial Goals ────────────────────────────────────────────
@@ -173,6 +187,31 @@ class Goal(SQLModel, table=True):
     icon: str = Field(default="target")
     color: str = Field(default="#6d28d9")
     is_completed: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    household_id: Optional[int] = Field(default=None, foreign_key="households.id", index=True)
+
+
+class GoalAccountLink(SQLModel, table=True):
+    """Links a goal to one or more accounts for auto-tracking progress."""
+
+    __tablename__ = "goal_account_links"
+    __table_args__ = (UniqueConstraint("goal_id", "account_id"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    goal_id: int = Field(foreign_key="goals.id", index=True)
+    account_id: int = Field(foreign_key="accounts.id", index=True)
+
+
+class GoalContribution(SQLModel, table=True):
+    """Tracks individual contributions to a goal with attribution."""
+
+    __tablename__ = "goal_contributions"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    goal_id: int = Field(foreign_key="goals.id", index=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    amount: Decimal = Field(max_digits=15, decimal_places=2)
+    note: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

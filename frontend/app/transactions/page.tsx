@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
+import Image from "next/image";
 import {
   Check,
   ChevronDown,
@@ -433,8 +434,17 @@ function TransactionRow({
             </span>
           ))}
           {showOwner && txn.owner_name && (
-            <span className="rounded-full bg-accent/10 px-1.5 py-0.5 text-accent">
-              {txn.owner_name}
+            <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-accent">
+              {txn.owner_picture ? (
+                <Image
+                  src={txn.owner_picture}
+                  alt={txn.owner_name}
+                  width={14}
+                  height={14}
+                  className="rounded-full"
+                />
+              ) : null}
+              {txn.owner_name.split(" ")[0]}
             </span>
           )}
           {txn.notes && (
