@@ -397,7 +397,7 @@ def test_import_categorizes_via_llm_fallback(auth_client, session):
 
 
 def test_import_streaming_shows_llm_category(auth_client, session):
-    """NDJSON streaming: uncategorized rows show 'imported' during progress (LLM batches at end)."""
+    """NDJSON streaming: LLM categorization happens inline so progress shows the category."""
     from unittest.mock import MagicMock
     import json as _json
 
@@ -430,12 +430,10 @@ def test_import_streaming_shows_llm_category(auth_client, session):
 
     lines = [l for l in resp.text.strip().split("\n") if l]
     progress = _json.loads(lines[0])
-    # With batched LLM, progress shows "imported" for uncategorized rows (category known only at end)
-    assert progress["status"] == "imported"
-    assert progress["category"] is None
+    assert progress["status"] == "categorized"
+    assert progress["category"] == "Shopping"
     complete = _json.loads(lines[1])
     assert complete["categorized"] == 1
-    # Transaction in DB has LLM-assigned category
     txns = session.exec(select(Transaction).where(Transaction.account_id == acct.id)).all()
     assert txns[0].category == "Shopping"
 

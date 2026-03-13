@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
+import type { AutoCatProgressEvent } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 import type { Account, Transaction } from "@/lib/types";
 import ConfirmDialog from "@/components/confirm-dialog";
@@ -54,6 +55,7 @@ export default function TransactionsPage() {
   const PAGE_SIZE = 50;
 
   const [deleteConfirm, setDeleteConfirm] = useState<Transaction | null>(null);
+  const [autoCatProgress, setAutoCatProgress] = useState<AutoCatProgressEvent | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -124,9 +126,13 @@ export default function TransactionsPage() {
   });
 
   const autoCatMutation = useMutation({
-    mutationFn: api.autoCategorize,
+    mutationFn: () => api.autoCategorize((event) => setAutoCatProgress(event)),
     onSuccess: () => {
+      setAutoCatProgress(null);
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    },
+    onError: () => {
+      setAutoCatProgress(null);
     },
   });
 
@@ -263,6 +269,31 @@ export default function TransactionsPage() {
           onCancel={() => setShowAddForm(false)}
           isPending={createMutation.isPending}
         />
+      )}
+
+      {autoCatMutation.isPending && autoCatProgress && (
+        <div className="mt-4 rounded-lg border border-accent/30 bg-accent/10 px-4 py-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="flex items-center gap-2 text-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Categorizing &ldquo;{autoCatProgress.merchant_name}&rdquo;
+              {autoCatProgress.category && (
+                <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  {autoCatProgress.category}
+                </span>
+              )}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {autoCatProgress.current} / {autoCatProgress.total}
+            </span>
+          </div>
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-accent transition-all duration-200"
+              style={{ width: `${(autoCatProgress.current / autoCatProgress.total) * 100}%` }}
+            />
+          </div>
+        </div>
       )}
 
       {autoCatMutation.isSuccess && (

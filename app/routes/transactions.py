@@ -9,12 +9,20 @@ from decimal import Decimal
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
-from app.categorizer import auto_categorize_pending, categorize_transaction
+from app.categorizer import (
+    auto_categorize_pending,
+    categorize_by_rules,
+    categorize_single_llm,
+    categorize_transaction,
+)
 from app.database import get_session
 from app.household import get_scoped_user_ids
 from app.models import Account, Category, Tag, Transaction, TransactionTag, User
@@ -247,12 +255,62 @@ def delete_transaction(
 
 @router.post("/auto-categorize")
 def auto_categorize(
+    request: Request,
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    """Batch-categorize all transactions that need review using rules + LLM."""
+    """Categorize all uncategorized transactions using rules + LLM."""
+    accepts = request.headers.get("accept", "")
+    if "application/x-ndjson" in accepts:
+        return StreamingResponse(
+            _auto_categorize_stream(session, user),
+            media_type="application/x-ndjson",
+        )
     result = auto_categorize_pending(session, user.id)
     return result
+
+
+def _auto_categorize_stream(session: Session, user: User):
+    """Stream per-transaction categorization progress as NDJSON."""
+    user_account_ids = session.exec(
+        select(Account.id).where(Account.user_id == user.id)
+    ).all()
+    txns = session.exec(
+        select(Transaction).where(
+            Transaction.category == None,  # noqa: E711
+            Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+        )
+    ).all()
+
+    total = len(txns)
+    categorized = 0
+
+    for idx, txn in enumerate(txns, 1):
+        cat = categorize_by_rules(txn.merchant_name or "", session, user.id)
+        if not cat:
+            cat = categorize_single_llm(txn, user.id)
+        status = "skipped"
+        if cat:
+            txn.category = cat
+            session.add(txn)
+            categorized += 1
+            status = "categorized"
+
+        yield json.dumps({
+            "status": status,
+            "current": idx,
+            "total": total,
+            "merchant_name": txn.merchant_name,
+            "category": cat,
+        }) + "\n"
+
+    session.commit()
+    yield json.dumps({
+        "status": "complete",
+        "total": total,
+        "categorized": categorized,
+        "skipped": total - categorized,
+    }) + "\n"
 
 
 @router.get("/recurring")

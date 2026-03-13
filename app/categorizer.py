@@ -194,17 +194,40 @@ def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[
     return all_results
 
 
+def categorize_single_llm(transaction: Transaction, user_id: int) -> str | None:
+    """Categorize one transaction via LLM. Returns category or None on failure."""
+    base_url, api_key, model = _get_llm_config(user_id)
+    if not api_key:
+        return None
+
+    txn_dict = {
+        "id": transaction.id,
+        "merchant_name": transaction.merchant_name or "Unknown",
+        "plaid_category": getattr(transaction, "plaid_category_code", None) or "N/A",
+        "amount": float(transaction.amount),
+    }
+    try:
+        results = _categorize_chunk_llm([txn_dict], base_url, api_key, model)
+        return results.get(transaction.id)
+    except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        logger.warning("LLM unreachable for txn %s: %s", transaction.id, exc)
+        return None
+    except Exception:
+        logger.exception("LLM categorization failed for txn %s", transaction.id)
+        return None
+
+
 def categorize_transaction(transaction: Transaction, session: Session, user_id: int) -> str | None:
     """Run the full categorization pipeline on a single transaction."""
     category = categorize_by_rules(transaction.merchant_name or "", session, user_id)
     if category:
         return category
 
-    return categorize_by_llm(transaction, user_id)
+    return categorize_single_llm(transaction, user_id)
 
 
 def auto_categorize_pending(session: Session, user_id: int) -> dict[str, int]:
-    """Batch-categorize all uncategorized transactions for a given user. Returns counts."""
+    """Categorize all uncategorized transactions for a given user. Returns counts."""
     user_account_ids = session.exec(
         select(Account.id).where(Account.user_id == user_id)
     ).all()
@@ -218,32 +241,20 @@ def auto_categorize_pending(session: Session, user_id: int) -> dict[str, int]:
     if not txns:
         return {"total": 0, "categorized": 0, "skipped": 0}
 
-    rule_matched = []
-    llm_candidates = []
+    categorized = 0
     for txn in txns:
         cat = categorize_by_rules(txn.merchant_name or "", session, user_id)
+        if not cat:
+            cat = categorize_single_llm(txn, user_id)
         if cat:
             txn.category = cat
             session.add(txn)
-            rule_matched.append(txn)
-        else:
-            llm_candidates.append(txn)
-
-    llm_results = categorize_batch_llm(llm_candidates, user_id) if llm_candidates else {}
-    llm_matched = 0
-    for txn in llm_candidates:
-        cat = llm_results.get(txn.id)
-        if cat:
-            txn.category = cat
-            session.add(txn)
-            llm_matched += 1
+            categorized += 1
 
     session.commit()
 
-    llm_failed = len(llm_candidates) - llm_matched
     return {
         "total": len(txns),
-        "categorized": len(rule_matched) + llm_matched,
-        "skipped": len(txns) - len(rule_matched) - llm_matched,
-        "failed": llm_failed,
+        "categorized": categorized,
+        "skipped": len(txns) - categorized,
     }

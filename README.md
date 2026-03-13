@@ -44,15 +44,16 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Infinite scroll** -- browse the full transaction history with automatic pagination (loads 50 at a time as you scroll)
 - Server-side search by merchant name with filters for category, account, source (manual vs synced), and uncategorized
 - **Filter popover** -- secondary filters (category, type, date range, amount range) collapsed behind a Filters button with active-filter count badge; click outside to dismiss
-- Inline auto-categorization: transactions are categorized on import using rules and LLM fallback
-- Manual "auto-categorize" button with tooltip describing the AI/rules categorization process
+- Inline auto-categorization: each transaction is categorized at import time (rules first, then per-transaction LLM fallback) with real-time streaming progress
+- Manual "auto-categorize" button with streaming progress bar (current/total, merchant name, assigned category) and tooltip describing the AI/rules categorization process
 - **Delete confirmation** -- manual transaction deletion requires confirmation via dialog; Plaid-synced transactions are protected
 
 ### Hybrid Categorization
 1. **Rule-based** -- user-defined keyword-to-category mappings checked first
-2. **LLM fallback** -- uncategorized transactions are sent to an OpenAI-compatible model for classification; bulk auto-categorize batches transactions in chunks of 25 for reliable output from local models (Ollama, etc.)
+2. **LLM fallback** -- uncategorized transactions are sent one-at-a-time to an OpenAI-compatible model for classification; per-transaction calls are resilient (individual failures don't block others)
 3. **Inline categorization** -- each transaction is categorized at import time (rules first, then per-transaction LLM fallback) with real-time streaming progress via NDJSON
-4. Auto-categorization also runs on every Plaid sync and can be triggered manually for any remaining uncategorized transactions
+4. **Streaming auto-categorize** -- the manual auto-categorize endpoint streams NDJSON progress events, showing per-transaction categorization status with a progress bar on the frontend
+5. Auto-categorization also runs on every Plaid sync and can be triggered manually for any remaining uncategorized transactions
 
 ### Tags
 - Create user-defined tags with custom colors
@@ -175,7 +176,7 @@ personal-finance/
 │   ├── scheduler.py                # APScheduler daily sync job
 │   ├── plaid_client.py             # Plaid API client factory
 │   ├── crypto.py                   # Fernet encrypt/decrypt for access tokens
-│   ├── categorizer.py              # Rule-based + LLM batch categorization
+│   ├── categorizer.py              # Rule-based + per-transaction LLM categorization
 │   ├── household.py                # Scope helper (personal/partner/household)
 │   └── routes/
 │       ├── auth.py                 # POST /google, GET /me, POST /logout
@@ -362,7 +363,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | PATCH | `/:id` | Update category, merchant, amount, date, notes |
 | DELETE | `/:id` | Delete a manual transaction |
 | GET | `/categories` | List available categories |
-| POST | `/auto-categorize` | Auto-categorize uncategorized transactions |
+| POST | `/auto-categorize` | Auto-categorize uncategorized transactions (supports NDJSON streaming with `Accept: application/x-ndjson`) |
 | GET | `/recurring` | Detect recurring transactions |
 
 ### Settings (`/settings`)
@@ -520,7 +521,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
-| `test_transactions` | 29 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize (rules, LLM batching, partial failure), recurring, date validation, response schema |
+| `test_transactions` | 30 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize (rules, per-txn LLM, partial failure, NDJSON streaming), recurring, date validation, response schema |
 | `test_categories` | 27 | Full CRUD, auto-seed defaults, create validation (empty/whitespace/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
 | `test_accounts` | 24 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization |
 | `test_plaid` | 14 | Link token, exchange token (success, relink, conflict, institution name), sync, items (all Plaid calls mocked) |

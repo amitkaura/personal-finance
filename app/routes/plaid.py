@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.auth import get_current_user
-from app.categorizer import categorize_by_rules, categorize_batch_llm
+from app.categorizer import categorize_by_rules, categorize_single_llm
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
 from app.household import get_scoped_user_ids
@@ -328,7 +328,6 @@ def sync_transactions(plaid_item_id: int) -> None:
                 break
             offset += batch_size
 
-        # Batch auto-categorize all uncategorized transactions for this user
         user_account_ids = session.exec(
             select(Account.id).where(Account.user_id == user_id)
         ).all()
@@ -339,22 +338,13 @@ def sync_transactions(plaid_item_id: int) -> None:
             )
         ).all()
 
-        llm_candidates = []
         for t in pending:
             cat = categorize_by_rules(t.merchant_name or "", session, user_id)
+            if not cat:
+                cat = categorize_single_llm(t, user_id)
             if cat:
                 t.category = cat
                 session.add(t)
-            else:
-                llm_candidates.append(t)
-
-        if llm_candidates:
-            llm_results = categorize_batch_llm(llm_candidates, user_id)
-            for t in llm_candidates:
-                cat = llm_results.get(t.id)
-                if cat:
-                    t.category = cat
-                    session.add(t)
 
         session.commit()
 

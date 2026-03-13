@@ -280,15 +280,15 @@ def test_auto_categorize_with_rules(auth_client, session):
 
 # -- Auto-categorize LLM batching ------------------------------------------
 
-def test_auto_categorize_llm_batches_large_set(auth_client, session):
-    """LLM calls are chunked (_LLM_BATCH_SIZE=25) so 30 txns triggers 2 calls."""
+def test_auto_categorize_llm_per_transaction(auth_client, session):
+    """LLM is called once per transaction (not batched)."""
     from unittest.mock import patch, MagicMock
     import json as _json
 
     client, user = auth_client
     acct = make_account(session, user)
     txns = []
-    for i in range(30):
+    for i in range(5):
         txns.append(make_transaction(
             session, user, merchant=f"Merchant {i}", category=None,
             account=acct, is_manual=False,
@@ -314,20 +314,20 @@ def test_auto_categorize_llm_batches_large_set(auth_client, session):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total"] == 30
-    assert data["categorized"] == 30
+    assert data["total"] == 5
+    assert data["categorized"] == 5
     assert data["skipped"] == 0
-    assert mock_post.call_count == 2  # 25 + 5
+    assert mock_post.call_count == 5  # one per transaction
 
 
 def test_auto_categorize_llm_partial_failure(auth_client, session):
-    """If one LLM chunk fails, results from successful chunks are preserved."""
+    """If some per-txn LLM calls fail, the successful ones are preserved."""
     from unittest.mock import patch, MagicMock
     import json as _json
 
     client, user = auth_client
     acct = make_account(session, user)
-    for i in range(30):
+    for i in range(5):
         make_transaction(
             session, user, merchant=f"Merchant {i}", category=None,
             account=acct, is_manual=False,
@@ -337,7 +337,7 @@ def test_auto_categorize_llm_partial_failure(auth_client, session):
 
     def fake_llm_response(url, **kwargs):
         call_count["n"] += 1
-        if call_count["n"] == 2:
+        if call_count["n"] == 3:
             raise httpx.ConnectError("LLM unreachable")
         body = kwargs.get("json", {})
         user_msg = body["messages"][1]["content"]
@@ -358,9 +358,60 @@ def test_auto_categorize_llm_partial_failure(auth_client, session):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total"] == 30
-    assert data["categorized"] == 25  # first chunk succeeded
-    assert data["skipped"] == 5       # second chunk failed
+    assert data["total"] == 5
+    assert data["categorized"] == 4  # 4 succeeded, 1 failed
+    assert data["skipped"] == 1
+
+
+# -- Auto-categorize streaming ---------------------------------------------
+
+def test_auto_categorize_streaming(auth_client, session):
+    """Auto-categorize with Accept: application/x-ndjson streams per-txn progress."""
+    from unittest.mock import patch, MagicMock
+    import json as _json
+
+    client, user = auth_client
+    acct = make_account(session, user)
+    for i in range(3):
+        make_transaction(
+            session, user, merchant=f"Store {i}", category=None,
+            account=acct, is_manual=False,
+        )
+
+    def fake_llm_response(url, **kwargs):
+        body = kwargs.get("json", {})
+        user_msg = body["messages"][1]["content"]
+        input_txns = _json.loads(user_msg)
+        result = [{"id": t["id"], "category": "Shopping"} for t in input_txns]
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "choices": [{"message": {"content": _json.dumps(result)}}]
+        }
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch("app.categorizer._get_llm_config", return_value=(
+        "http://fake-llm", "fake-key", "test-model",
+    )), patch("httpx.post", side_effect=fake_llm_response):
+        resp = client.post(
+            "/api/v1/transactions/auto-categorize",
+            headers={"Accept": "application/x-ndjson"},
+        )
+
+    lines = [l for l in resp.text.strip().split("\n") if l]
+    assert len(lines) == 4  # 3 progress + 1 complete
+    for i in range(3):
+        event = _json.loads(lines[i])
+        assert event["status"] == "categorized"
+        assert event["category"] == "Shopping"
+        assert "merchant_name" in event
+        assert event["current"] == i + 1
+        assert event["total"] == 3
+    complete = _json.loads(lines[3])
+    assert complete["status"] == "complete"
+    assert complete["categorized"] == 3
+    assert complete["total"] == 3
 
 
 # -- Recurring -------------------------------------------------------------

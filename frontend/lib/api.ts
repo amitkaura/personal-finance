@@ -73,6 +73,21 @@ export interface ImportCompleteEvent {
   errors: string[];
 }
 
+export interface AutoCatProgressEvent {
+  status: string;
+  current: number;
+  total: number;
+  merchant_name: string;
+  category: string | null;
+}
+
+export interface AutoCatCompleteEvent {
+  status: "complete";
+  total: number;
+  categorized: number;
+  skipped: number;
+}
+
 export interface BulkImportPayload {
   accounts: { name: string; type: string; subtype?: string; current_balance?: number }[];
   transactions: {
@@ -145,6 +160,63 @@ async function streamNdjson<T>(
   }
 
   if (!result) throw new Error("Import stream ended without completion event");
+  return result;
+}
+
+async function streamAutoCategorize(
+  path: string,
+  onProgress?: (event: AutoCatProgressEvent) => void,
+): Promise<AutoCatCompleteEvent> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/x-ndjson",
+    },
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${await res.text()}`);
+  }
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: AutoCatCompleteEvent | null = null;
+  let lastProgressTime = 0;
+  let pendingProgress: AutoCatProgressEvent | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.status === "complete") {
+        result = event as AutoCatCompleteEvent;
+      } else if (onProgress) {
+        const now = Date.now();
+        if (now - lastProgressTime >= 100) {
+          onProgress(event as AutoCatProgressEvent);
+          lastProgressTime = now;
+          pendingProgress = null;
+        } else {
+          pendingProgress = event as AutoCatProgressEvent;
+        }
+      }
+    }
+  }
+  if (pendingProgress && onProgress) {
+    onProgress(pendingProgress);
+  }
+  if (buffer.trim()) {
+    const event = JSON.parse(buffer);
+    if (event.status === "complete") result = event as AutoCatCompleteEvent;
+  }
+  if (!result) throw new Error("Auto-categorize stream ended without completion event");
   return result;
 }
 
@@ -259,11 +331,10 @@ export const api = {
       }),
     }),
 
-  autoCategorize: () =>
-    fetcher<{ total: number; categorized: number; skipped: number }>(
-      "/transactions/auto-categorize",
-      { method: "POST" }
-    ),
+  autoCategorize: (
+    onProgress?: (event: AutoCatProgressEvent) => void,
+  ): Promise<AutoCatCompleteEvent> =>
+    streamAutoCategorize("/transactions/auto-categorize", onProgress),
 
   unlinkAccount: (accountId: number) =>
     fetcher<Account>(`/accounts/${accountId}/unlink`, { method: "POST" }),
