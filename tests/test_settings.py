@@ -495,6 +495,22 @@ def test_bulk_import_creates_accounts_and_transactions(auth_client, session):
     assert str(acct.type) == "credit" or acct.type == "credit"
 
 
+def test_bulk_import_creates_account_with_subtype_and_balance(auth_client, session):
+    client, user = auth_client
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [{"name": "Savings", "type": "depository", "subtype": "savings", "current_balance": 1000}],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop",
+             "account_name": "Savings"},
+        ],
+    })
+    assert resp.status_code == 200
+    acct = session.exec(select(Account).where(Account.name == "Savings")).first()
+    assert acct is not None
+    assert acct.subtype == "savings"
+    assert float(acct.current_balance) == 1000.0
+
+
 def test_bulk_import_reuses_existing_accounts(auth_client, session):
     client, user = auth_client
     make_account(session, user, name="Checking")

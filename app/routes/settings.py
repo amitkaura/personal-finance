@@ -686,6 +686,8 @@ class BulkTransactionRow(BaseModel):
 class BulkAccountEntry(BaseModel):
     name: str
     type: str
+    subtype: Optional[str] = None
+    current_balance: float = 0
 
 
 class BulkImportRequest(BaseModel):
@@ -736,6 +738,8 @@ def _resolve_accounts(
             user_id=user.id,
             name=entry.name,
             type=AccountType(acct_type),
+            subtype=entry.subtype,
+            current_balance=Decimal(str(entry.current_balance)),
             plaid_account_id=f"manual-{uuid4().hex}",
             is_linked=False,
         )

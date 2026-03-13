@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, X, Loader2, CheckCircle2, AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
 import { api, BulkImportPayload, ImportProgressEvent, ImportCompleteEvent } from "@/lib/api";
 import { useHousehold } from "@/components/household-provider";
+import { ACCOUNT_TYPES, SUBTYPES } from "@/app/accounts/page";
 import {
   parseCsv,
   guessRole,
@@ -33,6 +34,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
   const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
   const [result, setResult] = useState<ImportCompleteEvent | null>(null);
   const [negateAmounts, setNegateAmounts] = useState(false);
+  const [accountMeta, setAccountMeta] = useState<Record<string, { type: string; subtype: string; balance: string }>>({});
 
   const { data: existingAccounts } = useQuery({
     queryKey: ["accounts"],
@@ -107,6 +109,15 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
 
   function nextFromColumns() {
     if (csvAccountNames.length > 0) {
+      const meta: Record<string, { type: string; subtype: string; balance: string }> = {};
+      for (const name of csvAccountNames) {
+        if (!existingAccountNames.has(name.toLowerCase()) && !accountMeta[name]) {
+          meta[name] = { type: "depository", subtype: "checking", balance: "0" };
+        }
+      }
+      if (Object.keys(meta).length > 0) {
+        setAccountMeta((prev) => ({ ...prev, ...meta }));
+      }
       setStep("accounts");
     } else if (csvCategories.length > 0) {
       setStep("categories");
@@ -147,7 +158,15 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
         .map((m) => m.csvCategory);
 
       const payload: BulkImportPayload = {
-        accounts: newAccountNames.map((name) => ({ name, type: "depository" })),
+        accounts: newAccountNames.map((name) => {
+          const m = accountMeta[name];
+          return {
+            name,
+            type: m?.type ?? "depository",
+            subtype: m?.subtype ?? "checking",
+            current_balance: parseFloat(m?.balance ?? "0") || 0,
+          };
+        }),
         transactions: mappedRows,
         new_categories: newCategories,
       };
@@ -305,12 +324,70 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
             <div className="space-y-2">
               {csvAccountNames.map((name) => {
                 const exists = existingAccountNames.has(name.toLowerCase());
+                const meta = accountMeta[name];
                 return (
-                  <div key={name} className="flex items-center justify-between rounded-lg border border-border px-4 py-2.5">
-                    <span className="text-sm font-medium">{name}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${exists ? "bg-muted text-muted-foreground" : "bg-accent/20 text-accent"}`}>
-                      {exists ? "Existing" : "New"}
-                    </span>
+                  <div key={name} className="rounded-lg border border-border px-4 py-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{name}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${exists ? "bg-muted text-muted-foreground" : "bg-accent/20 text-accent"}`}>
+                        {exists ? "Existing" : "New"}
+                      </span>
+                    </div>
+                    {!exists && meta && (
+                      <div className="mt-2 flex flex-wrap items-end gap-2">
+                        <div className="w-32">
+                          <label className="mb-0.5 block text-[10px] text-muted-foreground">Type</label>
+                          <select
+                            value={meta.type}
+                            onChange={(e) => {
+                              const newType = e.target.value;
+                              const subs = SUBTYPES[newType] ?? [];
+                              setAccountMeta((prev) => ({
+                                ...prev,
+                                [name]: { ...prev[name], type: newType, subtype: subs[0] ?? "" },
+                              }));
+                            }}
+                            className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-accent"
+                          >
+                            {ACCOUNT_TYPES.map((t) => (
+                              <option key={t.value} value={t.value}>{t.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="w-32">
+                          <label className="mb-0.5 block text-[10px] text-muted-foreground">Subtype</label>
+                          <select
+                            value={meta.subtype}
+                            onChange={(e) =>
+                              setAccountMeta((prev) => ({
+                                ...prev,
+                                [name]: { ...prev[name], subtype: e.target.value },
+                              }))
+                            }
+                            className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs capitalize outline-none focus:ring-1 focus:ring-accent"
+                          >
+                            {(SUBTYPES[meta.type] ?? []).map((sub) => (
+                              <option key={sub} value={sub}>{sub}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="w-28">
+                          <label className="mb-0.5 block text-[10px] text-muted-foreground">Balance</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={meta.balance}
+                            onChange={(e) =>
+                              setAccountMeta((prev) => ({
+                                ...prev,
+                                [name]: { ...prev[name], balance: e.target.value },
+                              }))
+                            }
+                            className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums outline-none focus:ring-1 focus:ring-accent"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

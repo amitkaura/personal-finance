@@ -25,14 +25,14 @@ import LinkAccount from "@/components/link-account";
 import ConfirmDialog from "@/components/confirm-dialog";
 import CsvImportDialog from "@/components/csv-import-dialog";
 
-const ACCOUNT_TYPES = [
+export const ACCOUNT_TYPES = [
   { value: "depository", label: "Cash", icon: Landmark, color: "text-accent" },
   { value: "credit", label: "Credit Card", icon: CreditCard, color: "text-amber-400" },
   { value: "loan", label: "Loan", icon: Building2, color: "text-blue-400" },
   { value: "investment", label: "Investment", icon: TrendingUp, color: "text-accent" },
 ] as const;
 
-const SUBTYPES: Record<string, string[]> = {
+export const SUBTYPES: Record<string, string[]> = {
   depository: ["checking", "savings", "money market", "hsa", "cash management"],
   credit: ["credit card"],
   loan: ["mortgage", "student", "auto", "personal", "home equity", "line of credit"],

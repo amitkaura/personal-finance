@@ -35,7 +35,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Transaction Management
 - Automatic transaction sync from all linked Plaid items
 - Manual transaction entry with merchant name, amount, date, category, and notes
-- **CSV import** -- upload bank statement CSVs with a multi-step column mapper
+- **CSV import** -- upload bank statement CSVs with a multi-step column mapper; bulk import lets you set account type, subtype, and starting balance per new account
   - Drag-and-drop or file picker upload
   - Auto-detects common column headers (date, description, amount, category)
   - Supports single Amount column or separate Debit/Credit columns for banks that report withdrawals and deposits as positive numbers in different columns
@@ -516,7 +516,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `test_settings` | 48 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, import LLM fallback (per-account + bulk + streaming) |
+| `test_settings` | 49 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, import LLM fallback (per-account + bulk + streaming), bulk import account subtype and balance |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |

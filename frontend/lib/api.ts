@@ -74,7 +74,7 @@ export interface ImportCompleteEvent {
 }
 
 export interface BulkImportPayload {
-  accounts: { name: string; type: string }[];
+  accounts: { name: string; type: string; subtype?: string; current_balance?: number }[];
   transactions: {
     date: string;
     amount: number;

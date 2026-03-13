@@ -183,7 +183,7 @@ describe("BulkCsvImportDialog", () => {
     await waitFor(() => {
       expect(mockApi.bulkImportTransactions).toHaveBeenCalled();
       const [payload] = mockApi.bulkImportTransactions.mock.calls[0];
-      expect(payload.accounts).toEqual([{ name: "Visa", type: "depository" }]);
+      expect(payload.accounts).toEqual([{ name: "Visa", type: "depository", subtype: "checking", current_balance: 0 }]);
       expect(payload.transactions).toHaveLength(1);
       expect(payload.transactions[0]).toMatchObject({
         date: "2026-01-15",
