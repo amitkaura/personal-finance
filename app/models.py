@@ -105,6 +105,17 @@ class Transaction(SQLModel, table=True):
     tag_links: list["TransactionTag"] = Relationship(back_populates="transaction")
 
 
+class Category(SQLModel, table=True):
+    """User-specific category list (seeded with defaults, fully customizable)."""
+
+    __tablename__ = "categories"
+    __table_args__ = (UniqueConstraint("user_id", "name"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    name: str
+
+
 class CategoryRule(SQLModel, table=True):
     """User-defined keyword rules for transaction categorization."""
 

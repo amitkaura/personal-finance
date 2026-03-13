@@ -37,6 +37,7 @@ from app.models import (
     Account,
     AccountType,
     Budget,
+    Category,
     CategoryRule,
     Goal,
     GoalAccountLink,
@@ -288,6 +289,14 @@ def make_spending_preference(
     session.commit()
     session.refresh(pref)
     return pref
+
+
+def make_category(session: Session, user: User, name: str = "Food & Dining") -> Category:
+    cat = Category(user_id=user.id, name=name)
+    session.add(cat)
+    session.commit()
+    session.refresh(cat)
+    return cat
 
 
 def make_settings(session: Session, user: User, **overrides) -> UserSettings:

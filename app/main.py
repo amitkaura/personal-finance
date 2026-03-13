@@ -20,6 +20,7 @@ from app.database import create_db_and_tables, engine
 from app.routes.accounts import router as accounts_router
 from app.routes.auth import router as auth_router
 from app.routes.budgets import router as budgets_router
+from app.routes.categories import router as categories_router
 from app.routes.goals import router as goals_router
 from app.routes.household import router as household_router
 from app.routes.net_worth import router as net_worth_router
@@ -228,6 +229,7 @@ app.include_router(goals_router, prefix="/api/v1")
 app.include_router(reports_router, prefix="/api/v1")
 app.include_router(net_worth_router, prefix="/api/v1")
 app.include_router(tags_router, prefix="/api/v1")
+app.include_router(categories_router, prefix="/api/v1")
 
 
 @app.get("/health")

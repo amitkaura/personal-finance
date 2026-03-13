@@ -1,8 +1,20 @@
-"""Profile, user settings, category rules, export, and clear tests."""
+"""Profile, user settings, category rules, export, clear, and CSV import tests."""
 
+from decimal import Decimal
 from unittest.mock import patch
 
-from tests.conftest import make_settings, make_tag, make_transaction
+from app.models import Account, Category, CategoryRule, Transaction
+from sqlmodel import select
+from tests.conftest import (
+    add_household_member,
+    make_account,
+    make_category,
+    make_household,
+    make_settings,
+    make_tag,
+    make_transaction,
+    make_user,
+)
 
 
 # -- Profile ---------------------------------------------------------------
@@ -214,3 +226,294 @@ def test_update_settings_invalid_sync_minute(auth_client, session):
     resp = client.put("/api/v1/settings", json={"sync_minute": -1})
     assert resp.status_code == 400
     assert "sync_minute" in resp.json()["detail"]
+
+
+# -- Per-account CSV import ------------------------------------------------
+
+def test_import_creates_transactions(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, name="Checking")
+    resp = client.post(
+        f"/api/v1/settings/import/{acct.id}",
+        json={"transactions": [
+            {"date": "2026-01-15", "amount": 4.50, "merchant_name": "Coffee"},
+            {"date": "2026-01-16", "amount": 20.00, "merchant_name": "Grocery"},
+        ]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported"] == 2
+    assert data["skipped"] == 0
+
+
+def test_import_skips_duplicates(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, name="Checking")
+    payload = {"transactions": [
+        {"date": "2026-01-15", "amount": 4.50, "merchant_name": "Coffee"},
+    ]}
+    client.post(f"/api/v1/settings/import/{acct.id}", json=payload)
+    resp = client.post(f"/api/v1/settings/import/{acct.id}", json=payload)
+    assert resp.json()["skipped"] == 1
+    assert resp.json()["imported"] == 0
+
+
+def test_import_invalid_date(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, name="Checking")
+    resp = client.post(
+        f"/api/v1/settings/import/{acct.id}",
+        json={"transactions": [
+            {"date": "bad-date", "amount": 4.50, "merchant_name": "Coffee"},
+        ]},
+    )
+    assert resp.json()["imported"] == 0
+    assert len(resp.json()["errors"]) == 1
+
+
+def test_import_wrong_account(auth_client, session):
+    client, _ = auth_client
+    resp = client.post(
+        "/api/v1/settings/import/99999",
+        json={"transactions": []},
+    )
+    assert resp.status_code == 404
+
+
+def test_import_applies_category_rules(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, name="Checking")
+    rule = CategoryRule(user_id=user.id, keyword="starbucks", category="Food & Dining")
+    session.add(rule)
+    session.commit()
+
+    resp = client.post(
+        f"/api/v1/settings/import/{acct.id}",
+        json={"transactions": [
+            {"date": "2026-01-15", "amount": 5.75, "merchant_name": "Starbucks Reserve"},
+        ]},
+    )
+    data = resp.json()
+    assert data["categorized"] == 1
+    txns = session.exec(select(Transaction).where(Transaction.account_id == acct.id)).all()
+    assert txns[0].category == "Food & Dining"
+
+
+def test_import_preserves_csv_category(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, name="Checking")
+    resp = client.post(
+        f"/api/v1/settings/import/{acct.id}",
+        json={"transactions": [
+            {"date": "2026-01-15", "amount": 5.75, "merchant_name": "Shop", "category": "Shopping"},
+        ]},
+    )
+    assert resp.json()["imported"] == 1
+    txns = session.exec(select(Transaction).where(Transaction.account_id == acct.id)).all()
+    assert txns[0].category == "Shopping"
+
+
+def test_import_ndjson_streaming(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, name="Checking")
+    resp = client.post(
+        f"/api/v1/settings/import/{acct.id}",
+        json={"transactions": [
+            {"date": "2026-01-15", "amount": 4.50, "merchant_name": "Coffee"},
+        ]},
+        headers={"Accept": "application/x-ndjson"},
+    )
+    assert resp.status_code == 200
+    lines = [l for l in resp.text.strip().split("\n") if l]
+    assert len(lines) == 2
+    import json
+    progress = json.loads(lines[0])
+    assert progress["type"] == "progress"
+    assert progress["merchant"] == "Coffee"
+    complete = json.loads(lines[1])
+    assert complete["type"] == "complete"
+    assert complete["imported"] == 1
+
+
+# -- Bulk CSV import -------------------------------------------------------
+
+def test_bulk_import_creates_accounts_and_transactions(auth_client, session):
+    client, user = auth_client
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [{"name": "New Visa", "type": "credit"}],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 50.00, "merchant_name": "Amazon",
+             "account_name": "New Visa"},
+        ],
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported"] == 1
+    acct = session.exec(select(Account).where(Account.name == "New Visa")).first()
+    assert acct is not None
+    assert str(acct.type) == "credit" or acct.type == "credit"
+
+
+def test_bulk_import_reuses_existing_accounts(auth_client, session):
+    client, user = auth_client
+    make_account(session, user, name="Checking")
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop",
+             "account_name": "Checking"},
+        ],
+    })
+    assert resp.json()["imported"] == 1
+    accts = session.exec(select(Account).where(Account.user_id == user.id)).all()
+    checking_accts = [a for a in accts if a.name == "Checking"]
+    assert len(checking_accts) == 1
+
+
+def test_bulk_import_skips_duplicates(auth_client, session):
+    client, user = auth_client
+    payload = {
+        "accounts": [{"name": "Visa", "type": "credit"}],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 50.00, "merchant_name": "Amazon",
+             "account_name": "Visa"},
+        ],
+    }
+    client.post("/api/v1/settings/bulk-import", json=payload)
+    resp = client.post("/api/v1/settings/bulk-import", json=payload)
+    assert resp.json()["skipped"] == 1
+    assert resp.json()["imported"] == 0
+
+
+def test_bulk_import_case_insensitive_accounts(auth_client, session):
+    client, user = auth_client
+    make_account(session, user, name="Checking")
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop",
+             "account_name": "checking"},
+        ],
+    })
+    assert resp.json()["imported"] == 1
+
+
+def test_bulk_import_without_account_name(auth_client, session):
+    client, user = auth_client
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop"},
+        ],
+    })
+    assert resp.json()["imported"] == 1
+
+
+def test_bulk_import_with_notes(auth_client, session):
+    client, user = auth_client
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop",
+             "notes": "Some notes here"},
+        ],
+    })
+    assert resp.json()["imported"] == 1
+    txns = session.exec(select(Transaction).where(Transaction.user_id == user.id)).all()
+    assert txns[0].notes == "Some notes here"
+
+
+def test_bulk_import_applies_rules_not_llm(auth_client, session):
+    client, user = auth_client
+    rule = CategoryRule(user_id=user.id, keyword="coffee", category="Food & Dining")
+    session.add(rule)
+    session.commit()
+
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 5.00, "merchant_name": "Coffee Shop"},
+        ],
+    })
+    assert resp.json()["categorized"] == 1
+    txns = session.exec(select(Transaction).where(Transaction.user_id == user.id)).all()
+    assert txns[0].category == "Food & Dining"
+
+
+def test_bulk_import_owner_mapping(auth_client, session):
+    client, user = auth_client
+    partner = make_user(session, name="Partner")
+    household = make_household(session, user)
+    add_household_member(session, household, partner)
+
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop",
+             "owner_name": "Partner"},
+        ],
+    })
+    assert resp.json()["imported"] == 1
+    txns = session.exec(select(Transaction).where(Transaction.merchant_name == "Shop")).all()
+    assert txns[0].user_id == partner.id
+
+
+def test_bulk_import_new_categories(auth_client, session):
+    client, user = auth_client
+    make_category(session, user, name="Food & Dining")
+
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop",
+             "category": "Custom Category"},
+        ],
+        "new_categories": ["Custom Category", "Another New"],
+    })
+    assert resp.json()["imported"] == 1
+    cats = session.exec(select(Category).where(Category.user_id == user.id)).all()
+    cat_names = {c.name for c in cats}
+    assert "Custom Category" in cat_names
+    assert "Another New" in cat_names
+    assert "Food & Dining" in cat_names
+
+
+def test_bulk_import_new_categories_skips_existing(auth_client, session):
+    client, user = auth_client
+    make_category(session, user, name="Groceries")
+
+    resp = client.post("/api/v1/settings/bulk-import", json={
+        "accounts": [],
+        "transactions": [
+            {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop",
+             "category": "Groceries"},
+        ],
+        "new_categories": ["Groceries"],
+    })
+    assert resp.json()["imported"] == 1
+    cats = session.exec(
+        select(Category).where(Category.user_id == user.id, Category.name == "Groceries")
+    ).all()
+    assert len(cats) == 1
+
+
+def test_bulk_import_ndjson_streaming(auth_client, session):
+    client, user = auth_client
+    resp = client.post(
+        "/api/v1/settings/bulk-import",
+        json={
+            "accounts": [],
+            "transactions": [
+                {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop"},
+                {"date": "2026-01-16", "amount": 20.00, "merchant_name": "Store"},
+            ],
+        },
+        headers={"Accept": "application/x-ndjson"},
+    )
+    assert resp.status_code == 200
+    import json
+    lines = [l for l in resp.text.strip().split("\n") if l]
+    assert len(lines) == 3  # 2 progress + 1 complete
+    complete = json.loads(lines[-1])
+    assert complete["type"] == "complete"
+    assert complete["imported"] == 2

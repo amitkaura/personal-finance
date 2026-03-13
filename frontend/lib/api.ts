@@ -44,6 +44,87 @@ async function fetchBlob(path: string, init?: RequestInit): Promise<Blob> {
   return res.blob();
 }
 
+export interface ImportProgressEvent {
+  type: "progress";
+  current: number;
+  total: number;
+  merchant: string;
+  status: string;
+  category: string | null;
+}
+
+export interface ImportCompleteEvent {
+  type: "complete";
+  imported: number;
+  skipped: number;
+  categorized: number;
+  errors: string[];
+}
+
+export interface BulkImportPayload {
+  accounts: { name: string; type: string }[];
+  transactions: {
+    date: string;
+    amount: number;
+    merchant_name: string;
+    category?: string;
+    notes?: string;
+    account_name?: string;
+    owner_name?: string;
+  }[];
+  new_categories?: string[];
+}
+
+async function streamNdjson<T>(
+  path: string,
+  body: unknown,
+  onProgress: (event: ImportProgressEvent) => void,
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/x-ndjson",
+    },
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${await res.text()}`);
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: T | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.type === "progress") {
+        onProgress(event as ImportProgressEvent);
+      } else if (event.type === "complete") {
+        result = event as T;
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    const event = JSON.parse(buffer);
+    if (event.type === "complete") result = event as T;
+  }
+
+  if (!result) throw new Error("Import stream ended without completion event");
+  return result;
+}
+
 export const api = {
   // Auth
   loginWithGoogle: (idToken: string) =>
@@ -371,4 +452,22 @@ export const api = {
 
   removeTagFromTransaction: (transactionId: number, tagId: number) =>
     fetchVoid(`/tags/transactions/${transactionId}/tags/${tagId}`, { method: "DELETE" }),
+
+  // CSV Import
+  streamImportTransactions: (
+    accountId: number,
+    rows: { date: string; amount: number; merchant_name: string; category?: string }[],
+    onProgress: (event: ImportProgressEvent) => void,
+  ): Promise<ImportCompleteEvent> =>
+    streamNdjson(`/settings/import/${accountId}`, { transactions: rows }, onProgress),
+
+  bulkImportTransactions: (
+    payload: BulkImportPayload,
+    onProgress: (event: ImportProgressEvent) => void,
+  ): Promise<ImportCompleteEvent> =>
+    streamNdjson("/settings/bulk-import", payload, onProgress),
+
+  // Categories (user-specific)
+  getUserCategories: () =>
+    fetcher<{ id: number; name: string }[]>("/categories"),
 };

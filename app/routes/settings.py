@@ -1,20 +1,35 @@
-"""User settings and category rule endpoints."""
+"""User settings, category rule, and CSV import endpoints."""
 
 from __future__ import annotations
 
 import csv
 import io
+import json
+from datetime import date as date_type
+from decimal import Decimal
 from typing import Optional
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
+from app.categorizer import categorize_by_rules
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
-from app.models import Account, CategoryRule, Transaction, TransactionTag, User, UserSettings
+from app.models import (
+    Account,
+    AccountType,
+    Category,
+    CategoryRule,
+    HouseholdMember,
+    Transaction,
+    TransactionTag,
+    User,
+    UserSettings,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -338,3 +353,426 @@ def clear_transactions(
     for t in txns:
         session.delete(t)
     session.commit()
+
+
+# ── Per-Account CSV Import (streaming NDJSON) ─────────────────
+
+
+class ImportRow(BaseModel):
+    date: str
+    amount: float
+    merchant_name: str
+    category: Optional[str] = None
+
+
+class ImportRequest(BaseModel):
+    transactions: list[ImportRow]
+
+
+@router.post("/import/{account_id}")
+def import_transactions(
+    account_id: int,
+    body: ImportRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    acct = session.get(Account, account_id)
+    if not acct or acct.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    accepts = request.headers.get("accept", "")
+    if "application/x-ndjson" in accepts:
+        return StreamingResponse(
+            _import_generator(body.transactions, acct, session, user),
+            media_type="application/x-ndjson",
+        )
+    return _import_sync(body.transactions, acct, session, user)
+
+
+def _import_sync(
+    rows: list[ImportRow], acct: Account, session: Session, user: User,
+) -> dict:
+    imported = skipped = categorized = 0
+    errors: list[str] = []
+
+    for row in rows:
+        try:
+            parsed_date = date_type.fromisoformat(row.date)
+        except ValueError:
+            errors.append(f"Invalid date: {row.date}")
+            continue
+
+        dup = session.exec(
+            select(Transaction).where(
+                Transaction.account_id == acct.id,
+                Transaction.date == parsed_date,
+                Transaction.amount == Decimal(str(row.amount)),
+                Transaction.merchant_name == row.merchant_name,
+            )
+        ).first()
+        if dup:
+            skipped += 1
+            continue
+
+        category = row.category
+        if not category:
+            category = categorize_by_rules(row.merchant_name, session, user.id)
+            if category:
+                categorized += 1
+
+        txn = Transaction(
+            plaid_transaction_id=f"csv-{uuid4().hex}",
+            date=parsed_date,
+            amount=Decimal(str(row.amount)),
+            merchant_name=row.merchant_name,
+            category=category,
+            needs_review=not bool(category),
+            account_id=acct.id,
+            is_manual=True,
+            user_id=user.id,
+        )
+        session.add(txn)
+        imported += 1
+
+    session.commit()
+    return {
+        "type": "complete",
+        "imported": imported,
+        "skipped": skipped,
+        "categorized": categorized,
+        "errors": errors,
+    }
+
+
+def _import_generator(
+    rows: list[ImportRow], acct: Account, session: Session, user: User,
+):
+    imported = skipped = categorized = 0
+    errors: list[str] = []
+    total = len(rows)
+
+    for idx, row in enumerate(rows, 1):
+        status = "imported"
+        cat: str | None = None
+
+        try:
+            parsed_date = date_type.fromisoformat(row.date)
+        except ValueError:
+            errors.append(f"Invalid date: {row.date}")
+            yield _ndjson({"type": "progress", "current": idx, "total": total,
+                           "merchant": row.merchant_name, "status": "error", "category": None})
+            continue
+
+        dup = session.exec(
+            select(Transaction).where(
+                Transaction.account_id == acct.id,
+                Transaction.date == parsed_date,
+                Transaction.amount == Decimal(str(row.amount)),
+                Transaction.merchant_name == row.merchant_name,
+            )
+        ).first()
+        if dup:
+            skipped += 1
+            yield _ndjson({"type": "progress", "current": idx, "total": total,
+                           "merchant": row.merchant_name, "status": "skipped", "category": None})
+            continue
+
+        cat = row.category
+        if not cat:
+            cat = categorize_by_rules(row.merchant_name, session, user.id)
+            if cat:
+                categorized += 1
+                status = "categorized"
+
+        txn = Transaction(
+            plaid_transaction_id=f"csv-{uuid4().hex}",
+            date=parsed_date,
+            amount=Decimal(str(row.amount)),
+            merchant_name=row.merchant_name,
+            category=cat,
+            needs_review=not bool(cat),
+            account_id=acct.id,
+            is_manual=True,
+            user_id=user.id,
+        )
+        session.add(txn)
+        imported += 1
+
+        yield _ndjson({"type": "progress", "current": idx, "total": total,
+                       "merchant": row.merchant_name, "status": status, "category": cat})
+
+    session.commit()
+    yield _ndjson({
+        "type": "complete",
+        "imported": imported,
+        "skipped": skipped,
+        "categorized": categorized,
+        "errors": errors,
+    })
+
+
+# ── Bulk CSV Import (multi-account, streaming NDJSON) ─────────
+
+
+class BulkTransactionRow(BaseModel):
+    date: str
+    amount: float
+    merchant_name: str
+    category: Optional[str] = None
+    notes: Optional[str] = None
+    account_name: Optional[str] = None
+    owner_name: Optional[str] = None
+
+
+class BulkAccountEntry(BaseModel):
+    name: str
+    type: str
+
+
+class BulkImportRequest(BaseModel):
+    accounts: list[BulkAccountEntry] = []
+    transactions: list[BulkTransactionRow]
+    new_categories: list[str] = []
+
+
+@router.post("/bulk-import")
+def bulk_import(
+    body: BulkImportRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    account_map = _resolve_accounts(body.accounts, session, user)
+    owner_map = _resolve_owners(session, user)
+
+    _create_new_categories(body.new_categories, session, user)
+
+    accepts = request.headers.get("accept", "")
+    if "application/x-ndjson" in accepts:
+        return StreamingResponse(
+            _bulk_import_generator(body.transactions, account_map, owner_map, session, user),
+            media_type="application/x-ndjson",
+        )
+    return _bulk_import_sync(body.transactions, account_map, owner_map, session, user)
+
+
+def _resolve_accounts(
+    new_accounts: list[BulkAccountEntry], session: Session, user: User,
+) -> dict[str, int]:
+    """Build a case-insensitive name->id map; create new accounts as needed."""
+    existing = session.exec(
+        select(Account).where(Account.user_id == user.id)
+    ).all()
+    name_map: dict[str, int] = {}
+    for a in existing:
+        name_map[a.name.lower()] = a.id  # type: ignore[arg-type]
+
+    for entry in new_accounts:
+        key = entry.name.lower()
+        if key in name_map:
+            continue
+        acct = Account(
+            user_id=user.id,
+            name=entry.name,
+            type=AccountType(entry.type),
+            plaid_account_id=f"manual-{uuid4().hex}",
+            is_linked=False,
+        )
+        session.add(acct)
+        session.flush()
+        name_map[key] = acct.id  # type: ignore[arg-type]
+
+    return name_map
+
+
+def _resolve_owners(session: Session, user: User) -> dict[str, int]:
+    """Build a case-insensitive owner_name->user_id map from household."""
+    members = session.exec(
+        select(HouseholdMember).where(
+            HouseholdMember.household_id.in_(  # type: ignore[union-attr]
+                select(HouseholdMember.household_id).where(
+                    HouseholdMember.user_id == user.id
+                )
+            )
+        )
+    ).all()
+
+    owner_map: dict[str, int] = {}
+    for m in members:
+        u = session.get(User, m.user_id)
+        if u:
+            name = u.display_name or u.name
+            owner_map[name.lower()] = u.id  # type: ignore[arg-type]
+    return owner_map
+
+
+def _pick_owner_id(
+    owner_name: str | None, owner_map: dict[str, int], default_id: int,
+) -> int:
+    if not owner_name:
+        return default_id
+    return owner_map.get(owner_name.lower(), default_id)
+
+
+def _create_new_categories(
+    names: list[str], session: Session, user: User,
+) -> None:
+    """Create Category rows for any names that don't already exist."""
+    if not names:
+        return
+    existing = session.exec(
+        select(Category.name).where(Category.user_id == user.id)
+    ).all()
+    existing_lower = {n.lower() for n in existing}
+    for name in names:
+        if name.strip().lower() not in existing_lower:
+            session.add(Category(user_id=user.id, name=name.strip()))
+            existing_lower.add(name.strip().lower())
+    session.flush()
+
+
+def _bulk_import_sync(
+    rows: list[BulkTransactionRow],
+    account_map: dict[str, int],
+    owner_map: dict[str, int],
+    session: Session,
+    user: User,
+) -> dict:
+    imported = skipped = categorized = 0
+    errors: list[str] = []
+
+    for row in rows:
+        try:
+            parsed_date = date_type.fromisoformat(row.date)
+        except ValueError:
+            errors.append(f"Invalid date: {row.date}")
+            continue
+
+        acct_id = account_map.get(row.account_name.lower()) if row.account_name else None
+        owner_id = _pick_owner_id(row.owner_name, owner_map, user.id)  # type: ignore[arg-type]
+
+        dup_stmt = select(Transaction).where(
+            Transaction.date == parsed_date,
+            Transaction.amount == Decimal(str(row.amount)),
+            Transaction.merchant_name == row.merchant_name,
+        )
+        if acct_id:
+            dup_stmt = dup_stmt.where(Transaction.account_id == acct_id)
+        else:
+            dup_stmt = dup_stmt.where(Transaction.user_id == owner_id)
+
+        if session.exec(dup_stmt).first():
+            skipped += 1
+            continue
+
+        category = row.category
+        if not category:
+            category = categorize_by_rules(row.merchant_name, session, user.id)  # type: ignore[arg-type]
+            if category:
+                categorized += 1
+
+        txn = Transaction(
+            plaid_transaction_id=f"csv-{uuid4().hex}",
+            date=parsed_date,
+            amount=Decimal(str(row.amount)),
+            merchant_name=row.merchant_name,
+            category=category,
+            needs_review=not bool(category),
+            account_id=acct_id,
+            is_manual=True,
+            notes=row.notes,
+            user_id=owner_id,
+        )
+        session.add(txn)
+        imported += 1
+
+    session.commit()
+    return {
+        "type": "complete",
+        "imported": imported,
+        "skipped": skipped,
+        "categorized": categorized,
+        "errors": errors,
+    }
+
+
+def _bulk_import_generator(
+    rows: list[BulkTransactionRow],
+    account_map: dict[str, int],
+    owner_map: dict[str, int],
+    session: Session,
+    user: User,
+):
+    imported = skipped = categorized = 0
+    errors: list[str] = []
+    total = len(rows)
+
+    for idx, row in enumerate(rows, 1):
+        status = "imported"
+        cat: str | None = None
+
+        try:
+            parsed_date = date_type.fromisoformat(row.date)
+        except ValueError:
+            errors.append(f"Invalid date: {row.date}")
+            yield _ndjson({"type": "progress", "current": idx, "total": total,
+                           "merchant": row.merchant_name, "status": "error", "category": None})
+            continue
+
+        acct_id = account_map.get(row.account_name.lower()) if row.account_name else None
+        owner_id = _pick_owner_id(row.owner_name, owner_map, user.id)  # type: ignore[arg-type]
+
+        dup_stmt = select(Transaction).where(
+            Transaction.date == parsed_date,
+            Transaction.amount == Decimal(str(row.amount)),
+            Transaction.merchant_name == row.merchant_name,
+        )
+        if acct_id:
+            dup_stmt = dup_stmt.where(Transaction.account_id == acct_id)
+        else:
+            dup_stmt = dup_stmt.where(Transaction.user_id == owner_id)
+
+        if session.exec(dup_stmt).first():
+            skipped += 1
+            yield _ndjson({"type": "progress", "current": idx, "total": total,
+                           "merchant": row.merchant_name, "status": "skipped", "category": None})
+            continue
+
+        cat = row.category
+        if not cat:
+            cat = categorize_by_rules(row.merchant_name, session, user.id)  # type: ignore[arg-type]
+            if cat:
+                categorized += 1
+                status = "categorized"
+
+        txn = Transaction(
+            plaid_transaction_id=f"csv-{uuid4().hex}",
+            date=parsed_date,
+            amount=Decimal(str(row.amount)),
+            merchant_name=row.merchant_name,
+            category=cat,
+            needs_review=not bool(cat),
+            account_id=acct_id,
+            is_manual=True,
+            notes=row.notes,
+            user_id=owner_id,
+        )
+        session.add(txn)
+        imported += 1
+
+        yield _ndjson({"type": "progress", "current": idx, "total": total,
+                       "merchant": row.merchant_name, "status": status, "category": cat})
+
+    session.commit()
+    yield _ndjson({
+        "type": "complete",
+        "imported": imported,
+        "skipped": skipped,
+        "categorized": categorized,
+        "errors": errors,
+    })
+
+
+def _ndjson(obj: dict) -> str:
+    return json.dumps(obj) + "\n"
