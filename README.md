@@ -6,37 +6,50 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 | Layer | Technology |
 |-------|-----------|
-| **Backend** | Python 3.12, FastAPI, SQLModel (SQLAlchemy + Pydantic) |
+| **Backend** | Python 3.14, FastAPI, SQLModel (SQLAlchemy + Pydantic) |
 | **Database** | PostgreSQL 16 |
 | **Frontend** | Next.js 16 (App Router), React 19, Tailwind CSS 4 |
 | **Bank Integration** | Plaid (sandbox / development / production) |
 | **Auth** | Google OAuth 2.0, JWT session cookies |
 | **AI Categorization** | OpenAI-compatible API (GPT, Ollama, Azure, etc.) |
-| **Charts** | Nivo (bar, sankey) |
+| **Charts** | Nivo (bar) |
 | **Scheduling** | APScheduler (daily transaction sync) |
 | **Infrastructure** | Docker Compose (Postgres + Redis + API) |
 
 ## Features
 
-### Bank Account Linking
+### Account Management
 - Connect bank accounts, credit cards, loans, and investment accounts via Plaid Link
 - Supports US and Canadian institutions
 - Automatic balance refresh on every sync
 - Account type classification (depository, credit, loan, investment) with editable subtypes
 - Unlink individual accounts or revoke full institution connections
 - Accounts page hides unlinked accounts by default (toggle to show all)
+- **Manual accounts** -- create accounts without Plaid (all types: depository, credit, loan, investment)
+- Manually adjust balances on manual accounts at any time
+- Delete manual accounts (cascades associated transactions and goal links)
 
 ### Transaction Management
 - Automatic transaction sync from all linked Plaid items
 - Manual transaction entry with merchant name, amount, date, category, and notes
-- Search by merchant name with category and review-status filters
-- Bulk "needs review" workflow: approve individually or auto-categorize all pending
+- **CSV import** -- upload bank statement CSVs with a multi-step column mapper
+  - Drag-and-drop or file picker upload
+  - Auto-detects common column headers (date, description, amount, category)
+  - Supports single Amount column or separate Debit/Credit columns for banks that report withdrawals and deposits as positive numbers in different columns
+  - Preview mapped transactions with color-coded amounts before importing
+  - Duplicate detection skips previously imported rows
+- **Infinite scroll** -- browse the full transaction history with automatic pagination (loads 50 at a time as you scroll)
+- Server-side search by merchant name with filters for category, account, source (manual vs synced), and uncategorized
+- Filter by account, manual/synced source, income/expense type, date range, and amount range
+- Inline auto-categorization: transactions are categorized on import using rules and LLM fallback
+- Manual "auto-categorize" button to batch-process any remaining uncategorized transactions
 - Delete manual transactions; Plaid-synced transactions are protected
 
 ### Hybrid Categorization
 1. **Rule-based** -- user-defined keyword-to-category mappings checked first
-2. **LLM fallback** -- uncategorized transactions are sent to an OpenAI-compatible model for batch classification
-3. Auto-categorization runs on every Plaid sync and can be triggered manually
+2. **LLM fallback** -- uncategorized transactions are sent to an OpenAI-compatible model for classification
+3. **Inline categorization** -- each transaction is categorized at import/creation time (rules first, then LLM)
+4. Auto-categorization also runs on every Plaid sync and can be triggered manually for any remaining uncategorized transactions
 
 ### Tags
 - Create user-defined tags with custom colors
@@ -68,8 +81,9 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Manual snapshot trigger via API
 
 ### Cash Flow Visualization
-- **Sankey diagram** -- income sources flow through accounts to expense categories
-- **Bar chart** -- side-by-side income vs. expenses across months, quarters, or years
+- **Interactive bar chart** -- side-by-side income vs. expenses across months, quarters, or years
+- **Drill-down** -- click any bar to see category breakdown, click a category to see individual transactions
+- Breadcrumb navigation and back button at each drill level
 - Period pickers (month, quarter, year) with navigation
 
 ### Recurring Transaction Detection
@@ -134,7 +148,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Credit cards widget (balances, limits, utilization)
 - Loans widget (balances and payment info)
 - Recurring charges widget
-- Transaction review queue snippet
+- Uncategorized transactions snippet
 - Sync-all button
 
 ## Project Structure
@@ -154,7 +168,7 @@ personal-finance/
 │   ├── household.py                # Scope helper (personal/partner/household)
 │   └── routes/
 │       ├── auth.py                 # POST /google, GET /me, POST /logout
-│       ├── accounts.py             # GET /, PATCH /:id, POST /:id/unlink, GET /summary
+│       ├── accounts.py             # CRUD, manual accounts, CSV import, unlink, summary
 │       ├── plaid.py                # POST /link-token, /exchange-token, /sync, GET /items
 │       ├── transactions.py         # GET /, POST /, PATCH /:id, DELETE /:id, recurring
 │       ├── settings.py             # GET /, PUT /, rules CRUD, export, delete
@@ -169,10 +183,10 @@ personal-finance/
 │   │   ├── page.tsx                # Dashboard
 │   │   ├── login/page.tsx          # Google sign-in
 │   │   ├── accounts/page.tsx       # Account list and management
-│   │   ├── transactions/page.tsx   # Transaction list, filters, manual entry
+│   │   ├── transactions/page.tsx   # Transaction list, infinite scroll, filters, manual entry
 │   │   ├── budgets/page.tsx        # Monthly budget management
 │   │   ├── goals/page.tsx          # Financial goals
-│   │   ├── cashflow/page.tsx       # Sankey diagram
+│   │   ├── cashflow/page.tsx       # Cash flow with drill-down bar chart
 │   │   ├── reports/page.tsx        # Spending reports and trends
 │   │   ├── recurring/page.tsx      # Recurring transaction analysis
 │   │   ├── connections/page.tsx    # Plaid connections management
@@ -193,16 +207,17 @@ personal-finance/
 │   │   ├── credit-cards-widget.tsx # Credit card balances
 │   │   ├── loans-widget.tsx        # Loan balances
 │   │   ├── recurring-widget.tsx    # Upcoming recurring charges
-│   │   ├── review-snippet.tsx      # Transactions needing review
+│   │   ├── review-snippet.tsx      # Uncategorized transactions snippet
 │   │   ├── budget-snippet.tsx      # Budget progress summary
 │   │   ├── goals-snippet.tsx       # Goals progress summary
 │   │   ├── top-movers.tsx          # Top spending category changes
-│   │   ├── cashflow-bar-chart.tsx  # Income vs expenses bar chart
-│   │   ├── sankey-diagram.tsx      # Cash flow Sankey
+│   │   ├── cashflow-bar-chart.tsx  # Income vs expenses bar chart with drill-down
+│   │   ├── csv-import-dialog.tsx   # Multi-step CSV import with column mapper
 │   │   └── confirm-dialog.tsx      # Reusable confirmation modal
 │   ├── lib/
 │   │   ├── api.ts                  # API client (fetch with credentials)
 │   │   ├── types.ts                # TypeScript interfaces
+│   │   ├── csv-utils.ts            # CSV parsing, column role detection, date normalization
 │   │   └── hooks.ts                # useSettings, useFormatCurrency, useScope
 │   └── tests/                      # Frontend test suite (Vitest + RTL)
 │       ├── setup.tsx               # Global mocks (next/image, next/link, next/navigation)
@@ -213,12 +228,15 @@ personal-finance/
 │       ├── invitation-banner.test.tsx  # Accept/decline, dismiss, multiple invites
 │       ├── settings-page.test.tsx  # Profile, household, general, data management
 │       ├── sidebar.test.tsx        # Nav links, branding, active state, user section
-│       └── hooks.test.tsx          # useFormatCurrency, useFormatCurrencyPrecise, useScope
+│       ├── hooks.test.tsx          # useFormatCurrency, useFormatCurrencyPrecise, useScope
+│       ├── csv-utils.test.ts       # CSV parser, column role guessing, date normalization, row mapping
+│       ├── accounts-page.test.tsx  # Manual/Plaid account rendering, add form, import/delete actions
+│       └── csv-import-dialog.test.tsx # Upload, column mapping, debit/credit, preview, import flow
 ├── tests/                          # Backend test suite (pytest)
 │   ├── conftest.py                 # Fixtures, in-memory SQLite, auth mocks
 │   ├── test_health.py              # Health/readiness endpoints
 │   ├── test_auth.py                # Google OAuth login, session, /me
-│   ├── test_transactions.py        # CRUD, filters, pagination
+│   ├── test_transactions.py        # CRUD, filters, search, pagination
 │   ├── test_accounts.py            # List, update, unlink, summary
 │   ├── test_budgets.py             # CRUD, copy, summary
 │   ├── test_goals.py               # CRUD, ownership
@@ -294,19 +312,22 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/` | List all accounts (supports `?scope=`) |
-| PATCH | `/:id` | Update account type, subtype, or name |
-| POST | `/:id/unlink` | Unlink a single account |
+| POST | `/` | Create a manual account (no Plaid required) |
+| PATCH | `/:id` | Update account name, type, subtype, or balance |
+| DELETE | `/:id` | Delete a manual account (cascades transactions/goal links) |
+| POST | `/:id/unlink` | Unlink a single Plaid-linked account |
+| POST | `/:id/import` | Bulk import transactions from mapped CSV data |
 | GET | `/summary` | Aggregated balances by type for dashboard |
 
 ### Transactions (`/transactions`)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/` | List transactions with search, filters, pagination |
+| GET | `/` | List transactions with search, filters (`account_id`, `is_manual`, `category`, `uncategorized`), pagination (`offset`, `limit`) |
 | POST | `/` | Create a manual transaction |
 | PATCH | `/:id` | Update category, merchant, amount, date, notes |
 | DELETE | `/:id` | Delete a manual transaction |
 | GET | `/categories` | List available categories |
-| POST | `/auto-categorize` | Auto-categorize pending transactions |
+| POST | `/auto-categorize` | Auto-categorize uncategorized transactions |
 | GET | `/recurring` | Detect recurring transactions |
 
 ### Settings (`/settings`)
@@ -374,7 +395,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 ## Getting Started
 
 ### Prerequisites
-- Python 3.12+
+- Python 3.14+
 - Node.js 20+
 - PostgreSQL 16 (or Docker)
 - A [Plaid](https://dashboard.plaid.com/) account (free sandbox)
@@ -455,20 +476,20 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (196 tests across 13 files):**
+**What's tested (230 tests across 13 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `test_health` | 2 | Liveness and readiness endpoints |
 | `test_auth` | 6 | Google OAuth login (mocked), session, `/me`, logout |
-| `test_transactions` | 24 | CRUD, search, filters, pagination, manual vs. Plaid, auto-categorize, recurring, date validation |
-| `test_accounts` | 11 | List, update type/name, unlink, summary aggregation |
+| `test_transactions` | 32 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize, recurring, date validation, response schema |
+| `test_accounts` | 28 | List, update, unlink, summary, manual create/delete, balance update, CSV import, cascade delete, negative amounts, inline auto-categorization |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
-| `test_household` | 24 | Invite, accept, decline, cancel, rename, leave, scope, invitation email |
-| `test_email` | 5 | SMTP service, invitation template, send/skip/fail handling |
-| `test_settings` | 22 | Profile, user settings, category rules, export, clear, tag cleanup, sync validation |
+| `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
+| `test_email` | 6 | SMTP service, invitation template, send/skip/fail handling, port-465 SSL |
+| `test_settings` | 23 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_net_worth` | 5 | Snapshots, history |
 | `test_plaid` | 10 | Link token, exchange, sync, items (all Plaid calls mocked) |
@@ -492,7 +513,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (59 tests across 7 files):**
+**What's tested (113 tests across 10 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -503,6 +524,9 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `settings-page` | 14 | All sections: profile, household, general, data management |
 | `sidebar` | 10 | Brand, nav links, active state, user avatar, logout, hrefs |
 | `hooks` | 6 | `useFormatCurrency`, `useFormatCurrencyPrecise`, `useScope` |
+| `csv-utils` | 28 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
+| `accounts-page` | 12 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form, import/delete dialogs |
+| `csv-import-dialog` | 14 | Upload step, auto-detection, debit/credit mapping, preview, import, results, errors, navigation |
 
 **Test infrastructure:**
 - jsdom environment with global mocks for `next/image`, `next/link`, `next/navigation`

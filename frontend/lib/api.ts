@@ -81,6 +81,19 @@ export const api = {
     return fetcher<Transaction[]>(`/transactions${qs ? `?${qs}` : ""}`);
   },
 
+  getAllTransactions: async (scope?: ViewScope): Promise<Transaction[]> => {
+    const pageSize = 200;
+    let offset = 0;
+    const all: Transaction[] = [];
+    for (;;) {
+      const page = await api.getTransactions({ limit: pageSize, offset, scope });
+      all.push(...page);
+      if (page.length < pageSize) break;
+      offset += pageSize;
+    }
+    return all;
+  },
+
   getCategories: () => fetcher<string[]>("/transactions/categories"),
 
   createTransaction: (body: {

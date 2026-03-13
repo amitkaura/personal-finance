@@ -30,10 +30,9 @@ function detectRecurring(transactions: Transaction[]): Transaction[] {
 export default function RecurringWidget() {
   const formatCurrency = useFormatCurrencyPrecise();
   const scope = useScope();
-  const queryLimit = 200;
   const { data: transactions, isLoading } = useQuery({
-    queryKey: ["transactions", "all", scope, queryLimit],
-    queryFn: () => api.getTransactions({ limit: queryLimit, scope }),
+    queryKey: ["transactions", "all", scope],
+    queryFn: () => api.getAllTransactions(scope),
   });
 
   const recurring = transactions ? detectRecurring(transactions) : [];

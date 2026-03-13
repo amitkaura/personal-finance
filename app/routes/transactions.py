@@ -14,37 +14,21 @@ from pydantic import BaseModel
 from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
-from app.categorizer import auto_categorize_pending
+from app.categorizer import auto_categorize_pending, categorize_transaction
 from app.database import get_session
 from app.household import get_scoped_user_ids
-from app.models import Account, Tag, Transaction, TransactionTag, User
+from app.models import Account, Category, Tag, Transaction, TransactionTag, User
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
-
-AVAILABLE_CATEGORIES = [
-    "Food & Dining",
-    "Groceries",
-    "Transportation",
-    "Utilities",
-    "Entertainment",
-    "Shopping",
-    "Health & Fitness",
-    "Travel",
-    "Education",
-    "Subscriptions",
-    "Income",
-    "Transfer",
-    "Rent & Mortgage",
-    "Insurance",
-    "Investments",
-    "Other",
-]
 
 
 @router.get("")
 def list_transactions(
-    needs_review: Optional[bool] = Query(None),
+    uncategorized: Optional[bool] = Query(None),
     category: Optional[str] = Query(None),
+    account_id: Optional[int] = Query(None),
+    is_manual: Optional[bool] = Query(None),
+    search: Optional[str] = Query(None),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
     scope: str = Query("personal"),
@@ -65,10 +49,16 @@ def list_transactions(
         )
         .order_by(Transaction.date.desc())
     )
-    if needs_review is not None:
-        stmt = stmt.where(Transaction.needs_review == needs_review)
+    if uncategorized is True:
+        stmt = stmt.where(Transaction.category == None)  # noqa: E711
     if category:
         stmt = stmt.where(Transaction.category == category)
+    if account_id is not None:
+        stmt = stmt.where(Transaction.account_id == account_id)
+    if is_manual is not None:
+        stmt = stmt.where(Transaction.is_manual == is_manual)
+    if search:
+        stmt = stmt.where(Transaction.merchant_name.ilike(f"%{search}%"))  # type: ignore[union-attr]
     stmt = stmt.offset(offset).limit(limit)
     txns = session.exec(stmt).all()
 
@@ -103,8 +93,14 @@ def list_transactions(
 
 
 @router.get("/categories")
-def get_categories():
-    return AVAILABLE_CATEGORIES
+def get_categories(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    cats = session.exec(
+        select(Category).where(Category.user_id == user.id).order_by(Category.id)
+    ).all()
+    return [c.name for c in cats]
 
 
 class TransactionCreate(BaseModel):
@@ -117,7 +113,6 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
-    needs_review: Optional[bool] = None
     category: Optional[str] = None
     merchant_name: Optional[str] = None
     amount: Optional[float] = None
@@ -132,8 +127,12 @@ def create_transaction(
     user: User = Depends(get_current_user),
 ):
     """Create a manual transaction."""
-    if body.category is not None and body.category not in AVAILABLE_CATEGORIES:
-        raise HTTPException(status_code=400, detail="Invalid category")
+    if body.category is not None:
+        valid = session.exec(
+            select(Category).where(Category.user_id == user.id, Category.name == body.category)
+        ).first()
+        if not valid:
+            raise HTTPException(status_code=400, detail="Invalid category")
     if body.account_id:
         acct = session.get(Account, body.account_id)
         if not acct or acct.user_id != user.id:
@@ -149,13 +148,20 @@ def create_transaction(
         amount=Decimal(str(body.amount)),
         merchant_name=body.merchant_name,
         category=body.category,
-        needs_review=False,
         account_id=body.account_id,
         is_manual=True,
         notes=body.notes,
         user_id=user.id,
     )
     session.add(txn)
+    session.flush()
+
+    if not txn.category:
+        cat = categorize_transaction(txn, session, user.id)
+        if cat:
+            txn.category = cat
+            session.add(txn)
+
     session.commit()
     session.refresh(txn)
     tags_by_txn = _load_tags_for_transactions(session, [txn.id] if txn.id else [])
@@ -180,10 +186,11 @@ def update_transaction(
     elif not txn.user_id or txn.user_id != user.id:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    if body.needs_review is not None:
-        txn.needs_review = body.needs_review
     if body.category is not None:
-        if body.category not in AVAILABLE_CATEGORIES:
+        valid = session.exec(
+            select(Category).where(Category.user_id == user.id, Category.name == body.category)
+        ).first()
+        if not valid:
             raise HTTPException(status_code=400, detail="Invalid category")
         txn.category = body.category
     if body.merchant_name is not None:
@@ -337,7 +344,6 @@ def _txn_to_dict(
         "plaid_category_code": t.plaid_category_code,
         "category": t.category,
         "pending_status": t.pending_status,
-        "needs_review": t.needs_review,
         "account_id": t.account_id,
         "plaid_transaction_id": t.plaid_transaction_id,
         "is_manual": t.is_manual,
