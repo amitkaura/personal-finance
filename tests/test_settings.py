@@ -438,6 +438,64 @@ def test_import_streaming_shows_llm_category(auth_client, session):
     assert txns[0].category == "Shopping"
 
 
+def test_import_skips_llm_when_flag_set(auth_client, session):
+    """When skip_llm is true, LLM is never called and transactions stay uncategorized."""
+    from unittest.mock import MagicMock
+
+    client, user = auth_client
+    acct = make_account(session, user, name="Checking")
+
+    with patch("app.categorizer._get_llm_config", return_value=(
+        "http://fake-llm", "fake-key", "test-model",
+    )), patch("httpx.post") as mock_post:
+        resp = client.post(
+            f"/api/v1/settings/import/{acct.id}",
+            json={
+                "transactions": [
+                    {"date": "2026-01-15", "amount": 29.99, "merchant_name": "Target"},
+                ],
+                "skip_llm": True,
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported"] == 1
+    assert data["categorized"] == 0
+    mock_post.assert_not_called()
+    txns = session.exec(select(Transaction).where(Transaction.account_id == acct.id)).all()
+    assert txns[0].category is None
+
+
+def test_bulk_import_skips_llm_when_flag_set(auth_client, session):
+    """When skip_llm is true, bulk import skips LLM and transactions stay uncategorized."""
+    from unittest.mock import MagicMock
+
+    client, user = auth_client
+
+    with patch("app.categorizer._get_llm_config", return_value=(
+        "http://fake-llm", "fake-key", "test-model",
+    )), patch("httpx.post") as mock_post:
+        resp = client.post(
+            "/api/v1/settings/bulk-import",
+            json={
+                "accounts": [],
+                "transactions": [
+                    {"date": "2026-01-15", "amount": 10.00, "merchant_name": "Shop"},
+                ],
+                "skip_llm": True,
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported"] == 1
+    assert data["categorized"] == 0
+    mock_post.assert_not_called()
+    txns = session.exec(select(Transaction).where(Transaction.user_id == user.id)).all()
+    assert txns[0].category is None
+
+
 def test_bulk_import_categorizes_via_llm_fallback(auth_client, session):
     """Bulk import also falls back to LLM when rules don't match."""
     from unittest.mock import MagicMock

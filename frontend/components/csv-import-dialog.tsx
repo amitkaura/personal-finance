@@ -31,6 +31,7 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
   const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
   const [result, setResult] = useState<ImportCompleteEvent | null>(null);
   const [negateAmounts, setNegateAmounts] = useState(false);
+  const [skipLlm, setSkipLlm] = useState(false);
 
   const headers = rawRows[0] ?? [];
 
@@ -72,9 +73,6 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
   }
 
   async function handleImport() {
-    // #region agent log
-    fetch('http://127.0.0.1:7496/ingest/09be9313-175a-4e04-befa-698509a2b911',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f3ebd9'},body:JSON.stringify({sessionId:'f3ebd9',location:'csv-import-dialog.tsx:handleImport',message:'handleImport called',data:{accountId,rowCount:mappedRows.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     setStep("importing");
     setError(null);
     try {
@@ -82,19 +80,14 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
         accountId,
         mappedRows,
         (evt) => setProgress(evt),
+        skipLlm,
       );
-      // #region agent log
-      fetch('http://127.0.0.1:7496/ingest/09be9313-175a-4e04-befa-698509a2b911',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f3ebd9'},body:JSON.stringify({sessionId:'f3ebd9',location:'csv-import-dialog.tsx:handleImport',message:'import complete',data:{imported:complete.imported,skipped:complete.skipped,categorized:complete.categorized,errors:complete.errors?.length},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       setResult(complete);
       setStep("result");
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7496/ingest/09be9313-175a-4e04-befa-698509a2b911',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f3ebd9'},body:JSON.stringify({sessionId:'f3ebd9',location:'csv-import-dialog.tsx:handleImport',message:'import error',data:{error:String(err)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       setError(err instanceof Error ? err.message : "Import failed");
       setStep("preview");
     }
@@ -284,6 +277,25 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
                 Negate amounts (flip income/expense signs)
               </span>
             </label>
+
+            <div className="rounded-lg border border-border bg-muted/50 p-3 text-xs text-muted-foreground space-y-2">
+              <p>
+                AI categorization uses your LLM to categorize each transaction during import.
+                This is thorough but slower. You can skip it now and use Auto-Categorize on the
+                transactions page later.
+              </p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={skipLlm}
+                  onChange={(e) => setSkipLlm(e.target.checked)}
+                  className="rounded border-border"
+                />
+                <span className="font-medium text-foreground">
+                  Skip AI categorization (faster import)
+                </span>
+              </label>
+            </div>
 
             {error && (
               <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-xs text-red-400">

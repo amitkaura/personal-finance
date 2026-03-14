@@ -495,6 +495,7 @@ class ImportRow(BaseModel):
 
 class ImportRequest(BaseModel):
     transactions: list[ImportRow]
+    skip_llm: bool = False
 
 
 @router.post("/import/{account_id}")
@@ -512,14 +513,15 @@ def import_transactions(
     accepts = request.headers.get("accept", "")
     if "application/x-ndjson" in accepts:
         return StreamingResponse(
-            _import_generator(body.transactions, acct, session, user),
+            _import_generator(body.transactions, acct, session, user, body.skip_llm),
             media_type="application/x-ndjson",
         )
-    return _import_sync(body.transactions, acct, session, user)
+    return _import_sync(body.transactions, acct, session, user, body.skip_llm)
 
 
 def _import_sync(
     rows: list[ImportRow], acct: Account, session: Session, user: User,
+    skip_llm: bool = False,
 ) -> dict:
     imported = skipped = categorized = 0
     errors: list[str] = []
@@ -562,7 +564,7 @@ def _import_sync(
         )
         session.add(txn)
 
-        if not category:
+        if not category and not skip_llm:
             session.flush()
             llm_cat = categorize_single_llm(txn, user.id)
             if llm_cat:
@@ -585,6 +587,7 @@ def _import_sync(
 
 def _import_generator(
     rows: list[ImportRow], acct: Account, session: Session, user: User,
+    skip_llm: bool = False,
 ):
     imported = skipped = categorized = 0
     errors: list[str] = []
@@ -635,7 +638,7 @@ def _import_generator(
         )
         session.add(txn)
 
-        if not cat:
+        if not cat and not skip_llm:
             session.flush()
             llm_cat = categorize_single_llm(txn, user.id)
             if llm_cat:
@@ -685,6 +688,7 @@ class BulkImportRequest(BaseModel):
     accounts: list[BulkAccountEntry] = []
     transactions: list[BulkTransactionRow]
     new_categories: list[str] = []
+    skip_llm: bool = False
 
 
 @router.post("/bulk-import")
@@ -702,10 +706,10 @@ def bulk_import(
     accepts = request.headers.get("accept", "")
     if "application/x-ndjson" in accepts:
         return StreamingResponse(
-            _bulk_import_generator(body.transactions, account_map, owner_map, session, user),
+            _bulk_import_generator(body.transactions, account_map, owner_map, session, user, body.skip_llm),
             media_type="application/x-ndjson",
         )
-    return _bulk_import_sync(body.transactions, account_map, owner_map, session, user)
+    return _bulk_import_sync(body.transactions, account_map, owner_map, session, user, body.skip_llm)
 
 
 def _resolve_accounts(
@@ -793,6 +797,7 @@ def _bulk_import_sync(
     owner_map: dict[str, int],
     session: Session,
     user: User,
+    skip_llm: bool = False,
 ) -> dict:
     imported = skipped = categorized = 0
     errors: list[str] = []
@@ -841,7 +846,7 @@ def _bulk_import_sync(
         )
         session.add(txn)
 
-        if not category:
+        if not category and not skip_llm:
             session.flush()
             llm_cat = categorize_single_llm(txn, user.id)
             if llm_cat:
@@ -868,6 +873,7 @@ def _bulk_import_generator(
     owner_map: dict[str, int],
     session: Session,
     user: User,
+    skip_llm: bool = False,
 ):
     imported = skipped = categorized = 0
     errors: list[str] = []
@@ -924,7 +930,7 @@ def _bulk_import_generator(
         )
         session.add(txn)
 
-        if not cat:
+        if not cat and not skip_llm:
             session.flush()
             llm_cat = categorize_single_llm(txn, user.id)
             if llm_cat:

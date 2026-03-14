@@ -34,6 +34,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
   const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
   const [result, setResult] = useState<ImportCompleteEvent | null>(null);
   const [negateAmounts, setNegateAmounts] = useState(false);
+  const [skipLlm, setSkipLlm] = useState(false);
   const [accountMeta, setAccountMeta] = useState<Record<string, { type: string; subtype: string; balance: string }>>({});
 
   const { data: existingAccounts } = useQuery({
@@ -169,6 +170,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
         }),
         transactions: mappedRows,
         new_categories: newCategories,
+        skip_llm: skipLlm,
       };
 
       const complete = await api.bulkImportTransactions(payload, (evt) =>
@@ -493,6 +495,25 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
                 Negate amounts (flip income/expense signs)
               </span>
             </label>
+
+            <div className="rounded-lg border border-border bg-muted/50 p-3 text-xs text-muted-foreground space-y-2">
+              <p>
+                AI categorization uses your LLM to categorize each transaction during import.
+                This is thorough but slower. You can skip it now and use Auto-Categorize on the
+                transactions page later.
+              </p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={skipLlm}
+                  onChange={(e) => setSkipLlm(e.target.checked)}
+                  className="rounded border-border"
+                />
+                <span className="font-medium text-foreground">
+                  Skip AI categorization (faster import)
+                </span>
+              </label>
+            </div>
 
             {error && (
               <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-xs text-red-400">

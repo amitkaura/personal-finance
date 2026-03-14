@@ -141,6 +141,7 @@ describe("CsvImportDialog", () => {
           },
         ],
         expect.any(Function),
+        false,
       );
     });
   });

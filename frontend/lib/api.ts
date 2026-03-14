@@ -100,6 +100,7 @@ export interface BulkImportPayload {
     owner_name?: string;
   }[];
   new_categories?: string[];
+  skip_llm?: boolean;
 }
 
 async function streamNdjson<T>(
@@ -567,8 +568,9 @@ export const api = {
     accountId: number,
     rows: { date: string; amount: number; merchant_name: string; category?: string }[],
     onProgress: (event: ImportProgressEvent) => void,
+    skipLlm?: boolean,
   ): Promise<ImportCompleteEvent> =>
-    streamNdjson(`/settings/import/${accountId}`, { transactions: rows }, onProgress),
+    streamNdjson(`/settings/import/${accountId}`, { transactions: rows, skip_llm: skipLlm }, onProgress),
 
   bulkImportTransactions: (
     payload: BulkImportPayload,

@@ -44,7 +44,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Infinite scroll** -- browse the full transaction history with automatic pagination (loads 50 at a time as you scroll)
 - Server-side search by merchant name with filters for category, account, source (manual vs synced), and uncategorized
 - **Filter popover** -- secondary filters (category, type, date range, amount range) collapsed behind a Filters button with active-filter count badge; click outside to dismiss
-- Inline auto-categorization: each transaction is categorized at import time (rules first, then per-transaction LLM fallback) with real-time streaming progress
+- Inline auto-categorization: each transaction is categorized at import time (rules first, then per-transaction LLM fallback) with real-time streaming progress; optional **skip AI categorization** toggle for faster imports
 - Manual "auto-categorize" button with streaming progress bar (current/total, merchant name, assigned category) and tooltip describing the AI/rules categorization process
 - **Delete confirmation** -- manual transaction deletion requires confirmation via dialog; Plaid-synced transactions are protected
 
@@ -517,7 +517,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `test_settings` | 49 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, import LLM fallback (per-account + bulk + streaming), bulk import account subtype and balance |
+| `test_settings` | 51 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, import LLM fallback (per-account + bulk + streaming), bulk import account subtype and balance, skip-LLM import option |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
