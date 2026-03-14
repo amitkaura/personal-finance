@@ -85,9 +85,10 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Dashboard snippet shows personal goals plus a shared goals summary
 
 ### Net Worth Tracking
-- Automatic net worth snapshots taken after every Plaid sync
-- Historical net worth chart on the dashboard (assets, liabilities, net)
+- Automatic net worth snapshots taken after every Plaid sync, manual account creation, and balance update
+- Historical net worth chart on the dashboard (assets, liabilities, net) with correct rendering for single data points
 - Manual snapshot trigger via API
+- **Balance history CSV import** -- upload a CSV with date, balance, and account name columns to backfill historical net worth; supports matching to existing accounts or creating new ones with per-account balance snapshots
 
 ### Cash Flow Visualization
 - **Interactive bar chart** -- side-by-side income vs. expenses across months, quarters, or years
@@ -162,7 +163,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **General** -- currency (CAD, USD, EUR, GBP, etc.), date format, number locale; "Settings saved" flash on save
 - **Sync Schedule** -- enable/disable auto-sync, pick hour, minute, and timezone; "Schedule saved" flash on save
 - **AI Categorization** -- configure LLM base URL, model, and API key
-- **Data Management** -- CSV export of all transactions, bulk CSV import, bulk delete, factory reset (wipes all financial data while preserving login and household), delete account (permanently removes user and all data with household cleanup)
+- **Data Management** -- CSV export of all transactions, bulk CSV import, balance history CSV import, bulk delete, factory reset (wipes all financial data while preserving login and household), delete account (permanently removes user and all data with household cleanup)
 - Category rules management is on the dedicated Categories page
 
 ### Dashboard
@@ -200,7 +201,7 @@ personal-finance/
 │       ├── budgets.py              # GET /, POST /, PATCH /:id, DELETE /:id, copy, summary
 │       ├── goals.py                # GET /, POST /, PATCH /:id, DELETE /:id
 │       ├── reports.py              # spending-by-category, trends, top-merchants
-│       ├── net_worth.py            # GET /history, POST /snapshot
+│       ├── net_worth.py            # GET /history, POST /snapshot, recompute_snapshot_for_date helper
 │       ├── tags.py                 # CRUD tags, attach/detach from transactions
 │       └── household.py            # GET /, invite, accept, decline, leave
 ├── frontend/                       # Next.js frontend
@@ -242,6 +243,7 @@ personal-finance/
 │   │   ├── cashflow-bar-chart.tsx  # Income vs expenses bar chart with drill-down
 │   │   ├── csv-import-dialog.tsx   # CSV import for a single account
 │   │   ├── bulk-csv-import-dialog.tsx # Bulk CSV import across accounts
+│   │   ├── balance-import-dialog.tsx # Balance history CSV import
 │   │   └── confirm-dialog.tsx      # Reusable confirmation modal
 │   ├── lib/
 │   │   ├── api.ts                  # API client (fetch with credentials)
@@ -265,6 +267,7 @@ personal-finance/
 │       ├── accounts-page.test.tsx  # Manual/Plaid account rendering, add form, import/delete actions, edit modal
 │       ├── csv-import-dialog.test.tsx # Upload, column mapping, debit/credit, preview, import flow
 │       ├── bulk-csv-import-dialog.test.tsx # Bulk upload, multi-account mapping, category matching
+│       ├── balance-import-dialog.test.tsx # Balance history import dialog
 │       ├── cashflow-bar-chart.test.tsx # Bar chart, drill-down, period switching, breadcrumbs
 │       ├── confirm-dialog.test.tsx # Rendering, variants, ARIA attributes, dismiss
 │       ├── transactions-page.test.tsx # Filters, search, add/approve/delete, badges
@@ -298,7 +301,7 @@ personal-finance/
 │   ├── test_goals.py               # CRUD, ownership
 │   ├── test_tags.py                # CRUD, transaction tagging
 │   ├── test_household.py           # Invite, accept, decline, leave, scope
-│   ├── test_settings.py            # Profile, rules, export, clear, factory reset
+│   ├── test_settings.py            # Profile, rules, export, clear, factory reset, balance import
 │   ├── test_reports.py             # Spending, trends, merchants
 │   ├── test_net_worth.py           # Snapshots, history
 │   ├── test_scheduler.py            # Statement reminder scheduler job
@@ -326,6 +329,7 @@ personal-finance/
 | `GoalAccountLink` | Links a goal to accounts for auto-tracking progress |
 | `GoalContribution` | Tracks individual contributions to a goal with attribution |
 | `NetWorthSnapshot` | Point-in-time assets, liabilities, and net worth |
+| `AccountBalanceSnapshot` | Per-account per-date historical balance for net worth recomputation |
 | `Tag` | User-defined label with color |
 | `TransactionTag` | Many-to-many link between transactions and tags |
 | `Household` | Shared household between two partners |
@@ -404,6 +408,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | DELETE | `/transactions` | Delete all user transactions |
 | DELETE | `/all-data` | Factory reset -- delete all financial data (preserves user and household) |
 | DELETE | `/account` | Delete user account and all associated data (irreversible) |
+| POST | `/import-balances` | Import account balance history CSV (creates accounts, balance snapshots, recomputes net worth) |
 
 ### Budgets (`/budgets`)
 | Method | Path | Description |
@@ -537,11 +542,11 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (306 tests across 16 files):**
+**What's tested (312 tests across 16 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `test_settings` | 55 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, delete account (full data + user removal, household cleanup, empty household deletion, cross-user goal contributions), import LLM fallback (per-account + bulk + streaming), bulk import account subtype and balance, skip-LLM import option |
+| `test_settings` | 61 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, delete account (full data + user removal, household cleanup, empty household deletion, cross-user goal contributions), import LLM fallback (per-account + bulk + streaming), bulk import account subtype and balance, skip-LLM import option, balance history import (create accounts, match existing, net worth recompute, upsert duplicates, validation) |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
@@ -576,13 +581,14 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (363 tests across 35 files):**
+**What's tested (368 tests across 36 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
 | `rule-utils` | 11 | Keyword option generation: full name, cleaned name, progressive word combos, dedup, edge cases |
 | `settings-page` | 19 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + logout) |
+| `balance-import-dialog` | 5 | Upload step rendering, column mapping, error handling, account matching, API call on submit |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `transactions-page` | 26 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion) |
 | `sidebar` | 12 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |

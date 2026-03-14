@@ -36,7 +36,7 @@ describe("LoansWidget", () => {
     });
     renderWithProviders(<LoansWidget />);
     await waitFor(() => {
-      expect(screen.getByText("No loans linked.")).toBeInTheDocument();
+      expect(screen.getByText("No loans.")).toBeInTheDocument();
     });
   });
 

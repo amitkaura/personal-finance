@@ -9,6 +9,7 @@ import {
   TrendingUp,
   CreditCard,
   Building2,
+  Home,
   Pencil,
   Unlink,
   EyeOff,
@@ -30,13 +31,21 @@ export const ACCOUNT_TYPES = [
   { value: "credit", label: "Credit Card", icon: CreditCard, color: "text-amber-400" },
   { value: "loan", label: "Loan", icon: Building2, color: "text-blue-400" },
   { value: "investment", label: "Investment", icon: TrendingUp, color: "text-accent" },
+  { value: "real_estate", label: "Real Estate", icon: Home, color: "text-emerald-400" },
 ] as const;
 
 export const SUBTYPES: Record<string, string[]> = {
-  depository: ["checking", "savings", "money market", "hsa", "cash management"],
-  credit: ["credit card"],
-  loan: ["mortgage", "student", "auto", "personal", "home equity", "line of credit"],
-  investment: ["rrsp", "tfsa", "brokerage", "cd", "401k", "ira", "roth", "529"],
+  depository: ["Cash Management", "Checking", "HSA", "Money Market", "Savings"],
+  credit: ["Credit Card"],
+  loan: ["Auto", "HELOC", "Home Equity", "Line of Credit", "Mortgage", "Personal", "Student"],
+  real_estate: ["Commercial", "Land", "Primary Residence", "Rental Property", "Vacation Home"],
+  investment: [
+    "401k", "529", "Annuity", "Bonds", "Brokerage", "CD", "Crypto",
+    "ESPP", "ETF", "HSA Investment", "IRA", "LIRA", "Mutual Fund",
+    "Pension", "Private Company Stock", "Private Equity", "Public Stock",
+    "RESP", "Roth", "RRIF", "RRSP", "RSU", "Stock Options", "TFSA",
+    "Whole Life Policy",
+  ],
 };
 
 function typeConfig(type: string) {
@@ -61,7 +70,7 @@ export default function AccountsPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("depository");
-  const [newSubtype, setNewSubtype] = useState("checking");
+  const [newSubtype, setNewSubtype] = useState(SUBTYPES["depository"]?.[0] ?? "");
   const [newBalance, setNewBalance] = useState("0");
   const [newStatementDay, setNewStatementDay] = useState("");
   const [importAccount, setImportAccount] = useState<Account | null>(null);
@@ -85,7 +94,7 @@ export default function AccountsPage() {
       setShowAddForm(false);
       setNewName("");
       setNewType("depository");
-      setNewSubtype("checking");
+      setNewSubtype(SUBTYPES["depository"]?.[0] ?? "");
       setNewBalance("0");
       setNewStatementDay("");
       setImportAccount(created);

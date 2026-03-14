@@ -74,7 +74,7 @@ describe("NetWorthCard", () => {
     });
     renderWithProviders(<NetWorthCard />);
     await waitFor(() => {
-      expect(screen.getByText(/1 linked account$/)).toBeInTheDocument();
+      expect(screen.getByText(/1 account$/)).toBeInTheDocument();
     });
 
     vi.clearAllMocks();
@@ -85,7 +85,7 @@ describe("NetWorthCard", () => {
     });
     renderWithProviders(<NetWorthCard />);
     await waitFor(() => {
-      expect(screen.getByText(/3 linked accounts/)).toBeInTheDocument();
+      expect(screen.getByText(/3 accounts/)).toBeInTheDocument();
     });
   });
 });

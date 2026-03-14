@@ -47,7 +47,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 [&>div]:h-full">
           <NetWorthCard />
         </div>
         <TopMovers />

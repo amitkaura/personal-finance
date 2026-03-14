@@ -14,7 +14,8 @@ export default function TopMovers() {
     queryFn: () => api.getAccounts(scope),
   });
 
-  const investments = (accounts ?? []).filter((a: Account) => a.type === "investment" && a.is_linked);
+  const investments = (accounts ?? []).filter((a: Account) => a.type === "investment");
+  const total = investments.reduce((sum, a) => sum + a.current_balance, 0);
 
   if (isError)
     return (
@@ -29,12 +30,19 @@ export default function TopMovers() {
     );
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-6">
-      <div className="flex items-center gap-2">
-        <BarChart3 className="h-4 w-4 text-accent" />
-        <h3 className="text-sm font-medium text-muted-foreground">
-          Investments
-        </h3>
+    <div className="h-full rounded-2xl border border-border bg-card p-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-accent" />
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Investments
+          </h3>
+        </div>
+        {!isLoading && investments.length > 0 && (
+          <span className="text-sm font-semibold text-success">
+            {formatCurrency(total)}
+          </span>
+        )}
       </div>
 
       {isLoading ? (
@@ -45,7 +53,7 @@ export default function TopMovers() {
         </div>
       ) : investments.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          No investment accounts linked.
+          No investment accounts.
         </p>
       ) : (
         <ul className="mt-4 space-y-2">

@@ -163,7 +163,7 @@ export function createMockApi(overrides: Record<string, unknown> = {}) {
     getProfile: vi.fn().mockResolvedValue(TEST_USER),
     updateProfile: vi.fn().mockResolvedValue(TEST_USER),
     getAccounts: vi.fn().mockResolvedValue([]),
-    getAccountSummary: vi.fn().mockResolvedValue({ net_worth: 0, total_balance: 0, depository_balance: 0, investment_balance: 0, credit_balance: 0, loan_balance: 0, credit_accounts: [], loan_accounts: [], account_count: 0 }),
+    getAccountSummary: vi.fn().mockResolvedValue({ net_worth: 0, total_balance: 0, depository_balance: 0, investment_balance: 0, credit_balance: 0, loan_balance: 0, real_estate_balance: 0, credit_accounts: [], loan_accounts: [], account_count: 0 }),
     getTransactions: vi.fn().mockResolvedValue([]),
     getAllTransactions: vi.fn().mockResolvedValue([]),
     getCategories: vi.fn().mockResolvedValue([]),

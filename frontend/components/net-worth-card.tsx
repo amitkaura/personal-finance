@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Wallet, Landmark, TrendingUp, ArrowUp, ArrowDown } from "lucide-react";
+import { Wallet, Landmark, TrendingUp, ArrowUp, ArrowDown, Home } from "lucide-react";
 import { api } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 
@@ -13,7 +13,7 @@ export default function NetWorthCard() {
     queryFn: () => api.getAccountSummary(scope),
   });
 
-  const assets = (data?.depository_balance ?? 0) + (data?.investment_balance ?? 0);
+  const assets = (data?.depository_balance ?? 0) + (data?.investment_balance ?? 0) + (data?.real_estate_balance ?? 0);
   const liabilities = (data?.credit_balance ?? 0) + (data?.loan_balance ?? 0);
 
   if (isError)
@@ -67,6 +67,12 @@ export default function NetWorthCard() {
                 </span>
                 <span>{formatCurrency(data?.investment_balance ?? 0)}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="flex items-center gap-1">
+                  <Home className="h-3 w-3" /> Real Estate
+                </span>
+                <span>{formatCurrency(data?.real_estate_balance ?? 0)}</span>
+              </div>
             </div>
           )}
         </div>
@@ -101,7 +107,7 @@ export default function NetWorthCard() {
       {!isLoading && (
         <p className="mt-4 text-xs text-muted-foreground">
           <Wallet className="mr-1 inline h-3 w-3" />
-          {data?.account_count ?? 0} linked account
+          {data?.account_count ?? 0} account
           {data?.account_count !== 1 ? "s" : ""}
         </p>
       )}

@@ -15,7 +15,7 @@ from sqlmodel import Session, or_, select
 from app.auth import get_current_user
 from app.database import get_session
 from app.household import get_scoped_user_ids
-from app.models import Account, AccountType, GoalAccountLink, Transaction, TransactionTag, User
+from app.models import Account, AccountBalanceSnapshot, AccountType, GoalAccountLink, Transaction, TransactionTag, User
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -135,6 +135,13 @@ def create_account(
     session.add(acct)
     session.commit()
     session.refresh(acct)
+
+    from app.routes.net_worth import take_snapshot
+    try:
+        take_snapshot(session, user.id)
+    except Exception:
+        pass
+
     return _acct_to_dict(acct)
 
 
@@ -172,6 +179,11 @@ def delete_account(
     for gl in goal_links:
         session.delete(gl)
 
+    for bs in session.exec(
+        select(AccountBalanceSnapshot).where(AccountBalanceSnapshot.account_id == account_id)
+    ).all():
+        session.delete(bs)
+
     session.delete(acct)
     session.commit()
     return {"ok": True}
@@ -195,10 +207,12 @@ def update_account(
     acct = session.get(Account, account_id)
     if not acct or acct.user_id != user.id:
         raise HTTPException(status_code=404, detail="Account not found")
+    balance_changed = False
     if body.current_balance is not None:
         if not acct.plaid_account_id or not acct.plaid_account_id.startswith("manual-"):
             raise HTTPException(status_code=400, detail="Balance can only be edited on manual accounts")
         acct.current_balance = Decimal(str(body.current_balance))
+        balance_changed = True
     if body.type is not None:
         valid_types = {t.value for t in AccountType}
         if body.type not in valid_types:
@@ -214,6 +228,14 @@ def update_account(
     session.add(acct)
     session.commit()
     session.refresh(acct)
+
+    if balance_changed:
+        from app.routes.net_worth import take_snapshot
+        try:
+            take_snapshot(session, user.id)
+        except Exception:
+            pass
+
     return _acct_to_dict(acct)
 
 
@@ -307,8 +329,9 @@ def accounts_summary(
     inv = by_type.get("investment", [])
     cred = by_type.get("credit", [])
     loan = by_type.get("loan", [])
+    re = by_type.get("real_estate", [])
 
-    assets = total(dep) + total(inv)
+    assets = total(dep) + total(inv) + total(re)
     liabilities = total(cred) + total(loan)
 
     return {
@@ -318,6 +341,7 @@ def accounts_summary(
         "investment_balance": total(inv),
         "credit_balance": total(cred),
         "loan_balance": total(loan),
+        "real_estate_balance": total(re),
         "credit_accounts": [
             {
                 "id": a.id, "name": a.name, "official_name": a.official_name,

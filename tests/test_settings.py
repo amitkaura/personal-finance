@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from app.models import (
     Account,
+    AccountBalanceSnapshot,
+    AccountType,
     Budget,
     Category,
     CategoryRule,
@@ -953,3 +955,130 @@ def test_delete_account_removes_contributions_to_partner_goals(auth_client, sess
         select(GoalContribution).where(GoalContribution.user_id == user.id)
     ).all() == []
     assert session.get(Goal, partner_goal.id) is not None
+
+
+# -- Balance History Import ------------------------------------------------
+
+def test_import_balances_creates_new_accounts_and_snapshots(auth_client, session):
+    """Import with create-new accounts should create manual accounts and AccountBalanceSnapshot rows."""
+    client, user = auth_client
+    resp = client.post("/api/v1/settings/import-balances", json={
+        "rows": [
+            {"date": "2025-01-01", "balance": 10000.00, "account_name": "RRSP"},
+            {"date": "2025-02-01", "balance": 11000.00, "account_name": "RRSP"},
+            {"date": "2025-01-01", "balance": 5000.00, "account_name": "TFSA"},
+        ],
+        "account_mapping": [
+            {"csv_name": "RRSP", "account_id": None, "create": {"name": "RRSP", "type": "investment"}},
+            {"csv_name": "TFSA", "account_id": None, "create": {"name": "TFSA", "type": "investment"}},
+        ],
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported"] == 3
+    assert data["accounts_created"] == 2
+
+    accts = session.exec(select(Account).where(Account.user_id == user.id)).all()
+    assert len(accts) == 2
+    rrsp = next(a for a in accts if a.name == "RRSP")
+    assert float(rrsp.current_balance) == 11000.00
+
+    snaps = session.exec(select(AccountBalanceSnapshot).where(
+        AccountBalanceSnapshot.account_id == rrsp.id
+    )).all()
+    assert len(snaps) == 2
+
+
+def test_import_balances_matches_existing_account(auth_client, session):
+    """Import with account_id set should add balance snapshots to the existing account."""
+    client, user = auth_client
+    acct = make_account(session, user, name="My RRSP", type=AccountType.INVESTMENT, balance=Decimal("5000"))
+
+    resp = client.post("/api/v1/settings/import-balances", json={
+        "rows": [
+            {"date": "2025-06-01", "balance": 15000.00, "account_name": "RRSP"},
+            {"date": "2025-07-01", "balance": 16000.00, "account_name": "RRSP"},
+        ],
+        "account_mapping": [
+            {"csv_name": "RRSP", "account_id": acct.id, "create": None},
+        ],
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported"] == 2
+    assert data["accounts_created"] == 0
+
+    session.refresh(acct)
+    assert float(acct.current_balance) == 16000.00
+
+    snaps = session.exec(select(AccountBalanceSnapshot).where(
+        AccountBalanceSnapshot.account_id == acct.id
+    )).all()
+    assert len(snaps) == 2
+
+
+def test_import_balances_recomputes_net_worth_snapshots(auth_client, session):
+    """After import, NetWorthSnapshot rows should be created for each unique date."""
+    client, user = auth_client
+    resp = client.post("/api/v1/settings/import-balances", json={
+        "rows": [
+            {"date": "2025-03-01", "balance": 20000.00, "account_name": "Savings"},
+            {"date": "2025-04-01", "balance": 22000.00, "account_name": "Savings"},
+        ],
+        "account_mapping": [
+            {"csv_name": "Savings", "account_id": None, "create": {"name": "Savings", "type": "depository"}},
+        ],
+    })
+    assert resp.status_code == 200
+    assert resp.json()["snapshots_updated"] == 2
+
+    nw_snaps = session.exec(select(NetWorthSnapshot).where(
+        NetWorthSnapshot.user_id == user.id
+    ).order_by(NetWorthSnapshot.date)).all()
+    assert len(nw_snaps) == 2
+    assert float(nw_snaps[0].assets) == 20000.00
+    assert float(nw_snaps[0].net_worth) == 20000.00
+    assert float(nw_snaps[1].assets) == 22000.00
+
+
+def test_import_balances_upserts_duplicate_dates(auth_client, session):
+    """Importing twice for the same account+date should update, not duplicate."""
+    client, user = auth_client
+    acct = make_account(session, user, name="Checking", type=AccountType.DEPOSITORY, balance=Decimal("1000"),
+                        plaid_account_id=f"manual-test-upsert")
+
+    client.post("/api/v1/settings/import-balances", json={
+        "rows": [{"date": "2025-01-15", "balance": 3000.00, "account_name": "Checking"}],
+        "account_mapping": [{"csv_name": "Checking", "account_id": acct.id, "create": None}],
+    })
+    resp = client.post("/api/v1/settings/import-balances", json={
+        "rows": [{"date": "2025-01-15", "balance": 3500.00, "account_name": "Checking"}],
+        "account_mapping": [{"csv_name": "Checking", "account_id": acct.id, "create": None}],
+    })
+    assert resp.status_code == 200
+
+    snaps = session.exec(select(AccountBalanceSnapshot).where(
+        AccountBalanceSnapshot.account_id == acct.id
+    )).all()
+    assert len(snaps) == 1
+    assert float(snaps[0].balance) == 3500.00
+
+
+def test_import_balances_validation_empty_rows(auth_client):
+    """Should reject request with no rows."""
+    client, _ = auth_client
+    resp = client.post("/api/v1/settings/import-balances", json={
+        "rows": [],
+        "account_mapping": [],
+    })
+    assert resp.status_code == 400
+
+
+def test_import_balances_validation_unmapped_account(auth_client):
+    """Should reject if a CSV account name has no mapping entry."""
+    client, _ = auth_client
+    resp = client.post("/api/v1/settings/import-balances", json={
+        "rows": [{"date": "2025-01-01", "balance": 1000, "account_name": "Mystery"}],
+        "account_mapping": [],
+    })
+    assert resp.status_code == 400

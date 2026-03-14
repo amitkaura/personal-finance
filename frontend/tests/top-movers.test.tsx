@@ -36,21 +36,21 @@ describe("TopMovers", () => {
     ]);
     renderWithProviders(<TopMovers />);
     await waitFor(() => {
-      expect(screen.getByText("No investment accounts linked.")).toBeInTheDocument();
+      expect(screen.getByText("No investment accounts.")).toBeInTheDocument();
     });
   });
 
-  it("filters to investment + linked accounts only", async () => {
+  it("filters to all investment accounts regardless of linked status", async () => {
     mockApi.getAccounts.mockResolvedValue([
       { id: 1, name: "Checking", type: "depository", is_linked: true, current_balance: 5000 },
       { id: 2, name: "RRSP", type: "investment", is_linked: true, current_balance: 15000, official_name: "Registered Retirement" },
-      { id: 3, name: "Unlinked Fund", type: "investment", is_linked: false, current_balance: 8000 },
+      { id: 3, name: "Manual Fund", type: "investment", is_linked: false, current_balance: 8000 },
     ]);
     renderWithProviders(<TopMovers />);
     await waitFor(() => {
       expect(screen.getByText("RRSP")).toBeInTheDocument();
+      expect(screen.getByText("Manual Fund")).toBeInTheDocument();
       expect(screen.queryByText("Checking")).toBeNull();
-      expect(screen.queryByText("Unlinked Fund")).toBeNull();
     });
   });
 

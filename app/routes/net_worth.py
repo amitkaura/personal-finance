@@ -13,7 +13,7 @@ from sqlmodel import Session, or_, select
 from app.auth import get_current_user
 from app.database import get_session
 from app.household import get_scoped_user_ids
-from app.models import Account, AccountType, NetWorthSnapshot, User
+from app.models import Account, AccountBalanceSnapshot, AccountType, NetWorthSnapshot, User
 
 router = APIRouter(prefix="/net-worth", tags=["net-worth"])
 
@@ -34,7 +34,7 @@ def take_snapshot(session: Session, user_id: int) -> NetWorthSnapshot:
     liabilities = Decimal("0")
     for a in accounts:
         t = a.type.value if hasattr(a.type, "value") else a.type
-        if t in ("depository", "investment"):
+        if t in ("depository", "investment", "real_estate"):
             assets += a.current_balance
         elif t in ("credit", "loan"):
             liabilities += a.current_balance
@@ -67,6 +67,69 @@ def take_snapshot(session: Session, user_id: int) -> NetWorthSnapshot:
     session.commit()
     session.refresh(snapshot)
     return snapshot
+
+
+def recompute_snapshot_for_date(
+    session: Session, user_id: int, target_date: date
+) -> NetWorthSnapshot:
+    """Recompute net worth for a historical date using AccountBalanceSnapshot data."""
+    accounts = session.exec(
+        select(Account).where(
+            Account.user_id == user_id,
+            or_(
+                Account.is_linked == True,  # noqa: E712
+                Account.plaid_account_id.startswith("manual-"),  # type: ignore[union-attr]
+            ),
+        )
+    ).all()
+
+    assets = Decimal("0")
+    liabilities = Decimal("0")
+    for acct in accounts:
+        snap = session.exec(
+            select(AccountBalanceSnapshot)
+            .where(
+                AccountBalanceSnapshot.account_id == acct.id,
+                AccountBalanceSnapshot.date <= target_date,
+            )
+            .order_by(AccountBalanceSnapshot.date.desc())
+            .limit(1)
+        ).first()
+        if not snap:
+            continue
+        t = acct.type.value if hasattr(acct.type, "value") else acct.type
+        if t in ("depository", "investment", "real_estate"):
+            assets += snap.balance
+        elif t in ("credit", "loan"):
+            liabilities += snap.balance
+
+    existing = session.exec(
+        select(NetWorthSnapshot).where(
+            NetWorthSnapshot.user_id == user_id,
+            NetWorthSnapshot.date == target_date,
+        )
+    ).first()
+
+    if existing:
+        existing.assets = assets
+        existing.liabilities = liabilities
+        existing.net_worth = assets - liabilities
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        return existing
+
+    nw = NetWorthSnapshot(
+        user_id=user_id,
+        date=target_date,
+        assets=assets,
+        liabilities=liabilities,
+        net_worth=assets - liabilities,
+    )
+    session.add(nw)
+    session.commit()
+    session.refresh(nw)
+    return nw
 
 
 @router.get("/history")

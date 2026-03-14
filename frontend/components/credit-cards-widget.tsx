@@ -52,7 +52,7 @@ export default function CreditCardsWidget() {
         </div>
       ) : cards.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          No credit cards linked.
+          No credit cards.
         </p>
       ) : (
         <ul className="mt-4 space-y-2">

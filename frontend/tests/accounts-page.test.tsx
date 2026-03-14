@@ -218,7 +218,7 @@ describe("AccountsPage", () => {
       expect(mockApi.createAccount).toHaveBeenCalledWith({
         name: "New Savings",
         type: "depository",
-        subtype: "checking",
+        subtype: "Cash Management",
         current_balance: 0,
       });
     });
@@ -241,7 +241,7 @@ describe("AccountsPage", () => {
 
     await waitFor(() => {
       expect(mockApi.createAccount).toHaveBeenCalledWith(
-        expect.objectContaining({ subtype: "checking" }),
+        expect.objectContaining({ subtype: "Cash Management" }),
       );
     });
   });

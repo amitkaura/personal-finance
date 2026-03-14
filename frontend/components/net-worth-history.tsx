@@ -79,7 +79,8 @@ export default function NetWorthHistory() {
   const values = snapshots.map((s) => s.net_worth);
   const maxVal = Math.max(...values);
   const minVal = Math.min(...values);
-  const range = maxVal - minVal || 1;
+  const rawRange = maxVal - minVal;
+  const flat = rawRange === 0;
 
   const first = snapshots[0];
   const last = snapshots[snapshots.length - 1];
@@ -130,13 +131,13 @@ export default function NetWorthHistory() {
         </div>
       </div>
 
-      <div className="mt-4 flex h-48 items-end gap-px">
+      <div className="mt-4 flex h-48 gap-px">
         {snapshots.map((s) => {
-          const height = ((s.net_worth - minVal) / range) * 100;
+          const height = flat ? 80 : ((s.net_worth - minVal) / rawRange) * 100;
           return (
             <div
               key={s.date}
-              className="group relative flex-1"
+              className="group relative flex-1 flex flex-col justify-end"
               style={{ minWidth: 4 }}
             >
               <div
@@ -162,12 +163,16 @@ export default function NetWorthHistory() {
         })}
       </div>
 
-      {snapshots.length > 1 && (
+      {snapshots.length === 1 ? (
+        <div className="mt-2 text-center text-[10px] text-muted-foreground">
+          <span>{snapshots[0].date}</span>
+        </div>
+      ) : snapshots.length > 1 ? (
         <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
           <span>{snapshots[0].date}</span>
           <span>{snapshots[snapshots.length - 1].date}</span>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

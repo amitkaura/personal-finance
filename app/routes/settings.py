@@ -22,6 +22,7 @@ from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
 from app.models import (
     Account,
+    AccountBalanceSnapshot,
     AccountType,
     Budget,
     Category,
@@ -464,6 +465,11 @@ def _delete_all_user_data(session: Session, user: User) -> None:
         session.delete(rule)
     for cat in session.exec(select(Category).where(Category.user_id == user.id)).all():
         session.delete(cat)
+    if user_account_ids:
+        for bs in session.exec(select(AccountBalanceSnapshot).where(
+            AccountBalanceSnapshot.account_id.in_(user_account_ids)  # type: ignore[union-attr]
+        )).all():
+            session.delete(bs)
     for acct in session.exec(select(Account).where(Account.user_id == user.id)).all():
         session.delete(acct)
 
@@ -1032,3 +1038,154 @@ def _bulk_import_generator(
 
 def _ndjson(obj: dict) -> str:
     return json.dumps(obj) + "\n"
+
+
+# ── Balance History Import ─────────────────────────────────────
+
+
+class BalanceRow(BaseModel):
+    date: str
+    balance: float
+    account_name: str
+
+
+class AccountCreatePayload(BaseModel):
+    name: str
+    type: str = "depository"
+    subtype: Optional[str] = None
+
+
+class AccountMapEntry(BaseModel):
+    csv_name: str
+    account_id: Optional[int] = None
+    create: Optional[AccountCreatePayload] = None
+
+
+class BalanceImportRequest(BaseModel):
+    rows: list[BalanceRow]
+    account_mapping: list[AccountMapEntry]
+
+
+@router.post("/import-balances")
+def import_balances(
+    body: BalanceImportRequest,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Import account balance history from CSV data."""
+    from app.routes.net_worth import recompute_snapshot_for_date
+
+    if not body.rows:
+        raise HTTPException(status_code=400, detail="No rows to import")
+
+    mapping_by_name: dict[str, AccountMapEntry] = {
+        m.csv_name: m for m in body.account_mapping
+    }
+    csv_names = {r.account_name for r in body.rows}
+    unmapped = csv_names - set(mapping_by_name.keys())
+    if unmapped:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unmapped account names: {', '.join(sorted(unmapped))}",
+        )
+
+    newest_balance_by_name: dict[str, tuple[date_type, Decimal]] = {}
+    for row in body.rows:
+        try:
+            d = date_type.fromisoformat(row.date)
+        except ValueError:
+            continue
+        prev = newest_balance_by_name.get(row.account_name)
+        if prev is None or d > prev[0]:
+            newest_balance_by_name[row.account_name] = (d, Decimal(str(row.balance)))
+
+    resolved: dict[str, Account] = {}
+    accounts_created = 0
+
+    for csv_name, entry in mapping_by_name.items():
+        if entry.account_id is not None:
+            acct = session.get(Account, entry.account_id)
+            if not acct or acct.user_id != user.id:
+                raise HTTPException(status_code=404, detail=f"Account {entry.account_id} not found")
+            resolved[csv_name] = acct
+        elif entry.create:
+            valid_types = {t.value for t in AccountType}
+            acct_type = entry.create.type
+            if acct_type not in valid_types:
+                raise HTTPException(status_code=400, detail=f"Invalid type: {acct_type}")
+            initial_balance = newest_balance_by_name.get(csv_name, (None, Decimal("0")))[1]
+            acct = Account(
+                user_id=user.id,
+                name=entry.create.name,
+                type=AccountType(acct_type),
+                subtype=entry.create.subtype,
+                current_balance=initial_balance,
+                plaid_account_id=f"manual-{uuid4().hex}",
+                plaid_item_id=None,
+                is_linked=False,
+            )
+            session.add(acct)
+            session.commit()
+            session.refresh(acct)
+            resolved[csv_name] = acct
+            accounts_created += 1
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Mapping for '{csv_name}' must have account_id or create",
+            )
+
+    imported = 0
+    latest_date_per_acct: dict[int, tuple[date_type, Decimal]] = {}
+    unique_dates: set[date_type] = set()
+
+    for row in body.rows:
+        acct = resolved[row.account_name]
+        try:
+            parsed_date = date_type.fromisoformat(row.date)
+        except ValueError:
+            continue
+        balance = Decimal(str(row.balance))
+
+        existing = session.exec(
+            select(AccountBalanceSnapshot).where(
+                AccountBalanceSnapshot.account_id == acct.id,
+                AccountBalanceSnapshot.date == parsed_date,
+            )
+        ).first()
+
+        if existing:
+            existing.balance = balance
+            session.add(existing)
+        else:
+            snap = AccountBalanceSnapshot(
+                account_id=acct.id, date=parsed_date, balance=balance
+            )
+            session.add(snap)
+
+        imported += 1
+        unique_dates.add(parsed_date)
+
+        prev = latest_date_per_acct.get(acct.id)
+        if prev is None or parsed_date > prev[0]:
+            latest_date_per_acct[acct.id] = (parsed_date, balance)
+
+    session.commit()
+
+    for acct_id, (_, balance) in latest_date_per_acct.items():
+        acct = session.get(Account, acct_id)
+        if acct:
+            acct.current_balance = balance
+            session.add(acct)
+    session.commit()
+
+    snapshots_updated = 0
+    for d in sorted(unique_dates):
+        recompute_snapshot_for_date(session, user.id, d)
+        snapshots_updated += 1
+
+    return {
+        "imported": imported,
+        "accounts_created": accounts_created,
+        "snapshots_updated": snapshots_updated,
+    }

@@ -36,7 +36,7 @@ describe("CreditCardsWidget", () => {
     });
     renderWithProviders(<CreditCardsWidget />);
     await waitFor(() => {
-      expect(screen.getByText("No credit cards linked.")).toBeInTheDocument();
+      expect(screen.getByText("No credit cards.")).toBeInTheDocument();
     });
   });
 

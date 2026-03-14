@@ -29,6 +29,7 @@ import { useHousehold } from "@/components/household-provider";
 import type { UserSettings, UserProfile, CategoryRule } from "@/lib/types";
 import ConfirmDialog from "@/components/confirm-dialog";
 import BulkCsvImportDialog from "@/components/bulk-csv-import-dialog";
+import BalanceImportDialog from "@/components/balance-import-dialog";
 
 const CURRENCIES = ["CAD", "USD", "EUR", "GBP", "AUD", "JPY", "CHF", "INR", "BRL", "MXN"];
 const DATE_FORMATS = ["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY"];
@@ -1166,6 +1167,7 @@ function DataSection() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [balanceImportOpen, setBalanceImportOpen] = useState(false);
 
   async function handleClear() {
     setClearing(true);
@@ -1249,9 +1251,19 @@ function DataSection() {
           <Upload className="h-4 w-4" />
           Import Transactions (CSV)
         </button>
+        <button
+          onClick={() => setBalanceImportOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/70"
+        >
+          <Upload className="h-4 w-4" />
+          Import Balance History (CSV)
+        </button>
       </div>
       {bulkImportOpen && (
         <BulkCsvImportDialog onClose={() => setBulkImportOpen(false)} />
+      )}
+      {balanceImportOpen && (
+        <BalanceImportDialog onClose={() => setBalanceImportOpen(false)} />
       )}
       {exportError && (
         <p className="mt-2 text-xs text-red-400">{exportError}</p>

@@ -684,4 +684,17 @@ export const api = {
     fetchVoid(`/categories/${id}${reassignTo != null ? `?reassign_to=${reassignTo}` : ""}`, {
       method: "DELETE",
     }),
+
+  importBalances: (payload: {
+    rows: { date: string; balance: number; account_name: string }[];
+    account_mapping: {
+      csv_name: string;
+      account_id: number | null;
+      create: { name: string; type: string; subtype?: string } | null;
+    }[];
+  }) =>
+    fetcher<{ imported: number; accounts_created: number; snapshots_updated: number }>(
+      "/settings/import-balances",
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
 };

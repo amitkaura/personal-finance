@@ -5,7 +5,7 @@ export interface Account {
   user_id: number;
   name: string;
   official_name: string | null;
-  type: "depository" | "investment" | "credit" | "loan";
+  type: "depository" | "investment" | "credit" | "loan" | "real_estate";
   subtype: string | null;
   current_balance: number;
   available_balance: number | null;
@@ -62,6 +62,7 @@ export interface AccountSummary {
   investment_balance: number;
   credit_balance: number;
   loan_balance: number;
+  real_estate_balance: number;
   credit_accounts: CreditAccountSummary[];
   loan_accounts: LoanAccountSummary[];
   account_count: number;

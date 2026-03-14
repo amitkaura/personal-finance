@@ -109,7 +109,8 @@ describe("BulkCsvImportDialog", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Visa")).toBeInTheDocument();
-      expect(screen.getByText("Checking")).toBeInTheDocument();
+      const accountLabels = screen.getAllByText("Checking");
+      expect(accountLabels.length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText("New")).toHaveLength(2);
     });
   });
@@ -190,7 +191,7 @@ describe("BulkCsvImportDialog", () => {
     await waitFor(() => {
       expect(mockApi.bulkImportTransactions).toHaveBeenCalled();
       const [payload] = mockApi.bulkImportTransactions.mock.calls[0];
-      expect(payload.accounts).toEqual([{ name: "Visa", type: "depository", subtype: "checking", current_balance: 0 }]);
+      expect(payload.accounts).toEqual([{ name: "Visa", type: "depository", subtype: "Cash Management", current_balance: 0 }]);
       expect(payload.transactions).toHaveLength(1);
       expect(payload.transactions[0]).toMatchObject({
         date: "2026-01-15",

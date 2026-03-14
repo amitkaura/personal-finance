@@ -42,6 +42,7 @@ class AccountType(str, Enum):
     INVESTMENT = "investment"
     CREDIT = "credit"
     LOAN = "loan"
+    REAL_ESTATE = "real_estate"
 
 
 class PlaidItem(SQLModel, table=True):
@@ -247,6 +248,21 @@ class NetWorthSnapshot(SQLModel, table=True):
     assets: Decimal = Field(max_digits=15, decimal_places=2)
     liabilities: Decimal = Field(max_digits=15, decimal_places=2)
     net_worth: Decimal = Field(max_digits=15, decimal_places=2)
+
+
+# ── Account Balance History ────────────────────────────────────
+
+
+class AccountBalanceSnapshot(SQLModel, table=True):
+    """Per-account per-date balance for historical tracking."""
+
+    __tablename__ = "account_balance_snapshots"
+    __table_args__ = (UniqueConstraint("account_id", "date"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: int = Field(foreign_key="accounts.id", index=True)
+    date: date
+    balance: Decimal = Field(max_digits=15, decimal_places=2)
 
 
 # ── Tags ───────────────────────────────────────────────────────

@@ -114,7 +114,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
       const meta: Record<string, { type: string; subtype: string; balance: string }> = {};
       for (const name of csvAccountNames) {
         if (!existingAccountNames.has(name.toLowerCase()) && !accountMeta[name]) {
-          meta[name] = { type: "depository", subtype: "checking", balance: "0" };
+          meta[name] = { type: "depository", subtype: SUBTYPES["depository"]?.[0] ?? "", balance: "0" };
         }
       }
       if (Object.keys(meta).length > 0) {
@@ -165,7 +165,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
           return {
             name,
             type: m?.type ?? "depository",
-            subtype: m?.subtype ?? "checking",
+            subtype: m?.subtype ?? SUBTYPES["depository"]?.[0] ?? "",
             current_balance: parseFloat(m?.balance ?? "0") || 0,
           };
         }),

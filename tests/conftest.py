@@ -36,6 +36,7 @@ from app.database import get_session
 from app.auth import get_current_user
 from app.models import (
     Account,
+    AccountBalanceSnapshot,
     AccountType,
     Budget,
     Category,

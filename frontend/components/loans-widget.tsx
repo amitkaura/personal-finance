@@ -50,7 +50,7 @@ export default function LoansWidget() {
         </div>
       ) : loans.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          No loans linked.
+          No loans.
         </p>
       ) : (
         <ul className="mt-4 space-y-2">
