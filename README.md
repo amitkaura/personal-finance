@@ -39,7 +39,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Transaction Management
 - Automatic transaction sync from all linked Plaid items
 - Manual transaction entry with merchant name, amount, date, category, and notes
-- **CSV import** -- upload bank statement CSVs with a multi-step column mapper; bulk import lets you set account type, subtype, and starting balance per new account
+- **CSV import** -- bulk import accounts & transactions from bank exports with a multi-step wizard; auto-creates accounts, categorizes transactions, skips duplicates, and lets you set account type, subtype, and starting balance per new account
   - Drag-and-drop or file picker upload
   - Auto-detects common column headers (date, description, amount, category)
   - Supports single Amount column or separate Debit/Credit columns for banks that report withdrawals and deposits as positive numbers in different columns
@@ -91,7 +91,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Automatic net worth snapshots taken after every Plaid sync, manual account creation, and balance update
 - Historical net worth chart on the dashboard (assets, liabilities, net) with correct rendering for single data points
 - Manual snapshot trigger via API
-- **Balance history CSV import** -- upload a CSV with date, balance, and account name columns to backfill historical net worth; supports matching to existing accounts or creating new ones with per-account balance snapshots
+- **Balance history CSV import** -- bulk import accounts & balances from a CSV with date, balance, and account name columns to backfill historical net worth; auto-creates accounts if needed, supports matching to existing accounts, and recalculates net worth snapshots
 
 ### Cash Flow Visualization
 - **Interactive bar chart** -- side-by-side income vs. expenses across months, quarters, or years
@@ -169,7 +169,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Sync Schedule** -- enable/disable auto-sync, pick hour, minute, and timezone; "Schedule saved" flash on save
 - **AI Categorization** — per-household LLM config (OpenAI, Ollama, Azure, or any OpenAI-compatible API)
 - **Integrations** -- household owner configures Plaid client ID, secret, and environment (sandbox/development/production); credentials encrypted at rest with Fernet; masked last-4 display for verification; auto-scrolls via `?section=integrations` deep link
-- **Data Management** -- CSV export of all transactions, bulk CSV import, balance history CSV import, bulk delete, factory reset (wipes all financial data while preserving login and household), delete account (permanently removes user and all data with household cleanup)
+- **Data Management** -- CSV export, Bulk Import Accounts & Transactions, Bulk Import Accounts & Balances, bulk delete, factory reset (wipes all financial data while preserving login and household), delete account (permanently removes user and all data with household cleanup)
 - Category rules management is on the dedicated Categories page
 
 ### Dashboard
@@ -250,9 +250,9 @@ personal-finance/
 │   │   ├── goals-snippet.tsx       # Goals progress summary
 │   │   ├── top-movers.tsx          # Top spending category changes
 │   │   ├── cashflow-bar-chart.tsx  # Income vs expenses bar chart with drill-down
-│   │   ├── csv-import-dialog.tsx   # CSV import for a single account
-│   │   ├── bulk-csv-import-dialog.tsx # Bulk CSV import across accounts
-│   │   ├── balance-import-dialog.tsx # Balance history CSV import
+│   │   ├── csv-import-dialog.tsx   # Import Transactions to a single account
+│   │   ├── bulk-csv-import-dialog.tsx # Bulk Import Accounts & Transactions
+│   │   ├── balance-import-dialog.tsx # Bulk Import Accounts & Balances
 │   │   └── confirm-dialog.tsx      # Reusable confirmation modal
 │   ├── lib/
 │   │   ├── api.ts                  # API client (fetch with credentials)

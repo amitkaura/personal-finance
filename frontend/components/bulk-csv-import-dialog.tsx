@@ -206,7 +206,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Bulk Import Transactions</h2>
+          <h2 className="text-lg font-semibold">Bulk Import Accounts &amp; Transactions</h2>
           <button
             onClick={onClose}
             className="rounded-md p-1 text-muted-foreground hover:text-foreground"
@@ -226,8 +226,15 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
         {step === "upload" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Upload a CSV with transactions. Columns for date, amount, and merchant/description are required.
-              Optional: category, account, notes, owner.
+              Import transactions from a bank export or spreadsheet. Accounts are created automatically from your CSV if they don&apos;t already exist.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              <strong>Required columns:</strong> Date, Amount (or separate Debit/Credit columns), Description / Merchant name.
+              <br />
+              <strong>Optional columns:</strong> Category, Account name, Notes, Owner (for shared households).
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Duplicates are automatically detected and skipped.
             </p>
             <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
             <button
@@ -249,7 +256,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
         {step === "columns" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Verify column assignments. Supports separate Debit/Credit columns.
+              We auto-detected your columns. Verify the assignments below and fix any that look wrong.
             </p>
             <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
               <table className="w-full text-xs">
@@ -325,8 +332,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
         {step === "accounts" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              {csvAccountNames.length} account{csvAccountNames.length !== 1 ? "s" : ""} found in CSV.
-              New accounts will be created automatically.
+              {csvAccountNames.length} account{csvAccountNames.length !== 1 ? "s" : ""} found in your CSV. Match them to existing accounts or let us create new ones. You can set the account type and starting balance for new accounts.
             </p>
             <div className="space-y-2">
               {csvAccountNames.map((name) => {
@@ -415,7 +421,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
         {step === "categories" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              {csvCategories.length} categories found in CSV. Matched against your existing categories.
+              {csvCategories.length} categories found in your CSV. We matched them against your existing categories. Unmatched categories will be created as new.
             </p>
             <div className="max-h-64 overflow-y-auto space-y-2">
               {categoryMatches.map((m) => (
@@ -451,10 +457,12 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
         {/* ── Preview ── */}
         {step === "preview" && (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              {mappedRows.length} transactions ready to import
-              {csvAccountNames.length > 0 && ` across ${csvAccountNames.length} accounts`}.
-            </p>
+            <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground space-y-1">
+              <p className="font-medium text-foreground">Ready to import:</p>
+              <p>{mappedRows.length} transactions{csvAccountNames.length > 0 && ` across ${csvAccountNames.length} account${csvAccountNames.length !== 1 ? "s" : ""}`}</p>
+              <p>Duplicates will be skipped</p>
+              <p>Uncategorized transactions will be auto-categorized {llmConfig?.configured ? "by rules and AI" : "by rules"}</p>
+            </div>
             <div className="max-h-60 overflow-y-auto rounded-lg border border-border text-xs">
               <table className="w-full">
                 <thead className="bg-muted sticky top-0">

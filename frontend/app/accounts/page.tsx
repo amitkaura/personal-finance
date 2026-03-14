@@ -479,7 +479,7 @@ function AccountRow({
                 <button
                   onClick={onImport}
                   className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/10 hover:text-accent"
-                  title="Import CSV"
+                  title="Import transactions from CSV"
                 >
                   <Upload className="h-4 w-4" />
                 </button>

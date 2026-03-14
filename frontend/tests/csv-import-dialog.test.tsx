@@ -53,9 +53,9 @@ describe("CsvImportDialog", () => {
     renderWithProviders(
       <CsvImportDialog accountId={1} accountName="My Checking" onClose={onClose} />,
     );
-    expect(screen.getByText(/Import CSV to My Checking/)).toBeInTheDocument();
+    expect(screen.getByText(/Import Transactions to My Checking/)).toBeInTheDocument();
     expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
-    expect(screen.getByText(/auto-detect columns/)).toBeInTheDocument();
+    expect(screen.getByText(/auto-detect the column layout/)).toBeInTheDocument();
   });
 
   it("file upload goes to column mapping step", async () => {
@@ -65,7 +65,7 @@ describe("CsvImportDialog", () => {
     await uploadCsv("Date,Description,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n");
 
     await waitFor(() => {
-      expect(screen.getByText(/Verify column assignments/)).toBeTruthy();
+      expect(screen.getByText(/We auto-detected your columns/)).toBeTruthy();
       const table = screen.getByRole("table");
       expect(within(table).getByText("Column")).toBeInTheDocument();
       expect(within(table).getByText("Sample")).toBeInTheDocument();
@@ -110,7 +110,7 @@ describe("CsvImportDialog", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/1 transactions ready/)).toBeInTheDocument();
+      expect(screen.getByText(/1 transactions ready to import/)).toBeInTheDocument();
       expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
     });
 
@@ -279,7 +279,7 @@ describe("CsvImportDialog", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/2 transactions ready/)).toBeInTheDocument();
+      expect(screen.getByText(/2 transactions ready to import/)).toBeInTheDocument();
       expect(screen.getByText("Coffee")).toBeInTheDocument();
       expect(screen.getByText("Payroll")).toBeInTheDocument();
     });
@@ -297,7 +297,7 @@ describe("CsvImportDialog", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/1 transactions ready/)).toBeInTheDocument();
+      expect(screen.getByText(/1 transactions ready to import/)).toBeInTheDocument();
       expect(screen.getByText(/1 rows skipped/)).toBeInTheDocument();
     });
   });

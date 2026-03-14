@@ -176,9 +176,15 @@ export default function BalanceImportDialog({ onClose }: Props) {
         {/* Upload */}
         {step === "upload" && (
           <div>
-            <h2 className="text-lg font-semibold">Import Balance History</h2>
+            <h2 className="text-lg font-semibold">Bulk Import Accounts &amp; Balances</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Upload a CSV with date, balance, and account name columns.
+              Upload historical account balances to build your net worth chart over time. Accounts that don&apos;t exist yet can be created during import.
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              <strong>Required columns:</strong> Date (balance snapshot date), Balance (account balance on that date), Account Name (which account).
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Each row represents one account&apos;s balance on a given date. Net worth snapshots will be automatically recalculated.
             </p>
             {error && (
               <p className="mt-3 text-sm text-danger flex items-center gap-1">
@@ -207,7 +213,7 @@ export default function BalanceImportDialog({ onClose }: Props) {
           <div>
             <h2 className="text-lg font-semibold">Map Columns</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Assign each column to Date, Balance, or Account Name.
+              We auto-detected your columns. Verify each assignment below.
             </p>
             {!hasRequiredCols && (
               <p className="mt-2 text-xs text-amber-400">
@@ -273,7 +279,7 @@ export default function BalanceImportDialog({ onClose }: Props) {
           <div>
             <h2 className="text-lg font-semibold">Match Accounts</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Match each CSV account to an existing account or create a new one.
+              Match each account name from your CSV to an existing account, or create a new one. New accounts will use the most recent balance from your CSV.
             </p>
             {error && (
               <p className="mt-3 text-sm text-danger flex items-center gap-1">
@@ -413,6 +419,9 @@ export default function BalanceImportDialog({ onClose }: Props) {
                 net worth snapshots updated
               </p>
             </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Your net worth history has been updated. Visit the Net Worth page to see your timeline.
+            </p>
             <button
               onClick={onClose}
               className="mt-6 w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"

@@ -66,9 +66,9 @@ describe("BulkCsvImportDialog", () => {
 
   it("renders upload step with file upload button", () => {
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
-    expect(screen.getByText("Bulk Import Transactions")).toBeInTheDocument();
+    expect(screen.getByText("Bulk Import Accounts & Transactions")).toBeInTheDocument();
     expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
-    expect(screen.getByText(/Upload a CSV with transactions/)).toBeInTheDocument();
+    expect(screen.getByText(/Import transactions from a bank export or spreadsheet/)).toBeInTheDocument();
   });
 
   it("file upload goes to column mapping step", async () => {
@@ -78,7 +78,7 @@ describe("BulkCsvImportDialog", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Verify column assignments/)).toBeTruthy();
+      expect(screen.getByText(/We auto-detected your columns/)).toBeTruthy();
       const table = screen.getByRole("table");
       expect(within(table).getByText("Column")).toBeInTheDocument();
       expect(within(table).getByText("Sample")).toBeInTheDocument();
@@ -144,7 +144,7 @@ describe("BulkCsvImportDialog", () => {
     await user.click(screen.getByText("Next"));
 
     await waitFor(() => {
-      expect(screen.getByText(/categories found in CSV/)).toBeInTheDocument();
+      expect(screen.getByText(/categories found in your CSV/)).toBeInTheDocument();
       expect(screen.getByText("Food & Dining")).toBeInTheDocument();
       expect(screen.getByText("Crypto Fees")).toBeInTheDocument();
       expect(screen.getByText("Exact")).toBeInTheDocument();
@@ -164,7 +164,7 @@ describe("BulkCsvImportDialog", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/1 transactions ready/)).toBeInTheDocument();
+      expect(screen.getByText(/Ready to import/)).toBeInTheDocument();
     });
 
     await user.click(screen.getByText(/Import 1 transactions/));
@@ -214,7 +214,7 @@ describe("BulkCsvImportDialog", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/1 transactions ready/)).toBeInTheDocument();
+      expect(screen.getByText(/Ready to import/)).toBeInTheDocument();
     });
   });
 

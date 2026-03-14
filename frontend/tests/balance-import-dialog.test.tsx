@@ -37,7 +37,7 @@ describe("BalanceImportDialog", () => {
 
   it("renders upload step with title and file picker", () => {
     renderWithProviders(<BalanceImportDialog onClose={onClose} />);
-    expect(screen.getByText(/Import Balance History/)).toBeInTheDocument();
+    expect(screen.getByText(/Bulk Import Accounts & Balances/)).toBeInTheDocument();
     expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
   });
 

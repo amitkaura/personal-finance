@@ -1534,32 +1534,47 @@ function DataSection() {
         Export your data or clear transaction history.
       </p>
 
-      <div className="mt-5 flex items-center gap-4">
+      <div className="mt-5 grid grid-cols-3 gap-4">
         <button
           onClick={handleExport}
           disabled={exporting}
-          className="inline-flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/70"
+          className="flex flex-col items-start gap-1 rounded-lg bg-muted px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/70"
         >
-          {exporting ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
-          {exporting ? "Exporting..." : "Export Transactions (CSV)"}
+          <span className="inline-flex items-center gap-2">
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {exporting ? "Exporting..." : "Export Transactions (CSV)"}
+          </span>
+          <span className="text-xs font-normal text-muted-foreground">
+            Download all your transactions as a spreadsheet.
+          </span>
         </button>
         <button
           onClick={() => setBulkImportOpen(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/70"
+          className="flex flex-col items-start gap-1 rounded-lg bg-muted px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/70"
         >
-          <Upload className="h-4 w-4" />
-          Import Transactions (CSV)
+          <span className="inline-flex items-center gap-2">
+            <Upload className="h-4 w-4" />
+            Bulk Import Accounts &amp; Transactions
+          </span>
+          <span className="text-xs font-normal text-muted-foreground">
+            Upload bank or credit card exports. Creates accounts automatically, categorizes transactions, and skips duplicates.
+          </span>
         </button>
         <button
           onClick={() => setBalanceImportOpen(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/70"
+          className="flex flex-col items-start gap-1 rounded-lg bg-muted px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/70"
         >
-          <Upload className="h-4 w-4" />
-          Import Balance History (CSV)
+          <span className="inline-flex items-center gap-2">
+            <Upload className="h-4 w-4" />
+            Bulk Import Accounts &amp; Balances
+          </span>
+          <span className="text-xs font-normal text-muted-foreground">
+            Upload historical account balances to build your net worth timeline. Creates accounts if needed.
+          </span>
         </button>
       </div>
       {bulkImportOpen && (
@@ -1574,44 +1589,43 @@ function DataSection() {
 
       <div className="mt-6 rounded-lg border border-red-500/30 bg-red-500/5 p-4">
         <h3 className="text-sm font-semibold text-red-400">Danger Zone</h3>
-        <div className="mt-3 space-y-4">
-          <div>
-            <p className="text-xs text-muted-foreground">
-              Permanently delete all transaction records. Accounts and rules will remain.
-            </p>
-            <button
-              onClick={() => setConfirmOpen(true)}
-              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
-            >
+        <div className="mt-3 grid grid-cols-3 gap-4">
+          <button
+            onClick={() => setConfirmOpen(true)}
+            className="flex flex-col items-start gap-1 rounded-lg bg-red-600 px-4 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-red-700"
+          >
+            <span className="inline-flex items-center gap-2">
               <Trash2 className="h-4 w-4" />
               Clear All Transactions
-            </button>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">
-              Delete all financial data: accounts, transactions, budgets, goals, categories, rules, tags, and net worth history. Your login and household membership will be preserved.
-            </p>
-            <button
-              onClick={() => setConfirmResetOpen(true)}
-              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
-            >
+            </span>
+            <span className="text-xs font-normal text-red-200">
+              Permanently delete all transaction records. Accounts and rules will remain.
+            </span>
+          </button>
+          <button
+            onClick={() => setConfirmResetOpen(true)}
+            className="flex flex-col items-start gap-1 rounded-lg bg-red-600 px-4 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-red-700"
+          >
+            <span className="inline-flex items-center gap-2">
               <RotateCcw className="h-4 w-4" />
               Factory Reset
-            </button>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">
-              Permanently delete your account and all associated data. You will
-              be logged out and cannot undo this.
-            </p>
-            <button
-              onClick={() => setConfirmDeleteOpen(true)}
-              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
-            >
+            </span>
+            <span className="text-xs font-normal text-red-200">
+              Delete all financial data. Your login and household membership will be preserved.
+            </span>
+          </button>
+          <button
+            onClick={() => setConfirmDeleteOpen(true)}
+            className="flex flex-col items-start gap-1 rounded-lg bg-red-600 px-4 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-red-700"
+          >
+            <span className="inline-flex items-center gap-2">
               <UserX className="h-4 w-4" />
               Delete Account
-            </button>
-          </div>
+            </span>
+            <span className="text-xs font-normal text-red-200">
+              Permanently delete your account and all data. You will be logged out.
+            </span>
+          </button>
         </div>
       </div>
 

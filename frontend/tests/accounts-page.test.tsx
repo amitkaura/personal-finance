@@ -153,7 +153,7 @@ describe("AccountsPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Manual Checking")).toBeInTheDocument();
     });
-    const importButtons = screen.getAllByTitle("Import CSV");
+    const importButtons = screen.getAllByTitle("Import transactions from CSV");
     expect(importButtons).toHaveLength(1);
   });
 
@@ -364,10 +364,10 @@ describe("AccountsPage", () => {
       expect(screen.getByText("Manual Checking")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByTitle("Import CSV"));
+    await user.click(screen.getByTitle("Import transactions from CSV"));
 
     await waitFor(() => {
-      expect(screen.getByText(/Import CSV to Manual Checking/)).toBeInTheDocument();
+      expect(screen.getByText(/Import Transactions to Manual Checking/)).toBeInTheDocument();
       expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
     });
   });

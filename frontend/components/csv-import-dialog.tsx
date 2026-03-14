@@ -106,7 +106,7 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-xl">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Import CSV to {accountName}</h2>
+          <h2 className="text-lg font-semibold">Import Transactions to {accountName}</h2>
           <button
             onClick={onClose}
             className="rounded-md p-1 text-muted-foreground hover:text-foreground"
@@ -135,7 +135,12 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
         {step === "upload" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Upload a CSV file exported from your bank. We'll auto-detect columns.
+              Upload a CSV exported from your bank or credit card provider.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              <strong>Required columns:</strong> Date, Amount (or Debit/Credit), and Description.
+              <br />
+              <strong>Optional:</strong> Category. We&apos;ll auto-detect the column layout.
             </p>
             <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
             <button
@@ -158,7 +163,7 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
         {step === "columns" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Verify column assignments. Banks that use separate Debit/Credit columns are supported.
+              We auto-detected your columns. Verify the assignments below and fix any that look wrong. If your bank uses separate Debit and Credit columns, assign them individually.
             </p>
             <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
               <table className="w-full text-xs">
@@ -233,11 +238,12 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
         {/* ── Preview step ── */}
         {step === "preview" && (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              {mappedRows.length} transactions ready to import.
+            <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground space-y-1">
+              <p>{mappedRows.length} transactions ready to import. Duplicates will be skipped.
               {rawRows.length - 1 - mappedRows.length > 0 &&
-                ` (${rawRows.length - 1 - mappedRows.length} rows skipped due to invalid data)`}
-            </p>
+                ` (${rawRows.length - 1 - mappedRows.length} rows skipped due to invalid data)`}</p>
+              <p>Uncategorized transactions will be auto-categorized {llmConfig?.configured ? "by rules and AI" : "by rules"} after import.</p>
+            </div>
 
             <div className="max-h-60 overflow-y-auto rounded-lg border border-border text-xs">
               <table className="w-full">
