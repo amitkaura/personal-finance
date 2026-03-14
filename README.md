@@ -48,6 +48,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Manual "auto-categorize" button with streaming progress bar (current/total, merchant name, assigned category) and tooltip describing the AI/rules categorization process
 - **Delete confirmation** -- manual transaction deletion requires confirmation via dialog; Plaid-synced transactions are protected
 - **Rule suggestion on categorize** -- after manually categorizing a transaction, an inline card offers to create a category rule from the merchant name with multiple keyword options (full name, cleaned name, progressive word combinations); skipped if a matching rule already exists
+- **Inline transaction editing** -- pencil button on every transaction row expands an inline form to edit merchant name, category, amount (with expense/income toggle), date, and notes; only one row editable at a time; category change from null triggers rule suggestion
 
 ### Hybrid Categorization
 1. **Rule-based** -- user-defined keyword-to-category mappings checked first
@@ -568,7 +569,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (341 tests across 34 files):**
+**What's tested (348 tests across 34 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -576,7 +577,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `rule-utils` | 11 | Keyword option generation: full name, cleaned name, progressive word combos, dedup, edge cases |
 | `settings-page` | 17 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
-| `transactions-page` | 19 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists) |
+| `transactions-page` | 26 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion) |
 | `sidebar` | 12 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
 | `accounts-page` | 20 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form with subtype selector, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid, friendly type/subtype labels |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |

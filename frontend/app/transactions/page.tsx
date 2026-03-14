@@ -14,6 +14,7 @@ import {
   Plus,
   Trash2,
   SlidersHorizontal,
+  Pencil,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
@@ -65,6 +66,7 @@ export default function TransactionsPage() {
     selectedKeyword: string;
   } | null>(null);
   const [ruleCreated, setRuleCreated] = useState(false);
+  const [editingTxnId, setEditingTxnId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!filtersOpen) return;
@@ -156,6 +158,15 @@ export default function TransactionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       setShowAddForm(false);
+    },
+  });
+
+  const editMutation = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: { category?: string; merchant_name?: string; amount?: number; date?: string; notes?: string } }) =>
+      api.updateTransaction(id, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      setEditingTxnId(null);
     },
   });
 
@@ -529,6 +540,31 @@ export default function TransactionsPage() {
                 setRuleCreated(false);
                 setRuleSuggestion({ merchantName, category, selectedKeyword });
               }}
+              isEditing={editingTxnId === txn.id}
+              onStartEdit={() => setEditingTxnId(txn.id)}
+              onUpdate={(body) => {
+                const oldCategory = txn.category;
+                editMutation.mutate({ id: txn.id, body });
+                if (!oldCategory && body.category && txn.merchant_name) {
+                  const merchant = txn.merchant_name;
+                  const hasMatchingRule = (rules ?? []).some((r) => {
+                    const flags = r.case_sensitive ? "" : "i";
+                    try {
+                      return new RegExp(`\\b${r.keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, flags).test(merchant);
+                    } catch { return false; }
+                  });
+                  if (!hasMatchingRule) {
+                    const opts = generateKeywordOptions(merchant);
+                    if (opts.length > 0) {
+                      const keyword = opts.length > 1 ? opts[opts.length - 2] : opts[0];
+                      setRuleCreated(false);
+                      setRuleSuggestion({ merchantName: merchant, category: body.category, selectedKeyword: keyword });
+                    }
+                  }
+                }
+              }}
+              onCancelEdit={() => setEditingTxnId(null)}
+              accountName={accounts?.find((a) => a.id === txn.account_id)?.name}
             />
           ))}
         </div>
@@ -602,6 +638,11 @@ function TransactionRow({
   rules = [],
   onCreateRule,
   onSuggestRule,
+  isEditing = false,
+  onStartEdit,
+  onUpdate,
+  onCancelEdit,
+  accountName,
 }: {
   txn: Transaction;
   categories: string[];
@@ -613,6 +654,11 @@ function TransactionRow({
   rules?: CategoryRule[];
   onCreateRule?: (keyword: string, category: string) => void;
   onSuggestRule?: (merchantName: string, category: string, selectedKeyword: string) => void;
+  isEditing?: boolean;
+  onStartEdit?: () => void;
+  onUpdate?: (body: { category?: string; merchant_name?: string; amount?: number; date?: string; notes?: string }) => void;
+  onCancelEdit?: () => void;
+  accountName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -629,7 +675,7 @@ function TransactionRow({
   }, [open]);
 
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-4 py-3">
+    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card px-4 py-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-medium">
@@ -742,6 +788,16 @@ function TransactionRow({
         </div>
       )}
 
+      {editable && (
+        <button
+          onClick={() => onStartEdit?.()}
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          title="Edit transaction"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      )}
+
       {txn.is_manual && editable && (
         <button
           onClick={() => onDelete(txn.id)}
@@ -752,6 +808,138 @@ function TransactionRow({
         </button>
       )}
 
+      {isEditing && (
+        <InlineEditForm
+          txn={txn}
+          categories={categories}
+          onSave={(body) => onUpdate?.(body)}
+          onCancel={() => onCancelEdit?.()}
+          accountName={accountName}
+        />
+      )}
+    </div>
+  );
+}
+
+function InlineEditForm({
+  txn,
+  categories,
+  onSave,
+  onCancel,
+  accountName,
+}: {
+  txn: Transaction;
+  categories: string[];
+  onSave: (body: { category?: string; merchant_name?: string; amount?: number; date?: string; notes?: string }) => void;
+  onCancel: () => void;
+  accountName?: string;
+}) {
+  const [merchant, setMerchant] = useState(txn.merchant_name || "");
+  const [category, setCategory] = useState(txn.category || "");
+  const [amount, setAmount] = useState(Math.abs(txn.amount).toFixed(2));
+  const [isExpense, setIsExpense] = useState(txn.amount >= 0);
+  const [date, setDate] = useState(txn.date);
+  const [notes, setNotes] = useState(txn.notes || "");
+
+  const inputClass =
+    "w-full rounded-md bg-muted px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground";
+
+  return (
+    <div className="w-full border-t border-border pt-3 mt-1">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">Merchant</label>
+          <input
+            type="text"
+            value={merchant}
+            onChange={(e) => setMerchant(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">Category</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className={`${inputClass} cursor-pointer`}
+          >
+            <option value="">Select category</option>
+            {categories.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">Amount</label>
+          <div className="flex gap-2">
+            <select
+              value={isExpense ? "expense" : "income"}
+              onChange={(e) => setIsExpense(e.target.value === "expense")}
+              className="rounded-md bg-muted px-2 py-2 text-sm text-foreground outline-none cursor-pointer"
+            >
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+            </select>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              step="0.01"
+              min="0"
+              className={inputClass}
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs text-muted-foreground mb-1">Notes</label>
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Add a note..."
+            className={inputClass}
+          />
+        </div>
+      </div>
+      {accountName && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Account: <span className="font-medium text-foreground">{accountName}</span>
+        </p>
+      )}
+      <div className="mt-3 flex items-center gap-2 justify-end">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const numAmount = parseFloat(amount);
+            onSave({
+              merchant_name: merchant || undefined,
+              category: category || undefined,
+              amount: isNaN(numAmount) ? undefined : (isExpense ? Math.abs(numAmount) : -Math.abs(numAmount)),
+              date,
+              notes: notes || undefined,
+            });
+          }}
+          className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent/80"
+        >
+          Save
+        </button>
+      </div>
     </div>
   );
 }

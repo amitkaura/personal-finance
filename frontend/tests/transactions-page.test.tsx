@@ -367,6 +367,141 @@ describe("TransactionsPage", () => {
     });
   });
 
+  // --- Inline transaction editing ---
+
+  it("renders an edit button on every transaction row", async () => {
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    const editButtons = screen.getAllByTitle("Edit transaction");
+    expect(editButtons.length).toBe(TEST_TRANSACTIONS.length);
+  });
+
+  it("shows inline edit form with pre-filled values when edit button is clicked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    const editButtons = screen.getAllByTitle("Edit transaction");
+    await user.click(editButtons[0]);
+
+    expect(screen.getByDisplayValue("Coffee Shop")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("42.50")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("2025-03-01")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument();
+  });
+
+  it("pre-fills notes field for transactions that have notes", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Grocery Store")).toBeInTheDocument();
+    });
+
+    const editButtons = screen.getAllByTitle("Edit transaction");
+    await user.click(editButtons[2]);
+
+    expect(screen.getByDisplayValue("Weekly groceries")).toBeInTheDocument();
+  });
+
+  it("calls updateTransaction with changed fields on Save", async () => {
+    const user = userEvent.setup();
+    mockApi.updateTransaction.mockResolvedValue({
+      ...TEST_TRANSACTIONS[0],
+      merchant_name: "Updated Coffee",
+    });
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    const editButtons = screen.getAllByTitle("Edit transaction");
+    await user.click(editButtons[0]);
+
+    const merchantInput = screen.getByDisplayValue("Coffee Shop");
+    await user.clear(merchantInput);
+    await user.type(merchantInput, "Updated Coffee");
+
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(mockApi.updateTransaction).toHaveBeenCalledWith(1, expect.objectContaining({
+        merchant_name: "Updated Coffee",
+      }));
+    });
+  });
+
+  it("closes the edit form on Cancel without saving", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    const editButtons = screen.getAllByTitle("Edit transaction");
+    await user.click(editButtons[0]);
+    expect(screen.getByDisplayValue("Coffee Shop")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue("Coffee Shop")).not.toBeInTheDocument();
+    });
+    expect(mockApi.updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it("only allows one edit form open at a time", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
+    });
+
+    const editButtons = screen.getAllByTitle("Edit transaction");
+    await user.click(editButtons[0]);
+    expect(screen.getByDisplayValue("Coffee Shop")).toBeInTheDocument();
+
+    await user.click(editButtons[2]);
+    expect(screen.queryByDisplayValue("Coffee Shop")).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("Grocery Store")).toBeInTheDocument();
+  });
+
+  it("triggers rule suggestion when category is changed from null via edit form", async () => {
+    const user = userEvent.setup();
+    mockApi.updateTransaction.mockResolvedValue({
+      ...TEST_TRANSACTIONS[1],
+      category: "Transportation",
+    });
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Employer Inc")).toBeInTheDocument();
+    });
+
+    const editButtons = screen.getAllByTitle("Edit transaction");
+    await user.click(editButtons[1]);
+
+    const catLabel = screen.getByText("Category");
+    const catSelect = catLabel.parentElement!.querySelector("select")!;
+    await user.selectOptions(catSelect, "Transportation");
+
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(mockApi.updateTransaction).toHaveBeenCalledWith(2, expect.objectContaining({
+        category: "Transportation",
+      }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/always categorize/i)).toBeInTheDocument();
+    });
+  });
+
   it("does not show rule suggestion when matching rule already exists", async () => {
     mockApi.getRules.mockResolvedValue([
       { id: 1, keyword: "Employer", category: "Transportation", case_sensitive: false },
