@@ -8,8 +8,14 @@ const mockApi = vi.hoisted(() => ({
   streamImportTransactions: vi.fn(),
   getSettings: vi.fn(),
 }));
+const mockStartAutoCategorize = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/api", () => ({ api: mockApi }));
+vi.mock("@/components/categorization-progress-provider", () => ({
+  useCategorizationProgress: () => ({
+    startAutoCategorize: mockStartAutoCategorize,
+  }),
+}));
 
 function makeCsvFile(content: string, name = "test.csv"): File {
   return new File([content], name, { type: "text/csv" });
@@ -141,7 +147,7 @@ describe("CsvImportDialog", () => {
           },
         ],
         expect.any(Function),
-        false,
+        true,
       );
     });
   });
@@ -304,5 +310,59 @@ describe("CsvImportDialog", () => {
     const closeBtn = screen.getByRole("button", { name: "" });
     await user.click(closeBtn);
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("triggers auto-categorize after import when uncategorized transactions exist", async () => {
+    mockApi.streamImportTransactions.mockResolvedValue({
+      type: "complete",
+      imported: 3,
+      skipped: 0,
+      categorized: 1,
+      errors: [],
+    });
+    const user = userEvent.setup();
+    renderWithProviders(
+      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
+    );
+
+    await advanceToPreview(
+      user,
+      "Date,Description,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n2026-01-17,Gas,35.00\n",
+    );
+
+    await waitFor(() => expect(screen.getByText(/Import 3 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 3 transactions/));
+
+    await waitFor(() => {
+      expect(screen.getByText("Import complete")).toBeInTheDocument();
+      expect(mockStartAutoCategorize).toHaveBeenCalled();
+    });
+  });
+
+  it("does not trigger auto-categorize when all transactions already categorized", async () => {
+    mockApi.streamImportTransactions.mockResolvedValue({
+      type: "complete",
+      imported: 2,
+      skipped: 0,
+      categorized: 2,
+      errors: [],
+    });
+    const user = userEvent.setup();
+    renderWithProviders(
+      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
+    );
+
+    await advanceToPreview(
+      user,
+      "Date,Description,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n",
+    );
+
+    await waitFor(() => expect(screen.getByText(/Import 2 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 2 transactions/));
+
+    await waitFor(() => {
+      expect(screen.getByText("Import complete")).toBeInTheDocument();
+    });
+    expect(mockStartAutoCategorize).not.toHaveBeenCalled();
   });
 });

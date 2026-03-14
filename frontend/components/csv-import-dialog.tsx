@@ -4,6 +4,7 @@ import { useState, useRef, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, X, Loader2, CheckCircle2, AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
 import { api, ImportProgressEvent, ImportCompleteEvent } from "@/lib/api";
+import { useCategorizationProgress } from "@/components/categorization-progress-provider";
 import {
   parseCsv,
   guessRole,
@@ -23,6 +24,7 @@ type Step = "upload" | "columns" | "preview" | "importing" | "result";
 
 export default function CsvImportDialog({ accountId, accountName, onClose }: Props) {
   const queryClient = useQueryClient();
+  const { startAutoCategorize } = useCategorizationProgress();
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>("upload");
   const [rawRows, setRawRows] = useState<string[][]>([]);
@@ -31,7 +33,6 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
   const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
   const [result, setResult] = useState<ImportCompleteEvent | null>(null);
   const [negateAmounts, setNegateAmounts] = useState(false);
-  const [skipLlm, setSkipLlm] = useState(false);
 
   const headers = rawRows[0] ?? [];
 
@@ -80,13 +81,16 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
         accountId,
         mappedRows,
         (evt) => setProgress(evt),
-        skipLlm,
+        true,
       );
       setResult(complete);
       setStep("result");
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
+      if (complete.imported > complete.categorized) {
+        startAutoCategorize();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
       setStep("preview");
@@ -278,24 +282,9 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
               </span>
             </label>
 
-            <div className="rounded-lg border border-border bg-muted/50 p-3 text-xs text-muted-foreground space-y-2">
-              <p>
-                AI categorization uses your LLM to categorize each transaction during import.
-                This is thorough but slower. You can skip it now and use Auto-Categorize on the
-                transactions page later.
-              </p>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={skipLlm}
-                  onChange={(e) => setSkipLlm(e.target.checked)}
-                  className="rounded border-border"
-                />
-                <span className="font-medium text-foreground">
-                  Skip AI categorization (faster import)
-                </span>
-              </label>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Transactions will be auto-categorized in the background after import.
+            </p>
 
             {error && (
               <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-xs text-red-400">

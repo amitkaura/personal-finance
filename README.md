@@ -569,7 +569,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (348 tests across 34 files):**
+**What's tested (352 tests across 34 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -581,8 +581,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `sidebar` | 12 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
 | `accounts-page` | 20 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form with subtype selector, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid, friendly type/subtype labels |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
-| `bulk-csv-import-dialog` | 11 | Upload, preview, account detection, import flow, progress, results, errors |
-| `csv-import-dialog` | 10 | Upload, preview, import, progress, results, errors, cancel/done |
+| `bulk-csv-import-dialog` | 17 | Upload, preview, account detection, category matching, import flow, progress, results, errors, payload validation, auto-categorize trigger after import |
+| `csv-import-dialog` | 16 | Upload, column mapping, debit/credit, preview, import, progress, results, errors, cancel/done, auto-categorize trigger after import |
 | `goals-page` | 10 | Title, empty state, active/completed sections, progress bar, target date, create dialog, shared summary, delete confirm |
 | `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
 | `reports-page` | 8 | Title, period selector, loading, summary cards, category bars, empty states, top merchants |
