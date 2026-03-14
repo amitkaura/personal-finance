@@ -2,7 +2,7 @@ import type {
   Account, AccountSummary, Budget, BudgetConflict, BudgetSummary,
   CategoryRule, Goal, GoalContribution, GoalsResponse,
   Household, HouseholdInvitation, MonthlyTrend, NetWorthSnapshot,
-  PlaidConfig, PlaidConnection, RecurringTransaction, SpendingByCategory,
+  LLMConfig, PlaidConfig, PlaidConnection, RecurringTransaction, SpendingByCategory,
   SpendingPreference, Tag, TopMerchant, Transaction, User, UserProfile,
   UserSettings, ViewScope,
 } from "./types";
@@ -445,7 +445,7 @@ export const api = {
   // Settings
   getSettings: () => fetcher<UserSettings>("/settings"),
 
-  updateSettings: (body: Partial<UserSettings> & { llm_api_key?: string }) =>
+  updateSettings: (body: Partial<UserSettings>) =>
     fetcher<UserSettings>("/settings", {
       method: "PUT",
       body: JSON.stringify(body),
@@ -462,6 +462,18 @@ export const api = {
 
   deletePlaidConfig: () =>
     fetchVoid("/settings/plaid-config", { method: "DELETE" }),
+
+  // LLM config
+  getLLMConfig: () => fetcher<LLMConfig>("/settings/llm-config"),
+
+  updateLLMConfig: (body: { llm_base_url: string; llm_api_key: string; llm_model: string }) =>
+    fetcher<LLMConfig>("/settings/llm-config", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  deleteLLMConfig: () =>
+    fetchVoid("/settings/llm-config", { method: "DELETE" }),
 
   // Category rules
   getRules: () => fetcher<CategoryRule[]>("/settings/rules"),

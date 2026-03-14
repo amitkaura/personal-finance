@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, X, Loader2, CheckCircle2, AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
 import { api, ImportProgressEvent, ImportCompleteEvent } from "@/lib/api";
 import { useCategorizationProgress } from "@/components/categorization-progress-provider";
+import type { LLMConfig } from "@/lib/types";
 import {
   parseCsv,
   guessRole,
@@ -25,6 +26,7 @@ type Step = "upload" | "columns" | "preview" | "importing" | "result";
 export default function CsvImportDialog({ accountId, accountName, onClose }: Props) {
   const queryClient = useQueryClient();
   const { startAutoCategorize } = useCategorizationProgress();
+  const { data: llmConfig } = useQuery({ queryKey: ["llm-config"], queryFn: api.getLLMConfig });
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>("upload");
   const [rawRows, setRawRows] = useState<string[][]>([]);
@@ -283,7 +285,9 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
             </label>
 
             <p className="text-xs text-muted-foreground">
-              Transactions will be auto-categorized in the background after import.
+              {llmConfig?.configured
+                ? "Transactions will be auto-categorized in the background after import."
+                : "Transactions will be categorized by rules after import. Configure AI in Settings for smarter categorization."}
             </p>
 
             {error && (

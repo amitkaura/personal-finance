@@ -33,6 +33,7 @@ from app.models import (
     Household,
     HouseholdInvitation,
     HouseholdMember,
+    HouseholdLLMConfig,
     HouseholdPlaidConfig,
     NetWorthSnapshot,
     PlaidItem,
@@ -167,9 +168,6 @@ class SettingsUpdate(BaseModel):
     sync_hour: Optional[int] = None
     sync_minute: Optional[int] = None
     sync_timezone: Optional[str] = None
-    llm_base_url: Optional[str] = None
-    llm_api_key: Optional[str] = None
-    llm_model: Optional[str] = None
 
 
 def _settings_to_dict(s: UserSettings) -> dict:
@@ -181,9 +179,6 @@ def _settings_to_dict(s: UserSettings) -> dict:
         "sync_hour": s.sync_hour,
         "sync_minute": s.sync_minute,
         "sync_timezone": s.sync_timezone,
-        "llm_base_url": s.llm_base_url,
-        "llm_api_key_set": bool(s.llm_api_key),
-        "llm_model": s.llm_model,
     }
 
 
@@ -213,12 +208,7 @@ def update_settings(
     if "sync_minute" in data and data["sync_minute"] is not None:
         if not (0 <= data["sync_minute"] <= 59):
             raise HTTPException(status_code=400, detail="sync_minute must be 0-59")
-    if "llm_base_url" in data and data["llm_base_url"]:
-        _validate_llm_base_url(data["llm_base_url"])
-
     for field, value in data.items():
-        if field == "llm_api_key" and value:
-            value = encrypt_token(value)
         setattr(settings, field, value)
         if field in sync_fields:
             sync_changed = True
@@ -338,6 +328,111 @@ def delete_plaid_config(
     ).first()
     if not config:
         raise HTTPException(status_code=404, detail="Plaid config not found")
+
+    session.delete(config)
+    session.commit()
+
+
+# ── LLM Config (per-household) ─────────────────────────────────
+
+
+class LLMConfigUpdate(BaseModel):
+    llm_base_url: str
+    llm_api_key: str
+    llm_model: str
+
+
+def _llm_config_response(config: Optional[HouseholdLLMConfig]) -> dict:
+    if not config:
+        return {"configured": False, "llm_base_url": None, "llm_model": None, "api_key_last4": None}
+    api_key = decrypt_token(config.encrypted_api_key)
+    return {
+        "configured": True,
+        "llm_base_url": config.llm_base_url,
+        "llm_model": config.llm_model,
+        "api_key_last4": api_key[-4:] if len(api_key) >= 4 else api_key,
+    }
+
+
+@router.get("/llm-config")
+def get_llm_config(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        return _llm_config_response(None)
+
+    config = session.exec(
+        select(HouseholdLLMConfig).where(
+            HouseholdLLMConfig.household_id == member.household_id
+        )
+    ).first()
+    return _llm_config_response(config)
+
+
+@router.put("/llm-config")
+def update_llm_config(
+    body: LLMConfigUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Not in a household")
+    if member.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the household owner can manage LLM config")
+
+    _validate_llm_base_url(body.llm_base_url)
+
+    config = session.exec(
+        select(HouseholdLLMConfig).where(
+            HouseholdLLMConfig.household_id == member.household_id
+        )
+    ).first()
+
+    if config:
+        config.llm_base_url = body.llm_base_url
+        config.encrypted_api_key = encrypt_token(body.llm_api_key)
+        config.llm_model = body.llm_model
+    else:
+        config = HouseholdLLMConfig(
+            household_id=member.household_id,
+            llm_base_url=body.llm_base_url,
+            encrypted_api_key=encrypt_token(body.llm_api_key),
+            llm_model=body.llm_model,
+        )
+
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return _llm_config_response(config)
+
+
+@router.delete("/llm-config", status_code=204)
+def delete_llm_config(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Not in a household")
+    if member.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the household owner can manage LLM config")
+
+    config = session.exec(
+        select(HouseholdLLMConfig).where(
+            HouseholdLLMConfig.household_id == member.household_id
+        )
+    ).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="LLM config not found")
 
     session.delete(config)
     session.commit()

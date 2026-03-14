@@ -79,9 +79,6 @@ export const TEST_SETTINGS: UserSettings = {
   sync_hour: 6,
   sync_minute: 0,
   sync_timezone: "America/Toronto",
-  llm_base_url: "",
-  llm_api_key_set: false,
-  llm_model: "",
 };
 
 export const TEST_ACCOUNT: Account = {

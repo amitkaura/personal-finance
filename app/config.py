@@ -22,11 +22,6 @@ class Settings(BaseSettings):
     # JWT session secret
     jwt_secret: str = ""
 
-    # LLM categorization (OpenAI-compatible API — works with OpenAI, Ollama, etc.)
-    llm_base_url: str = "https://api.openai.com/v1"
-    llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
-
     # Scheduled sync (cron-style, runs daily by default at midnight)
     sync_enabled: bool = True
     sync_hour: int = 0

@@ -15,6 +15,7 @@ from app.models import (
     Household,
     HouseholdInvitation,
     HouseholdMember,
+    HouseholdLLMConfig,
     HouseholdPlaidConfig,
     PlaidItem,
     SpendingPreference,
@@ -28,6 +29,7 @@ from tests.conftest import (
     make_goal,
     make_household,
     make_invitation,
+    make_llm_config,
     make_plaid_config,
     make_spending_preference,
     make_transaction,
@@ -603,3 +605,45 @@ def test_leave_last_member_deletes_household(auth_client, session):
     assert len(session.exec(select(GoalAccountLink).where(GoalAccountLink.goal_id == goal.id)).all()) == 0
     assert len(session.exec(select(GoalContribution).where(GoalContribution.goal_id == goal.id)).all()) == 0
     assert len(session.exec(select(HouseholdInvitation).where(HouseholdInvitation.household_id == household.id)).all()) == 0
+
+
+def test_accept_dissolves_solo_household_with_llm_config(auth_client, session):
+    """Solo household's LLMConfig is also deleted when dissolved on accept."""
+    client, owner = auth_client
+    partner = make_user(session, email="partner@test.com")
+
+    solo_hh = make_household(session, partner, name="Solo HH")
+    make_llm_config(session, solo_hh)
+    solo_hh_id = solo_hh.id
+
+    household = make_household(session, owner)
+    inv = make_invitation(session, household, owner, "partner@test.com")
+
+    try:
+        app.dependency_overrides[get_current_user] = lambda: partner
+        resp = client.post(f"/api/v1/household/invitations/{inv.token}/accept")
+        assert resp.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    configs = session.exec(
+        select(HouseholdLLMConfig).where(HouseholdLLMConfig.household_id == solo_hh_id)
+    ).all()
+    assert len(configs) == 0
+
+
+def test_leave_last_member_deletes_llm_config(auth_client, session):
+    """LLMConfig is cleaned up when the last member leaves and household is destroyed."""
+    client, owner = auth_client
+    household = make_household(session, owner)
+    make_llm_config(session, household)
+    hh_id = household.id
+
+    resp = client.delete("/api/v1/household/leave")
+    assert resp.status_code == 200
+
+    assert session.get(Household, hh_id) is None
+    configs = session.exec(
+        select(HouseholdLLMConfig).where(HouseholdLLMConfig.household_id == hh_id)
+    ).all()
+    assert len(configs) == 0

@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
     _validate_startup_settings()
     await _initialize_rate_limiter_backend()
     create_db_and_tables()
+    _migrate_llm_fields_to_household()
     _backfill_orphan_households()
     settings = get_settings()
     if settings.run_scheduler:
@@ -45,6 +46,26 @@ async def lifespan(app: FastAPI):
     if settings.run_scheduler:
         stop_scheduler()
     await _shutdown_rate_limiter_backend()
+
+
+def _migrate_llm_fields_to_household() -> None:
+    """Drop legacy LLM columns from user_settings (moved to household_llm_configs)."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    stmts = [
+        "ALTER TABLE user_settings DROP COLUMN IF EXISTS llm_base_url",
+        "ALTER TABLE user_settings DROP COLUMN IF EXISTS llm_api_key",
+        "ALTER TABLE user_settings DROP COLUMN IF EXISTS llm_model",
+    ]
+    with engine.connect() as conn:
+        for stmt in stmts:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass
+        conn.commit()
+    logger.info("LLM field migration check complete")
 
 
 def _backfill_orphan_households() -> None:

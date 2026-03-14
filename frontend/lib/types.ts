@@ -240,9 +240,6 @@ export interface UserSettings {
   sync_hour: number;
   sync_minute: number;
   sync_timezone: string;
-  llm_base_url: string;
-  llm_api_key_set: boolean;
-  llm_model: string;
 }
 
 export interface CategoryRule {
@@ -299,6 +296,13 @@ export interface HouseholdInvitation {
   invited_by_name: string;
   invited_by_picture: string | null;
   status: string;
+}
+
+export interface LLMConfig {
+  configured: boolean;
+  llm_base_url: string | null;
+  llm_model: string | null;
+  api_key_last4: string | null;
 }
 
 export interface PlaidConfig {

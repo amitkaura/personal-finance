@@ -27,6 +27,7 @@ type Step = "upload" | "columns" | "accounts" | "categories" | "preview" | "impo
 export default function BulkCsvImportDialog({ onClose }: Props) {
   const queryClient = useQueryClient();
   const { startAutoCategorize } = useCategorizationProgress();
+  const { data: llmConfig } = useQuery({ queryKey: ["llm-config"], queryFn: api.getLLMConfig });
   const fileRef = useRef<HTMLInputElement>(null);
   const { household } = useHousehold();
   const [step, setStep] = useState<Step>("upload");
@@ -501,7 +502,9 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
             </label>
 
             <p className="text-xs text-muted-foreground">
-              Transactions will be auto-categorized in the background after import.
+              {llmConfig?.configured
+                ? "Transactions will be auto-categorized in the background after import."
+                : "Transactions will be categorized by rules after import. Configure AI in Settings for smarter categorization."}
             </p>
 
             {error && (

@@ -14,10 +14,9 @@ from typing import Optional
 import httpx
 from sqlmodel import Session, select
 
-from app.config import get_settings
 from app.crypto import decrypt_token
 from app.database import engine
-from app.models import Account, CategoryRule, Transaction, UserSettings
+from app.models import Account, CategoryRule, HouseholdLLMConfig, HouseholdMember, Transaction
 
 logger = logging.getLogger(__name__)
 
@@ -86,22 +85,24 @@ def categorize_by_llm(transaction: Transaction, user_id: int) -> str | None:
 
 
 def _get_llm_config(user_id: int) -> tuple[str, str, str]:
-    """Return (base_url, api_key, model) from DB settings, falling back to env."""
+    """Return (base_url, api_key, model) from household LLM config."""
     try:
         with Session(engine) as session:
-            db = session.exec(
-                select(UserSettings).where(UserSettings.user_id == user_id)
+            member = session.exec(
+                select(HouseholdMember).where(HouseholdMember.user_id == user_id)
             ).first()
-            if db and db.llm_api_key:
-                try:
-                    api_key = decrypt_token(db.llm_api_key)
-                except Exception:
-                    api_key = db.llm_api_key
-                return db.llm_base_url, api_key, db.llm_model
+            if not member:
+                return ("", "", "")
+            config = session.exec(
+                select(HouseholdLLMConfig).where(
+                    HouseholdLLMConfig.household_id == member.household_id
+                )
+            ).first()
+            if not config or not config.encrypted_api_key:
+                return ("", "", "")
+            return (config.llm_base_url, decrypt_token(config.encrypted_api_key), config.llm_model)
     except Exception:
-        pass
-    env = get_settings()
-    return env.llm_base_url, env.llm_api_key, env.llm_model
+        return ("", "", "")
 
 
 _LLM_BATCH_SIZE = 25

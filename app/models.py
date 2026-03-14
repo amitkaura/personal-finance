@@ -153,11 +153,6 @@ class UserSettings(SQLModel, table=True):
     sync_minute: int = 0
     sync_timezone: str = "America/Toronto"
 
-    # LLM categorization
-    llm_base_url: str = "https://api.openai.com/v1"
-    llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
-
 
 # ── Budgets ────────────────────────────────────────────────────
 
@@ -332,6 +327,18 @@ class HouseholdPlaidConfig(SQLModel, table=True):
     encrypted_client_id: str
     encrypted_secret: str
     plaid_env: str = Field(default="sandbox")
+
+
+class HouseholdLLMConfig(SQLModel, table=True):
+    """Per-household LLM API credentials (API key encrypted at rest)."""
+
+    __tablename__ = "household_llm_configs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    household_id: int = Field(foreign_key="households.id", unique=True, index=True)
+    llm_base_url: str = Field(default="https://api.openai.com/v1")
+    encrypted_api_key: str
+    llm_model: str = Field(default="gpt-4o-mini")
 
 
 class HouseholdInvitation(SQLModel, table=True):

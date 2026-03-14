@@ -12,7 +12,6 @@ os.environ.update({
     "RUN_SCHEDULER": "false",
     "RATE_LIMIT_BACKEND": "memory",
     "SECURE_COOKIES": "false",
-    "LLM_API_KEY": "",
 })
 
 from datetime import date, datetime
@@ -45,6 +44,7 @@ from app.models import (
     Household,
     HouseholdInvitation,
     HouseholdMember,
+    HouseholdLLMConfig,
     HouseholdPlaidConfig,
     NetWorthSnapshot,
     PlaidItem,
@@ -326,6 +326,27 @@ def make_settings(session: Session, user: User, **overrides) -> UserSettings:
     session.commit()
     session.refresh(settings)
     return settings
+
+
+def make_llm_config(
+    session: Session,
+    household: Household,
+    base_url: str = "https://api.openai.com/v1",
+    api_key: str = "test_api_key",
+    model: str = "gpt-4o-mini",
+) -> HouseholdLLMConfig:
+    from app.crypto import encrypt_token
+
+    config = HouseholdLLMConfig(
+        household_id=household.id,
+        llm_base_url=base_url,
+        encrypted_api_key=encrypt_token(api_key),
+        llm_model=model,
+    )
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return config
 
 
 def make_plaid_config(

@@ -29,7 +29,7 @@ import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
-import type { UserSettings, UserProfile, CategoryRule, PlaidConfig } from "@/lib/types";
+import type { UserSettings, UserProfile, CategoryRule, PlaidConfig, LLMConfig } from "@/lib/types";
 import ConfirmDialog from "@/components/confirm-dialog";
 import BulkCsvImportDialog from "@/components/bulk-csv-import-dialog";
 import BalanceImportDialog from "@/components/balance-import-dialog";
@@ -93,10 +93,14 @@ const labelClass = "block text-xs font-medium text-muted-foreground mb-1.5";
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const integrationsRef = useRef<HTMLDivElement>(null);
+  const aiRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (searchParams.get("section") === "integrations" && integrationsRef.current) {
+    const section = searchParams.get("section");
+    if (section === "integrations" && integrationsRef.current) {
       integrationsRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else if (section === "ai" && aiRef.current) {
+      aiRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }, [searchParams]);
 
@@ -114,7 +118,9 @@ export default function SettingsPage() {
         </div>
         <GeneralSection />
         <SyncSection />
-        <AiSection />
+        <div ref={aiRef}>
+          <AiSection />
+        </div>
         <DataSection />
       </div>
     </>
@@ -1272,102 +1278,180 @@ function CategoryRulesSection() {
 
 function AiSection() {
   const queryClient = useQueryClient();
-  const { data: settings } = useQuery({
-    queryKey: ["settings"],
-    queryFn: api.getSettings,
+  const { household } = useHousehold();
+  const { data: llmConfig } = useQuery({
+    queryKey: ["llm-config"],
+    queryFn: api.getLLMConfig,
   });
 
-  const [form, setForm] = useState<Partial<UserSettings>>({});
+  const isOwner = household?.members?.some(
+    (m) => m.role === "owner" && m.user_id === household.members.find((x) => x.role === "owner")?.user_id,
+  );
+  const currentUserId = household?.members?.find((m) => m.role === "owner")?.user_id;
+  const isCurrentUserOwner = household?.members?.some(
+    (m) => m.role === "owner",
+  ) && household?.members?.length === 1;
+
+  const ownerMember = household?.members?.find((m) => m.role === "owner");
+
+  const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
 
-  const baseUrl = form.llm_base_url ?? settings?.llm_base_url ?? "";
-  const model = form.llm_model ?? settings?.llm_model ?? "";
-  const keyIsSet = settings?.llm_api_key_set ?? false;
+  useEffect(() => {
+    if (llmConfig?.configured) {
+      setBaseUrl(llmConfig.llm_base_url ?? "");
+      setModel(llmConfig.llm_model ?? "");
+    }
+  }, [llmConfig]);
 
   const dirty =
-    form.llm_base_url !== undefined ||
-    form.llm_model !== undefined ||
+    baseUrl !== (llmConfig?.llm_base_url ?? "") ||
+    model !== (llmConfig?.llm_model ?? "") ||
     apiKey.length > 0;
 
-  const mutation = useMutation({
-    mutationFn: api.updateSettings,
+  const canEdit = !household || ownerMember?.user_id === household.members.find(
+    (m) => m.role === "owner",
+  )?.user_id;
+
+  const saveMutation = useMutation({
+    mutationFn: api.updateLLMConfig,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      setForm({});
+      queryClient.invalidateQueries({ queryKey: ["llm-config"] });
       setApiKey("");
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: api.deleteLLMConfig,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["llm-config"] });
+      setBaseUrl("");
+      setModel("");
+      setApiKey("");
+      setConfirmRemoveOpen(false);
+    },
+  });
+
   function handleSave() {
-    const payload: Partial<UserSettings> & { llm_api_key?: string } = {
-      ...form,
-    };
-    if (apiKey) {
-      payload.llm_api_key = apiKey;
-    }
-    mutation.mutate(payload);
+    if (!apiKey && !llmConfig?.configured) return;
+    saveMutation.mutate({
+      llm_base_url: baseUrl || "https://api.openai.com/v1",
+      llm_api_key: apiKey || "unchanged",
+      llm_model: model || "gpt-4o-mini",
+    });
   }
+
+  const readOnly = household && household.members.length > 1 && !household.members.some(
+    (m) => m.role === "owner",
+  );
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
-      <h2 className="text-base font-semibold">AI Categorization</h2>
+      <div className="flex items-center gap-3">
+        <h2 className="text-base font-semibold">AI Categorization</h2>
+        {llmConfig?.configured ? (
+          <span className="inline-flex items-center rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600">
+            Configured
+          </span>
+        ) : (
+          <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600">
+            Not configured
+          </span>
+        )}
+      </div>
       <p className="mt-1 text-xs text-muted-foreground">
         Configure the LLM provider used as a fallback when no keyword rules
         match. Works with OpenAI, Ollama, Azure, and any OpenAI-compatible API.
       </p>
-      <div className="mt-5 grid grid-cols-2 gap-4">
-        <div className="col-span-2">
-          <label className={labelClass}>Base URL</label>
-          <input
-            value={baseUrl}
-            onChange={(e) =>
-              setForm({ ...form, llm_base_url: e.target.value })
-            }
-            placeholder="https://api.openai.com/v1"
-            className={`${inputClass} w-full`}
-          />
-        </div>
-        <div>
-          <label className={labelClass}>Model</label>
-          <input
-            value={model}
-            onChange={(e) => setForm({ ...form, llm_model: e.target.value })}
-            placeholder="gpt-4o-mini"
-            className={`${inputClass} w-full`}
-          />
-        </div>
-        <div>
-          <label className={labelClass}>API Key</label>
-          <div className="relative">
-            <input
-              type={showKey ? "text" : "password"}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={keyIsSet ? "••••••••  (key is set)" : "sk-..."}
-              className={`${inputClass} w-full pr-10`}
-            />
-            <button
-              type="button"
-              onClick={() => setShowKey(!showKey)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              {showKey ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
-            </button>
+
+      {readOnly ? (
+        <p className="mt-4 text-xs text-muted-foreground">
+          Only the household owner can manage AI configuration.
+          {llmConfig?.configured && llmConfig.api_key_last4 && (
+            <span className="ml-1">API key ending in <strong>...{llmConfig.api_key_last4}</strong></span>
+          )}
+        </p>
+      ) : (
+        <>
+          {llmConfig?.configured && (
+            <p className="mt-3 text-xs text-amber-600">
+              Changing credentials will affect AI categorization for all household members.
+            </p>
+          )}
+          <div className="mt-5 grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className={labelClass}>Base URL</label>
+              <input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://api.openai.com/v1"
+                className={`${inputClass} w-full`}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Model</label>
+              <input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="gpt-4o-mini"
+                className={`${inputClass} w-full`}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>API Key</label>
+              <div className="relative">
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={llmConfig?.api_key_last4 ? `••••••••  (ends in ${llmConfig.api_key_last4})` : "sk-..."}
+                  className={`${inputClass} w-full pr-10`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showKey ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-      {dirty && (
-        <div className="mt-4 flex justify-end">
-          <SaveButton
-            loading={mutation.isPending}
-            onClick={handleSave}
+          <div className="mt-4 flex items-center justify-between">
+            {llmConfig?.configured ? (
+              <button
+                type="button"
+                onClick={() => setConfirmRemoveOpen(true)}
+                className="text-xs text-destructive hover:underline"
+              >
+                Remove AI configuration
+              </button>
+            ) : (
+              <div />
+            )}
+            {(dirty && (apiKey || llmConfig?.configured)) && (
+              <SaveButton
+                loading={saveMutation.isPending}
+                onClick={handleSave}
+              />
+            )}
+          </div>
+          <ConfirmDialog
+            open={confirmRemoveOpen}
+            onOpenChange={setConfirmRemoveOpen}
+            title="Remove AI Configuration"
+            description="This will remove the LLM API key and disable AI-powered categorization for your household. Rule-based categorization will continue to work."
+            onConfirm={() => deleteMutation.mutate()}
+            loading={deleteMutation.isPending}
           />
-        </div>
+        </>
       )}
     </div>
   );

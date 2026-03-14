@@ -1,6 +1,8 @@
 "use client";
 
 import { CheckCircle, AlertCircle, Loader2, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { useCategorizationProgress } from "@/components/categorization-progress-provider";
 
 export default function CategorizationDrawer() {
@@ -17,6 +19,7 @@ export default function CategorizationDrawer() {
     errorMessage,
     dismiss,
   } = useCategorizationProgress();
+  const { data: llmConfig } = useQuery({ queryKey: ["llm-config"], queryFn: api.getLLMConfig });
 
   if (state === "idle") return null;
 
@@ -85,6 +88,11 @@ export default function CategorizationDrawer() {
                 {result.categorized} categorized
                 {result.skipped > 0 && `, ${result.skipped} skipped`}.
               </p>
+              {result.skipped > 0 && !llmConfig?.configured && (
+                <p className="text-xs text-muted-foreground">
+                  Tip: <a href="/settings?section=ai" className="underline hover:text-foreground">configure AI categorization</a> in Settings to reduce skipped transactions.
+                </p>
+              )}
             </div>
           )}
 

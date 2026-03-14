@@ -20,7 +20,7 @@ import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useCategorizationProgress } from "@/components/categorization-progress-provider";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
-import type { Account, Transaction, CategoryRule } from "@/lib/types";
+import type { Account, Transaction, CategoryRule, LLMConfig } from "@/lib/types";
 import { generateKeywordOptions } from "@/lib/rule-utils";
 import ConfirmDialog from "@/components/confirm-dialog";
 
@@ -58,6 +58,7 @@ export default function TransactionsPage() {
 
   const [deleteConfirm, setDeleteConfirm] = useState<Transaction | null>(null);
   const { startAutoCategorize, state: catState } = useCategorizationProgress();
+  const { data: llmConfig } = useQuery({ queryKey: ["llm-config"], queryFn: api.getLLMConfig });
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const [ruleSuggestion, setRuleSuggestion] = useState<{
@@ -272,7 +273,7 @@ export default function TransactionsPage() {
               onClick={startAutoCategorize}
               disabled={catBusy}
               className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
-              title="Use rules and AI to categorize uncategorized transactions"
+              title={llmConfig?.configured ? "Use rules and AI to categorize uncategorized transactions" : "Use rules to categorize uncategorized transactions (AI not configured)"}
             >
               {catBusy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

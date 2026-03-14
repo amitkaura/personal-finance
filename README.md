@@ -167,7 +167,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Profile & Account** -- display name, avatar URL, bio (with Google fallback)
 - **General** -- currency (CAD, USD, EUR, GBP, etc.), date format, number locale; "Settings saved" flash on save
 - **Sync Schedule** -- enable/disable auto-sync, pick hour, minute, and timezone; "Schedule saved" flash on save
-- **AI Categorization** -- configure LLM base URL, model, and API key
+- **AI Categorization** — per-household LLM config (OpenAI, Ollama, Azure, or any OpenAI-compatible API)
 - **Integrations** -- household owner configures Plaid client ID, secret, and environment (sandbox/development/production); credentials encrypted at rest with Fernet; masked last-4 display for verification; auto-scrolls via `?section=integrations` deep link
 - **Data Management** -- CSV export of all transactions, bulk CSV import, balance history CSV import, bulk delete, factory reset (wipes all financial data while preserving login and household), delete account (permanently removes user and all data with household cleanup)
 - Category rules management is on the dedicated Categories page
@@ -317,7 +317,8 @@ personal-finance/
 │   ├── test_net_worth.py           # Snapshots, history
 │   ├── test_scheduler.py            # Statement reminder scheduler job
 │   ├── test_plaid.py               # Link token, exchange token, sync (mocked)
-│   └── test_plaid_config.py        # BYO Plaid config CRUD (owner-only, encryption)
+│   ├── test_plaid_config.py        # BYO Plaid config CRUD (owner-only, encryption)
+│   └── test_llm_config.py          # BYO LLM config CRUD (owner-only, encryption)
 ├── docker-compose.yml              # Postgres + Redis + API services
 ├── Dockerfile                      # Python 3.12-slim, uvicorn
 ├── requirements.txt                # Python dependencies
@@ -334,7 +335,7 @@ personal-finance/
 | `Account` | Bank/credit/loan/investment account with balances, optional `statement_available_day` (1-31) and `last_statement_reminder_sent` for recurring reminders |
 | `Transaction` | Financial transaction (Plaid-synced or manual) |
 | `CategoryRule` | Keyword-to-category mapping for auto-categorization |
-| `UserSettings` | Per-user preferences (currency, locale, sync, LLM config) |
+| `UserSettings` | Per-user preferences (currency, locale, sync) |
 | `Budget` | Monthly category budget with optional rollover and household sharing |
 | `SpendingPreference` | Per-user preference for routing category spending (personal vs shared) |
 | `Goal` | Savings goal with target amount, date, and household sharing |
@@ -347,6 +348,7 @@ personal-finance/
 | `Household` | Shared household between two partners |
 | `HouseholdMember` | User membership in a household with role |
 | `HouseholdPlaidConfig` | Per-household encrypted Plaid credentials (client_id, secret, env) |
+| `HouseholdLLMConfig` | Per-household LLM config (household_id FK unique, llm_base_url, encrypted_api_key, llm_model) |
 | `HouseholdInvitation` | Pending email invitation to join a household |
 
 ## API Reference
@@ -424,6 +426,9 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | GET | `/plaid-config` | Get household Plaid config status (masked credentials) |
 | PUT | `/plaid-config` | Create or update Plaid credentials (owner-only) |
 | DELETE | `/plaid-config` | Remove Plaid credentials (owner-only) |
+| GET | `/llm-config` | Get LLM config: configured, llm_base_url, llm_model, api_key_last4 |
+| PUT | `/llm-config` | Create or update LLM config (owner-only; body: llm_base_url, llm_api_key, llm_model) |
+| DELETE | `/llm-config` | Remove LLM config (owner-only) |
 | POST | `/import-balances` | Import account balance history CSV (creates accounts, balance snapshots, recomputes net worth) |
 
 ### Budgets (`/budgets`)
@@ -494,9 +499,8 @@ Edit `.env` and fill in:
 - `ENCRYPTION_KEY` -- generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 - `GOOGLE_CLIENT_ID` from Google Cloud Console
 - `JWT_SECRET` -- generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`
-- `LLM_API_KEY` (optional, for AI categorization)
 
-Plaid credentials are configured per-household in the app's Settings > Integrations section (not via environment variables).
+Plaid and LLM credentials are configured per-household in the app's Settings (Integrations and AI Categorization sections; not via environment variables).
 
 ### 2. Start dependencies
 
@@ -559,7 +563,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (331 tests across 17 files):**
+**What's tested (346 tests across 18 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -576,6 +580,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 6 | SMTP service, invitation template, send/skip/fail handling, port-465 SSL |
 | `test_plaid_config` | 13 | GET (configured/not/no-household/member-read), PUT (create/update/non-owner/no-household/invalid-env), DELETE (success/non-owner/not-configured/no-household) |
+| `test_llm_config` | — | BYO LLM config CRUD (owner-only, encryption) |
 | `test_auth` | 8 | Google OAuth login (mocked), session, `/me`, logout, auto-household on signup, no duplicate household on re-login |
 | `test_net_worth` | 5 | Snapshots, history |
 | `test_health` | 2 | Liveness and readiness endpoints |
@@ -655,14 +660,11 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `DB_POOL_SIZE` | No | SQLAlchemy connection pool size (default: `5`) |
 | `DB_MAX_OVERFLOW` | No | SQLAlchemy pool overflow limit (default: `10`) |
-| `ENCRYPTION_KEY` | Yes | Fernet key for encrypting Plaid access tokens and household Plaid credentials |
+| `ENCRYPTION_KEY` | Yes | Fernet key for encrypting Plaid access tokens and household Plaid/LLM credentials |
 | `GOOGLE_CLIENT_ID` | Yes | Google OAuth 2.0 client ID |
 | `JWT_SECRET` | Yes | Secret for signing JWT session tokens |
 | `SECURE_COOKIES` | Conditionally required | Must be `true` when `DEBUG=false` |
 | `CORS_ORIGINS` | No | Comma-separated allowed frontend origins |
-| `LLM_BASE_URL` | No | OpenAI-compatible API base URL (default: `https://api.openai.com/v1`) |
-| `LLM_API_KEY` | No | API key for the LLM service |
-| `LLM_MODEL` | No | Model name (default: `gpt-4o-mini`) |
 | `SYNC_ENABLED` | No | Enable daily auto-sync (default: `true`) |
 | `SYNC_HOUR` | No | Hour for daily sync in 24h format (default: `0`) |
 | `SYNC_MINUTE` | No | Minute for daily sync (default: `0`) |
@@ -685,12 +687,14 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `SMTP_USE_TLS` | No | Use STARTTLS (default: `true`) |
 | `APP_URL` | No | Frontend URL for email links (default: `http://localhost:3000`) |
 
+LLM credentials (base URL, API key, model) are configured per-household in Settings > AI Categorization, not via environment variables.
+
 ## Security
 
 - Designed to run on `localhost` behind a VPN -- not exposed to the public internet
 - Plaid access tokens and per-household Plaid API credentials are encrypted at rest with Fernet symmetric encryption
 - JWT sessions use HttpOnly cookies (not accessible via JavaScript), with `Secure` in non-debug mode
-- LLM API keys are never returned to the frontend; Plaid credentials are returned masked (last 4 chars only)
+- LLM API keys are encrypted at rest and never returned to the frontend (only last 4 chars shown); Plaid credentials are returned masked (last 4 chars only)
 - All data queries are scoped to the authenticated user
 - CORS is configurable via `CORS_ORIGINS`
 - API applies baseline security headers on all responses
