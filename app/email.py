@@ -81,7 +81,7 @@ _INVITATION_HTML = """\
               </p>
               <p style="margin:0 0 24px;color:#a1a1aa;font-size:15px;line-height:1.6;">
                 <strong style="color:#fafafa;">{inviter_name}</strong> has invited you to join
-                <strong style="color:#fafafa;">{household_name}</strong> on FinanceApp.
+                <strong style="color:#fafafa;">{household_name}</strong> on Fino.
               </p>
               <p style="margin:0 0 24px;color:#a1a1aa;font-size:15px;line-height:1.6;">
                 By joining, you'll be able to share a
@@ -96,7 +96,7 @@ _INVITATION_HTML = """\
                     <a href="{app_url}"
                        style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;
                               padding:14px 32px;border-radius:10px;font-size:15px;font-weight:600;">
-                      Open FinanceApp
+                      Open Fino
                     </a>
                   </td>
                 </tr>
@@ -111,7 +111,7 @@ _INVITATION_HTML = """\
           <tr>
             <td style="padding:20px 40px;border-top:1px solid #27272a;">
               <p style="margin:0;color:#52525b;font-size:12px;text-align:center;">
-                This email was sent by FinanceApp because {inviter_email} invited you
+                This email was sent by Fino because {inviter_email} invited you
                 to share finances. If you don't recognize this person, you can safely
                 ignore this email.
               </p>
@@ -174,7 +174,7 @@ _STATEMENT_REMINDER_HTML = """\
             <td style="padding:20px 40px;border-top:1px solid #27272a;">
               <p style="margin:0;color:#52525b;font-size:12px;text-align:center;">
                 This reminder was sent because you configured a statement day for
-                your {account_name} account in FinanceApp.
+                your {account_name} account in Fino.
               </p>
             </td>
           </tr>
