@@ -29,6 +29,9 @@ const ReviewSnippet = dynamic(() => import("@/components/review-snippet"), {
 const BudgetSnippet = dynamic(() => import("@/components/budget-snippet"), {
   loading: skeleton,
 });
+const DashboardActions = dynamic(() => import("@/components/dashboard-actions"), {
+  loading: skeleton,
+});
 
 export default function DashboardPage() {
   return (
@@ -40,7 +43,10 @@ export default function DashboardPage() {
             Your financial overview at a glance.
           </p>
         </div>
-        <SyncButton />
+        <div className="flex items-center gap-2">
+          <DashboardActions />
+          <SyncButton />
+        </div>
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-3">

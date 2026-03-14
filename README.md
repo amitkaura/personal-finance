@@ -26,6 +26,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Edit account modal** -- consolidated edit dialog for name, type, subtype, and balance; balance is disabled for Plaid accounts with an explanatory note
 - Unlink individual accounts or revoke full institution connections with confirmation dialog
 - **Sync feedback** -- clear "Synced" or "Sync failed" status after each connection sync
+- **Dashboard quick actions** -- Link Account, Add Account, and Add Partner buttons in the dashboard header; Add Account navigates to the accounts page with the add form pre-opened
 - **Click-to-filter** -- click any account row to navigate to the Transactions page pre-filtered by that account
 - Accounts page hides unlinked accounts by default (toggle to show all)
 - **Manual accounts** -- create accounts without Plaid (all types: depository, credit, loan, investment)
@@ -117,6 +118,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Owner badges (name + avatar) on accounts, transactions, and connections in shared views
 - Shared budgets and goals are editable by either household member
 - Partner's personal budgets and goals are visible but read-only
+- **Dashboard partner status** -- shows "Sharing with {name}" badge when a partner exists, or an "Add Partner" button with invite dialog when not
 - Invitation accept/decline/cancel flow with banner notifications
 - Editable household name (displayed in ViewSwitcher)
 - Leave household at any time; personal data is unaffected
@@ -227,6 +229,8 @@ personal-finance/
 │   │   ├── invitation-banner.tsx   # Accept/decline household invitations
 │   │   ├── statement-reminder-banner.tsx # Statement day reminder banners
 │   │   ├── sidebar.tsx             # Navigation, user profile, logout
+│   │   ├── dashboard-actions.tsx    # Dashboard header actions (link/add account, partner status)
+│   │   ├── add-partner-dialog.tsx  # Invite partner email dialog
 │   │   ├── link-account.tsx        # Plaid Link flow
 │   │   ├── categorization-progress-provider.tsx # Global categorization progress context
 │   │   ├── categorization-drawer.tsx  # Persistent progress drawer (fixed bottom-right)
@@ -288,6 +292,8 @@ personal-finance/
 │       ├── review-snippet.test.tsx # Transaction list, "all caught up", view all link
 │       ├── budget-snippet.test.tsx # Personal/shared bars, top 3, "Create one" link
 │       ├── goals-snippet.test.tsx  # Personal goals, shared summary, "Set one" link
+│       ├── dashboard-actions.test.tsx # Dashboard action buttons, partner status, navigation
+│       ├── add-partner-dialog.test.tsx # Email input, invite submit, error handling, close
 │       ├── link-account.test.tsx   # Token fetch, Plaid link, success message
 │       └── auth-gate.test.tsx      # Loading, unauthenticated, authenticated layout
 ├── tests/                          # Backend test suite (pytest)
@@ -581,7 +587,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (371 tests across 36 files):**
+**What's tested (384 tests across 38 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -592,7 +598,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `transactions-page` | 26 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion) |
 | `sidebar` | 12 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
-| `accounts-page` | 24 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form with subtype selector, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid, friendly type/subtype labels, statement day in add form and edit modal (appears, submits, pre-fills, editable for Plaid) |
+| `accounts-page` | 25 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form with subtype selector, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid, friendly type/subtype labels, statement day in add form and edit modal (appears, submits, pre-fills, editable for Plaid), auto-open add form via ?add=true query param |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
 | `bulk-csv-import-dialog` | 17 | Upload, preview, account detection, category matching, import flow, progress, results, errors, payload validation, auto-categorize trigger after import |
 | `csv-import-dialog` | 16 | Upload, column mapping, debit/credit, preview, import, progress, results, errors, cancel/done, auto-categorize trigger after import |
@@ -620,6 +626,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `categorization-drawer` | 5 | Idle hidden, syncing state, categorizing progress, completion summary with dismiss, dismiss resets to idle |
 | `sync-button` | 4 | Idle state, click triggers sync stream, syncing state (disabled), returns to idle after completion |
 | `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
+| `dashboard-actions` | 6 | Add Account/Link Account/Add Partner buttons, partner status message, navigation to /accounts?add=true, partner dialog open |
+| `add-partner-dialog` | 6 | Email input and submit, invitePartner API call, onClose on success, error display, close button, hidden when closed |
 | `link-account` | 4 | Idle button, token fetch on click, success message, pluralization |
 
 **Test infrastructure:**

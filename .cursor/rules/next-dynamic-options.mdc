@@ -1,0 +1,38 @@
+---
+description: Match existing dynamic() import options when adding new ones — never use ssr:false in Server Components
+globs: frontend/app/**/page.tsx
+alwaysApply: false
+---
+
+# next/dynamic Import Options
+
+When adding a `dynamic()` import to a file, **match the options already used by the other `dynamic()` calls in that file**.
+
+## Why
+
+`ssr: false` is only valid inside Client Components (`"use client"`). Using it in a Server Component causes a build error:
+
+> `ssr: false` is not allowed with `next/dynamic` in Server Components.
+
+## Rule
+
+Before writing a new `dynamic()` call, scan the file for existing ones and copy their option pattern.
+
+```tsx
+// ❌ BAD — ssr:false in a Server Component (no "use client" directive)
+const MyWidget = dynamic(() => import("@/components/my-widget"), {
+  ssr: false,
+});
+
+// ✅ GOOD — matches the loading: skeleton pattern used by sibling imports
+const MyWidget = dynamic(() => import("@/components/my-widget"), {
+  loading: skeleton,
+});
+```
+
+## Quick check
+
+1. Does the file have `"use client"` at the top?
+   - **No** → you are in a Server Component. Use `loading:` (never `ssr: false`).
+   - **Yes** → `ssr: false` is allowed if needed.
+2. Do other `dynamic()` calls in the file use `loading: skeleton`? → use the same.

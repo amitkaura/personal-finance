@@ -40,6 +40,7 @@ vi.mock("@/components/link-account", () => ({
 }));
 
 const mockRouterPush = vi.hoisted(() => vi.fn());
+const mockSearchParams = vi.hoisted(() => ({ value: new URLSearchParams() }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -49,7 +50,7 @@ vi.mock("next/navigation", () => ({
     prefetch: vi.fn(),
   }),
   usePathname: () => "/accounts",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => mockSearchParams.value,
 }));
 
 const MANUAL_ACCOUNT: Account = {
@@ -87,6 +88,7 @@ const PLAID_ACCOUNT: Account = {
 describe("AccountsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSearchParams.value = new URLSearchParams();
     mockApi.getSettings.mockResolvedValue(TEST_SETTINGS);
     mockApi.getAccounts.mockResolvedValue([]);
     mockApi.getAccountSummary.mockResolvedValue({
@@ -437,5 +439,14 @@ describe("AccountsPage", () => {
 
     const dayInput = screen.getByLabelText(/Statement day/);
     expect(dayInput).not.toBeDisabled();
+  });
+
+  it("auto-opens the add account form when ?add=true is in the URL", async () => {
+    mockSearchParams.value = new URLSearchParams("add=true");
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Add Manual Account")).toBeInTheDocument();
+      expect(screen.getByText("Create Account")).toBeInTheDocument();
+    });
   });
 });

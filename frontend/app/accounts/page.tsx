@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Landmark,
   TrendingUp,
@@ -61,6 +61,7 @@ export default function AccountsPage() {
   const scope = useScope();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["accounts", scope],
     queryFn: () => api.getAccounts(scope),
@@ -68,6 +69,12 @@ export default function AccountsPage() {
   const isViewingOwn = scope === "personal";
   const [hideUnlinked, setHideUnlinked] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("add") === "true") {
+      setShowAddForm(true);
+    }
+  }, [searchParams]);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("depository");
   const [newSubtype, setNewSubtype] = useState(SUBTYPES["depository"]?.[0] ?? "");
