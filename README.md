@@ -581,7 +581,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (370 tests across 36 files):**
+**What's tested (371 tests across 36 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|

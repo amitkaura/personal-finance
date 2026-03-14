@@ -92,6 +92,19 @@ describe("NetWorthHistory", () => {
     });
   });
 
+  it("renders horizontal gridlines with labels", async () => {
+    mockApi.getNetWorthHistory.mockResolvedValue([
+      { date: "2025-01", net_worth: 10000, assets: 15000, liabilities: 5000 },
+      { date: "2025-02", net_worth: 50000, assets: 55000, liabilities: 5000 },
+    ]);
+    renderWithProviders(<NetWorthHistory />);
+    await waitFor(() => {
+      const chart = screen.getByTestId("nw-chart");
+      expect(chart.innerHTML).toContain("<line");
+      expect(chart.innerHTML).toContain("<text");
+    });
+  });
+
   it("has period selector dropdown", async () => {
     mockApi.getNetWorthHistory.mockResolvedValue([
       { date: "2025-01", net_worth: 10000, assets: 10000, liabilities: 0 },

@@ -8,7 +8,32 @@ import { useFormatCurrency, useScope } from "@/lib/hooks";
 
 const SVG_W = 600;
 const SVG_H = 192;
-const PAD = { top: 16, right: 16, bottom: 4, left: 16 };
+const PAD = { top: 16, right: 16, bottom: 4, left: 70 };
+
+const NICE_INTERVALS = [
+  500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000,
+  100_000, 250_000, 500_000, 1_000_000, 2_500_000, 5_000_000, 10_000_000,
+];
+
+function niceTickValues(minVal: number, maxVal: number): number[] {
+  const range = maxVal - minVal;
+  if (range === 0) return [minVal];
+  const target = range / 3;
+  const interval = NICE_INTERVALS.find((v) => v >= target) ?? NICE_INTERVALS[NICE_INTERVALS.length - 1];
+  const first = Math.ceil(minVal / interval) * interval;
+  const ticks: number[] = [];
+  for (let t = first; t <= maxVal; t += interval) ticks.push(t);
+  if (ticks.length === 0) ticks.push(Math.round((minVal + maxVal) / 2));
+  return ticks;
+}
+
+function abbrevCurrency(v: number): string {
+  const abs = Math.abs(v);
+  const sign = v < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(abs % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(abs % 1_000 === 0 ? 0 : 1)}K`;
+  return `${sign}$${abs}`;
+}
 
 function LineChart({
   snapshots,
@@ -26,6 +51,8 @@ function LineChart({
   const [hovered, setHovered] = useState<number | null>(null);
   const plotW = SVG_W - PAD.left - PAD.right;
   const plotH = SVG_H - PAD.top - PAD.bottom;
+  const maxVal = minVal + (rawRange || 1);
+  const ticks = niceTickValues(flat ? minVal : minVal, flat ? minVal : maxVal);
 
   function x(i: number) {
     return PAD.left + (snapshots.length === 1 ? plotW / 2 : (i / (snapshots.length - 1)) * plotW);
@@ -51,6 +78,33 @@ function LineChart({
         className="h-full w-full"
         onMouseLeave={() => setHovered(null)}
       >
+        {ticks.map((t) => {
+          const ty = flat ? PAD.top + plotH / 2 : PAD.top + plotH - ((t - minVal) / rawRange) * plotH;
+          return (
+            <g key={`grid-${t}`}>
+              <line
+                x1={PAD.left}
+                y1={ty}
+                x2={SVG_W - PAD.right}
+                y2={ty}
+                stroke="currentColor"
+                className="text-muted-foreground/20"
+                strokeDasharray="4 4"
+                vectorEffect="non-scaling-stroke"
+              />
+              <text
+                x={PAD.left - 6}
+                y={ty + 1}
+                textAnchor="end"
+                dominantBaseline="middle"
+                className="fill-muted-foreground text-[11px]"
+                vectorEffect="non-scaling-stroke"
+              >
+                {abbrevCurrency(t)}
+              </text>
+            </g>
+          );
+        })}
         <polygon points={areaPoints} className="fill-accent/15" />
         {snapshots.length > 1 && (
           <polyline
