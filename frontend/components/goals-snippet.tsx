@@ -13,12 +13,25 @@ export default function GoalsSnippet() {
     queryKey: ["goals", scope],
     queryFn: () => api.getGoals(scope),
   });
+  const { data: householdGoalsResponse, isLoading: isHouseholdLoading } = useQuery({
+    queryKey: ["goals", "household", "snippet"],
+    queryFn: () => api.getGoals("household"),
+    enabled: scope !== "household",
+  });
 
   const goals = goalsResponse?.goals ?? [];
-  const sharedSummary = goalsResponse?.shared_goals_summary ?? null;
   const activeGoals = goals.filter((g) => !g.is_completed);
-  const personalGoals = activeGoals.filter((g) => !g.household_id);
-  const sharedGoals = activeGoals.filter((g) => !!g.household_id);
+  const ownGoals = activeGoals.filter((g) => !g.household_id);
+  const sharedGoals =
+    scope === "household"
+      ? activeGoals.filter((g) => !!g.household_id)
+      : (householdGoalsResponse?.goals ?? []).filter((g) => !g.is_completed && !!g.household_id);
+  const dedupedSharedGoals =
+    sharedGoals.filter((goal, idx, arr) => arr.findIndex((g) => g.id === goal.id) === idx);
+  const visibleGoals =
+    scope === "household"
+      ? activeGoals
+      : [...ownGoals.slice(0, 3), ...dedupedSharedGoals.slice(0, 3)];
 
   if (isError)
     return (
@@ -49,13 +62,13 @@ export default function GoalsSnippet() {
         </Link>
       </div>
 
-      {isLoading ? (
+      {isLoading || (scope !== "household" && isHouseholdLoading) ? (
         <div className="mt-4 space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-12 animate-pulse rounded-lg bg-muted" />
           ))}
         </div>
-      ) : personalGoals.length === 0 && !sharedSummary ? (
+      ) : visibleGoals.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
           No active goals.{" "}
           <Link href="/goals" className="text-accent hover:underline">
@@ -64,27 +77,10 @@ export default function GoalsSnippet() {
         </p>
       ) : (
         <div className="mt-4 space-y-2">
-          {/* Personal goals */}
-          {personalGoals.slice(0, 3).map((goal) => (
+          {/* Expanded rows in all scopes, including shared goals in Mine/Yours/Ours views */}
+          {visibleGoals.slice(0, 3).map((goal) => (
             <GoalRow key={goal.id} goal={goal} formatCurrency={formatCurrency} />
           ))}
-
-          {/* Shared goals */}
-          {sharedSummary && sharedSummary.count > 0 && (
-            <div className="rounded-lg bg-accent/5 border border-accent/15 px-3 py-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <Users className="h-3 w-3 text-accent" />
-                  <span className="text-xs font-medium">
-                    {sharedSummary.count} shared goal{sharedSummary.count !== 1 ? "s" : ""}
-                  </span>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  {sharedSummary.total_progress_pct}% avg
-                </span>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
