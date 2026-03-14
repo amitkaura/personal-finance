@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
     await _initialize_rate_limiter_backend()
     create_db_and_tables()
     _migrate_llm_fields_to_household()
+    _migrate_sync_fields_to_household()
     _backfill_orphan_households()
     settings = get_settings()
     if settings.run_scheduler:
@@ -66,6 +67,42 @@ def _migrate_llm_fields_to_household() -> None:
                 pass
         conn.commit()
     logger.info("LLM field migration check complete")
+
+
+def _migrate_sync_fields_to_household() -> None:
+    """Drop legacy sync columns from user_settings and backfill HouseholdSyncConfig."""
+    import logging
+    from sqlmodel import Session, select
+    from app.models import Household, HouseholdSyncConfig
+
+    logger = logging.getLogger(__name__)
+    stmts = [
+        "ALTER TABLE user_settings DROP COLUMN IF EXISTS sync_enabled",
+        "ALTER TABLE user_settings DROP COLUMN IF EXISTS sync_hour",
+        "ALTER TABLE user_settings DROP COLUMN IF EXISTS sync_minute",
+        "ALTER TABLE user_settings DROP COLUMN IF EXISTS sync_timezone",
+    ]
+    with engine.connect() as conn:
+        for stmt in stmts:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass
+        conn.commit()
+
+    with Session(engine) as session:
+        existing_hh_ids = set(
+            session.exec(select(HouseholdSyncConfig.household_id)).all()
+        )
+        all_hh_ids = set(session.exec(select(Household.id)).all())
+        missing = all_hh_ids - existing_hh_ids
+        for hh_id in missing:
+            session.add(HouseholdSyncConfig(household_id=hh_id))
+        if missing:
+            session.commit()
+            logger.info("Backfilled HouseholdSyncConfig for %d household(s)", len(missing))
+
+    logger.info("Sync field migration check complete")
 
 
 def _backfill_orphan_households() -> None:

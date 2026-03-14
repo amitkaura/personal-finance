@@ -22,11 +22,8 @@ class Settings(BaseSettings):
     # JWT session secret
     jwt_secret: str = ""
 
-    # Scheduled sync (cron-style, runs daily by default at midnight)
-    sync_enabled: bool = True
-    sync_hour: int = 0
-    sync_minute: int = 0
-    sync_timezone: str = "America/Toronto"
+    # Sync schedule is now configured per-household in Settings > Sync Schedule.
+    # No global sync env vars are needed.
 
     # Email (SMTP)
     smtp_host: str = ""

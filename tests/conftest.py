@@ -46,6 +46,7 @@ from app.models import (
     HouseholdMember,
     HouseholdLLMConfig,
     HouseholdPlaidConfig,
+    HouseholdSyncConfig,
     NetWorthSnapshot,
     PlaidItem,
     SpendingPreference,
@@ -342,6 +343,27 @@ def make_llm_config(
         llm_base_url=base_url,
         encrypted_api_key=encrypt_token(api_key),
         llm_model=model,
+    )
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return config
+
+
+def make_sync_config(
+    session: Session,
+    household: Household,
+    sync_enabled: bool = True,
+    sync_hour: int = 6,
+    sync_minute: int = 30,
+    sync_timezone: str = "America/Toronto",
+) -> HouseholdSyncConfig:
+    config = HouseholdSyncConfig(
+        household_id=household.id,
+        sync_enabled=sync_enabled,
+        sync_hour=sync_hour,
+        sync_minute=sync_minute,
+        sync_timezone=sync_timezone,
     )
     session.add(config)
     session.commit()

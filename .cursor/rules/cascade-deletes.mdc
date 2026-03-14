@@ -33,6 +33,7 @@ Tag → TransactionTag
 Household
  ├── HouseholdPlaidConfig
  ├── HouseholdLLMConfig
+ ├── HouseholdSyncConfig
  ├── HouseholdMember
  ├── HouseholdInvitation
  ├── Budget

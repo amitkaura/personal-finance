@@ -2,7 +2,7 @@ import type {
   Account, AccountSummary, Budget, BudgetConflict, BudgetSummary,
   CategoryRule, Goal, GoalContribution, GoalsResponse,
   Household, HouseholdInvitation, MonthlyTrend, NetWorthSnapshot,
-  LLMConfig, PlaidConfig, PlaidConnection, RecurringTransaction, SpendingByCategory,
+  LLMConfig, PlaidConfig, PlaidConnection, RecurringTransaction, SpendingByCategory, SyncConfig,
   SpendingPreference, Tag, TopMerchant, Transaction, User, UserProfile,
   UserSettings, ViewScope,
 } from "./types";
@@ -474,6 +474,18 @@ export const api = {
 
   deleteLLMConfig: () =>
     fetchVoid("/settings/llm-config", { method: "DELETE" }),
+
+  // Sync config
+  getSyncConfig: () => fetcher<SyncConfig>("/settings/sync-config"),
+
+  updateSyncConfig: (body: Partial<SyncConfig>) =>
+    fetcher<SyncConfig>("/settings/sync-config", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  deleteSyncConfig: () =>
+    fetchVoid("/settings/sync-config", { method: "DELETE" }),
 
   // Category rules
   getRules: () => fetcher<CategoryRule[]>("/settings/rules"),

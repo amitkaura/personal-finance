@@ -17,6 +17,7 @@ from app.models import (
     HouseholdMember,
     HouseholdLLMConfig,
     HouseholdPlaidConfig,
+    HouseholdSyncConfig,
     PlaidItem,
     SpendingPreference,
 )
@@ -32,6 +33,7 @@ from tests.conftest import (
     make_llm_config,
     make_plaid_config,
     make_spending_preference,
+    make_sync_config,
     make_transaction,
     make_user,
 )
@@ -645,5 +647,47 @@ def test_leave_last_member_deletes_llm_config(auth_client, session):
     assert session.get(Household, hh_id) is None
     configs = session.exec(
         select(HouseholdLLMConfig).where(HouseholdLLMConfig.household_id == hh_id)
+    ).all()
+    assert len(configs) == 0
+
+
+def test_accept_dissolves_solo_household_with_sync_config(auth_client, session):
+    """Solo household's SyncConfig is also deleted when dissolved on accept."""
+    client, owner = auth_client
+    partner = make_user(session, email="partner@test.com")
+
+    solo_hh = make_household(session, partner, name="Solo HH")
+    make_sync_config(session, solo_hh)
+    solo_hh_id = solo_hh.id
+
+    household = make_household(session, owner)
+    inv = make_invitation(session, household, owner, "partner@test.com")
+
+    try:
+        app.dependency_overrides[get_current_user] = lambda: partner
+        resp = client.post(f"/api/v1/household/invitations/{inv.token}/accept")
+        assert resp.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    configs = session.exec(
+        select(HouseholdSyncConfig).where(HouseholdSyncConfig.household_id == solo_hh_id)
+    ).all()
+    assert len(configs) == 0
+
+
+def test_leave_last_member_deletes_sync_config(auth_client, session):
+    """SyncConfig is cleaned up when the last member leaves and household is destroyed."""
+    client, owner = auth_client
+    household = make_household(session, owner)
+    make_sync_config(session, household)
+    hh_id = household.id
+
+    resp = client.delete("/api/v1/household/leave")
+    assert resp.status_code == 200
+
+    assert session.get(Household, hh_id) is None
+    configs = session.exec(
+        select(HouseholdSyncConfig).where(HouseholdSyncConfig.household_id == hh_id)
     ).all()
     assert len(configs) == 0

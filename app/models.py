@@ -147,11 +147,6 @@ class UserSettings(SQLModel, table=True):
     date_format: str = "YYYY-MM-DD"
     locale: str = "en-CA"
 
-    # Sync schedule
-    sync_enabled: bool = True
-    sync_hour: int = 0
-    sync_minute: int = 0
-    sync_timezone: str = "America/Toronto"
 
 
 # ── Budgets ────────────────────────────────────────────────────
@@ -339,6 +334,19 @@ class HouseholdLLMConfig(SQLModel, table=True):
     llm_base_url: str = Field(default="https://api.openai.com/v1")
     encrypted_api_key: str
     llm_model: str = Field(default="gpt-4o-mini")
+
+
+class HouseholdSyncConfig(SQLModel, table=True):
+    """Per-household sync schedule configuration."""
+
+    __tablename__ = "household_sync_configs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    household_id: int = Field(foreign_key="households.id", unique=True, index=True)
+    sync_enabled: bool = True
+    sync_hour: int = 0
+    sync_minute: int = 0
+    sync_timezone: str = "America/Toronto"
 
 
 class HouseholdInvitation(SQLModel, table=True):

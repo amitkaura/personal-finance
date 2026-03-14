@@ -921,18 +921,22 @@ function GeneralSection() {
 
 function SyncSection() {
   const queryClient = useQueryClient();
-  const { data: settings } = useQuery({
-    queryKey: ["settings"],
-    queryFn: api.getSettings,
+  const { data: household } = useQuery({ queryKey: ["household"], queryFn: api.getHousehold });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.getMe });
+  const { data: config } = useQuery({
+    queryKey: ["syncConfig"],
+    queryFn: api.getSyncConfig,
   });
 
-  const [form, setForm] = useState<Partial<UserSettings>>({});
+  const isOwner = household?.members?.find((m) => m.user_id === me?.id)?.role === "owner";
+
+  const [form, setForm] = useState<Record<string, unknown>>({});
   const [saved, setSaved] = useState(false);
 
-  const enabled = form.sync_enabled ?? settings?.sync_enabled ?? true;
-  const hour = form.sync_hour ?? settings?.sync_hour ?? 0;
-  const minute = form.sync_minute ?? settings?.sync_minute ?? 0;
-  const timezone = form.sync_timezone ?? settings?.sync_timezone ?? "America/Toronto";
+  const enabled = (form.sync_enabled as boolean | undefined) ?? config?.sync_enabled ?? true;
+  const hour = (form.sync_hour as number | undefined) ?? config?.sync_hour ?? 0;
+  const minute = (form.sync_minute as number | undefined) ?? config?.sync_minute ?? 0;
+  const timezone = (form.sync_timezone as string | undefined) ?? config?.sync_timezone ?? "America/Toronto";
 
   const dirty =
     form.sync_enabled !== undefined ||
@@ -941,9 +945,9 @@ function SyncSection() {
     form.sync_timezone !== undefined;
 
   const mutation = useMutation({
-    mutationFn: api.updateSettings,
+    mutationFn: api.updateSyncConfig,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["syncConfig"] });
       setForm({});
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -959,21 +963,28 @@ function SyncSection() {
             Automatically sync transactions from all connected accounts.
           </p>
         </div>
-        <button
-          onClick={() => setForm({ ...form, sync_enabled: !enabled })}
-          role="switch"
-          aria-checked={enabled}
-          aria-label="Enable automatic sync"
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-            enabled ? "bg-accent" : "bg-muted"
-          }`}
-        >
-          <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-              enabled ? "translate-x-6" : "translate-x-1"
+        {isOwner && (
+          <button
+            onClick={() => setForm({ ...form, sync_enabled: !enabled })}
+            role="switch"
+            aria-checked={enabled}
+            aria-label="Enable automatic sync"
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              enabled ? "bg-accent" : "bg-muted"
             }`}
-          />
-        </button>
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                enabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        )}
+        {!isOwner && (
+          <span className={`text-xs ${enabled ? "text-green-400" : "text-muted-foreground"}`}>
+            {enabled ? "Enabled" : "Disabled"}
+          </span>
+        )}
       </div>
       {enabled && (
         <div className="mt-5 grid grid-cols-3 gap-4">
@@ -981,6 +992,7 @@ function SyncSection() {
             <label className={labelClass}>Hour</label>
             <select
               value={hour}
+              disabled={!isOwner}
               onChange={(e) =>
                 setForm({ ...form, sync_hour: parseInt(e.target.value) })
               }
@@ -997,6 +1009,7 @@ function SyncSection() {
             <label className={labelClass}>Minute</label>
             <select
               value={minute}
+              disabled={!isOwner}
               onChange={(e) =>
                 setForm({ ...form, sync_minute: parseInt(e.target.value) })
               }
@@ -1013,6 +1026,7 @@ function SyncSection() {
             <label className={labelClass}>Timezone</label>
             <select
               value={timezone}
+              disabled={!isOwner}
               onChange={(e) =>
                 setForm({ ...form, sync_timezone: e.target.value })
               }
@@ -1025,7 +1039,7 @@ function SyncSection() {
           </div>
         </div>
       )}
-      {(dirty || saved) && (
+      {isOwner && (dirty || saved) && (
         <div className="mt-4 flex items-center justify-end gap-3">
           {saved && (
             <span className="text-xs text-green-400">Schedule saved</span>

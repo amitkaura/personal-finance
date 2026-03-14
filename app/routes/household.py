@@ -22,6 +22,7 @@ from app.models import (
     HouseholdMember,
     HouseholdLLMConfig,
     HouseholdPlaidConfig,
+    HouseholdSyncConfig,
     PlaidItem,
     SpendingPreference,
     User,
@@ -547,6 +548,12 @@ def _destroy_household(session: Session, household_id: int) -> None:
     ).first()
     if llm_config:
         session.delete(llm_config)
+
+    sync_config = session.exec(
+        select(HouseholdSyncConfig).where(HouseholdSyncConfig.household_id == household_id)
+    ).first()
+    if sync_config:
+        session.delete(sync_config)
 
     household = session.get(Household, household_id)
     if household:

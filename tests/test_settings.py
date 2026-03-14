@@ -120,14 +120,11 @@ def test_get_settings_auto_creates(auth_client):
 def test_update_settings(auth_client, session):
     client, user = auth_client
     make_settings(session, user)
-    with patch("app.scheduler.restart_scheduler"):
-        resp = client.put("/api/v1/settings", json={
-            "currency": "USD",
-            "sync_enabled": False,
-        })
+    resp = client.put("/api/v1/settings", json={
+        "currency": "USD",
+    })
     assert resp.status_code == 200
     assert resp.json()["currency"] == "USD"
-    assert resp.json()["sync_enabled"] is False
 
 
 # -- Category Rules --------------------------------------------------------
@@ -235,24 +232,6 @@ def test_clear_transactions_with_tags(auth_client, session):
 
     check = client.get("/api/v1/transactions")
     assert check.json() == []
-
-
-# -- Sync validation -------------------------------------------------------
-
-def test_update_settings_invalid_sync_hour(auth_client, session):
-    client, user = auth_client
-    make_settings(session, user)
-    resp = client.put("/api/v1/settings", json={"sync_hour": 25})
-    assert resp.status_code == 400
-    assert "sync_hour" in resp.json()["detail"]
-
-
-def test_update_settings_invalid_sync_minute(auth_client, session):
-    client, user = auth_client
-    make_settings(session, user)
-    resp = client.put("/api/v1/settings", json={"sync_minute": -1})
-    assert resp.status_code == 400
-    assert "sync_minute" in resp.json()["detail"]
 
 
 # -- Per-account CSV import ------------------------------------------------

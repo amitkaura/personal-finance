@@ -75,7 +75,11 @@ export const TEST_SETTINGS: UserSettings = {
   currency: "CAD",
   date_format: "YYYY-MM-DD",
   locale: "en-CA",
-  sync_enabled: false,
+};
+
+export const TEST_SYNC_CONFIG = {
+  configured: true,
+  sync_enabled: true,
   sync_hour: 6,
   sync_minute: 0,
   sync_timezone: "America/Toronto",
@@ -200,6 +204,9 @@ export function createMockApi(overrides: Record<string, unknown> = {}) {
     getGoalContributions: vi.fn().mockResolvedValue([]),
     getUserCategories: vi.fn().mockResolvedValue([]),
     updateSettings: vi.fn().mockResolvedValue(TEST_SETTINGS),
+    getSyncConfig: vi.fn().mockResolvedValue(TEST_SYNC_CONFIG),
+    updateSyncConfig: vi.fn().mockResolvedValue(TEST_SYNC_CONFIG),
+    deleteSyncConfig: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

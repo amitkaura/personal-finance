@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 from app.auth import create_jwt, get_current_user
 from app.config import get_settings
 from app.database import get_session
-from app.models import Household, HouseholdMember, User, UserSettings
+from app.models import Household, HouseholdMember, HouseholdSyncConfig, User, UserSettings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -82,6 +82,7 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
         db.add(household)
         db.flush()
         db.add(HouseholdMember(household_id=household.id, user_id=user.id, role="owner"))
+        db.add(HouseholdSyncConfig(household_id=household.id))
     db.commit()
     db.refresh(user)
 

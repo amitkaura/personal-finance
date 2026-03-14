@@ -1,4 +1,4 @@
-"""Scheduled background jobs for automatic transaction syncing."""
+"""Scheduled background jobs for per-household transaction syncing."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 from app.config import get_settings
 from app.database import engine
 from app.email import send_statement_reminder_email
-from app.models import Account, PlaidItem, User, UserSettings
+from app.models import Account, HouseholdMember, HouseholdSyncConfig, PlaidItem, User
 from app.routes.plaid import sync_transactions
 
 logger = logging.getLogger(__name__)
@@ -21,35 +21,55 @@ logger = logging.getLogger(__name__)
 _scheduler: BackgroundScheduler | None = None
 
 
-def _sync_all_items() -> None:
-    """Sync transactions for every linked Plaid item across all users."""
+def _sync_household_items(household_id: int) -> None:
+    """Sync Plaid items for all members of a specific household."""
     with Session(engine) as session:
-        items = session.exec(select(PlaidItem)).all()
+        user_ids = [
+            m.user_id
+            for m in session.exec(
+                select(HouseholdMember).where(HouseholdMember.household_id == household_id)
+            ).all()
+        ]
+        if not user_ids:
+            return
+        items = session.exec(
+            select(PlaidItem).where(PlaidItem.user_id.in_(user_ids))  # type: ignore[union-attr]
+        ).all()
 
     if not items:
-        logger.info("Scheduled sync: no Plaid items linked, skipping")
+        logger.info("Scheduled sync (household %d): no Plaid items, skipping", household_id)
         return
 
-    logger.info("Scheduled sync: syncing %d Plaid item(s)", len(items))
+    logger.info("Scheduled sync (household %d): syncing %d item(s)", household_id, len(items))
     for item in items:
         try:
             sync_transactions(item.id)
         except Exception:
             logger.exception("Scheduled sync failed for Plaid item %d", item.id)
 
-    logger.info("Scheduled sync: complete")
+    logger.info("Scheduled sync (household %d): complete", household_id)
 
 
-def _send_statement_reminders() -> None:
-    """Send email reminders for accounts whose statement day is today."""
+def _send_statement_reminders(household_id: int) -> None:
+    """Send email reminders for accounts whose statement day is today (scoped to household)."""
     today = date.today()
     last_day = calendar.monthrange(today.year, today.month)[1]
     settings = get_settings()
 
     with Session(engine) as session:
+        user_ids = [
+            m.user_id
+            for m in session.exec(
+                select(HouseholdMember).where(HouseholdMember.household_id == household_id)
+            ).all()
+        ]
+        if not user_ids:
+            return
+
         accounts = session.exec(
             select(Account).where(
                 Account.statement_available_day.is_not(None),  # type: ignore[union-attr]
+                Account.user_id.in_(user_ids),  # type: ignore[union-attr]
             )
         ).all()
 
@@ -71,34 +91,44 @@ def _send_statement_reminders() -> None:
 
         session.commit()
 
-    logger.info("Statement reminders: checked %d account(s)", len(accounts))
+    logger.info("Statement reminders (household %d): checked %d account(s)", household_id, len(accounts))
 
 
 def start_scheduler() -> None:
-    """Start the background scheduler using env-level sync settings."""
+    """Start the background scheduler with one cron job per household."""
     global _scheduler
 
-    env = get_settings()
-    if not env.sync_enabled:
-        logger.info("Scheduled sync is disabled")
+    with Session(engine) as session:
+        configs = session.exec(
+            select(HouseholdSyncConfig).where(HouseholdSyncConfig.sync_enabled == True)  # noqa: E712
+        ).all()
+
+    if not configs:
+        logger.info("Scheduled sync is disabled (no household has sync enabled)")
         return
 
     _scheduler = BackgroundScheduler()
-    trigger = CronTrigger(
-        hour=env.sync_hour,
-        minute=env.sync_minute,
-        timezone=env.sync_timezone,
-    )
-    _scheduler.add_job(_sync_all_items, trigger, id="sync_all_transactions")
-    _scheduler.add_job(_send_statement_reminders, trigger, id="send_statement_reminders")
+    for cfg in configs:
+        trigger = CronTrigger(
+            hour=cfg.sync_hour,
+            minute=cfg.sync_minute,
+            timezone=cfg.sync_timezone,
+        )
+        _scheduler.add_job(
+            _sync_household_items, trigger,
+            args=[cfg.household_id],
+            id=f"sync_hh_{cfg.household_id}",
+        )
+        _scheduler.add_job(
+            _send_statement_reminders, trigger,
+            args=[cfg.household_id],
+            id=f"reminders_hh_{cfg.household_id}",
+        )
+        logger.info(
+            "Household %d: syncing daily at %02d:%02d (%s)",
+            cfg.household_id, cfg.sync_hour, cfg.sync_minute, cfg.sync_timezone,
+        )
     _scheduler.start()
-
-    logger.info(
-        "Scheduler started — syncing daily at %02d:%02d (%s)",
-        env.sync_hour,
-        env.sync_minute,
-        env.sync_timezone,
-    )
 
 
 def stop_scheduler() -> None:

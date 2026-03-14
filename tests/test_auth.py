@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from sqlmodel import select
 
-from app.models import Household, HouseholdMember
+from app.models import Household, HouseholdMember, HouseholdSyncConfig
 from tests.conftest import make_user
 
 
@@ -44,6 +44,12 @@ def test_google_login_creates_auto_household(client, session):
     household = session.get(Household, member.household_id)
     assert household is not None
     assert "Auth User" in household.name
+
+    sync_config = session.exec(
+        select(HouseholdSyncConfig).where(HouseholdSyncConfig.household_id == household.id)
+    ).first()
+    assert sync_config is not None
+    assert sync_config.sync_enabled is True
 
 
 def test_google_login_existing_user_no_duplicate_household(client, session):

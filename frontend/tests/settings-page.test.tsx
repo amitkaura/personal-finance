@@ -7,6 +7,7 @@ import {
   TEST_USER,
   TEST_HOUSEHOLD,
   TEST_SETTINGS,
+  TEST_SYNC_CONFIG,
   SELF_MEMBER,
 } from "./helpers";
 import type { Household, HouseholdInvitation, ViewScope } from "@/lib/types";
@@ -16,6 +17,10 @@ const mockApi = vi.hoisted(() => ({
   updateProfile: vi.fn(),
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
+  getSyncConfig: vi.fn(),
+  updateSyncConfig: vi.fn(),
+  getMe: vi.fn(),
+  getHousehold: vi.fn(),
   getRules: vi.fn(),
   createRule: vi.fn(),
   deleteRule: vi.fn(),
@@ -79,6 +84,9 @@ describe("SettingsPage", () => {
     };
     mockApi.getProfile.mockResolvedValue(TEST_USER);
     mockApi.getSettings.mockResolvedValue(TEST_SETTINGS);
+    mockApi.getSyncConfig.mockResolvedValue(TEST_SYNC_CONFIG);
+    mockApi.getMe.mockResolvedValue(TEST_USER);
+    mockApi.getHousehold.mockResolvedValue(TEST_HOUSEHOLD);
     mockApi.getRules.mockResolvedValue([]);
     mockApi.updateProfile.mockResolvedValue(TEST_USER);
     mockApi.invitePartner.mockResolvedValue({
@@ -289,16 +297,22 @@ describe("SettingsPage", () => {
 
   describe("SyncSection save flash", () => {
     it("shows 'Schedule saved' after saving sync settings", async () => {
-      mockApi.updateSettings.mockResolvedValue(TEST_SETTINGS);
+      mockApi.updateSyncConfig.mockResolvedValue(TEST_SYNC_CONFIG);
+      mockHouseholdState.value = {
+        ...mockHouseholdState.value,
+        household: TEST_HOUSEHOLD,
+      };
       const user = userEvent.setup();
       renderWithProviders(<SettingsPage />);
 
-      await waitFor(() => {
-        expect(screen.getByText("Sync Schedule")).toBeInTheDocument();
+      const syncSection = await waitFor(() => {
+        const section = screen.getByText("Sync Schedule").closest(".rounded-2xl")!;
+        const toggle = section.querySelector("button[role='switch']");
+        expect(toggle).toBeTruthy();
+        return section;
       });
 
-      const syncSection = screen.getByText("Sync Schedule").closest(".rounded-2xl")!;
-      const toggleBtn = syncSection.querySelector("button[class*='rounded-full']")!;
+      const toggleBtn = syncSection.querySelector("button[role='switch']")!;
       await user.click(toggleBtn);
 
       await waitFor(() => {

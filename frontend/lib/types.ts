@@ -236,10 +236,14 @@ export interface UserSettings {
   currency: string;
   date_format: string;
   locale: string;
-  sync_enabled: boolean;
-  sync_hour: number;
-  sync_minute: number;
-  sync_timezone: string;
+}
+
+export interface SyncConfig {
+  configured: boolean;
+  sync_enabled: boolean | null;
+  sync_hour: number | null;
+  sync_minute: number | null;
+  sync_timezone: string | null;
 }
 
 export interface CategoryRule {

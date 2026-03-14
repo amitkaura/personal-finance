@@ -35,6 +35,7 @@ from app.models import (
     HouseholdMember,
     HouseholdLLMConfig,
     HouseholdPlaidConfig,
+    HouseholdSyncConfig,
     NetWorthSnapshot,
     PlaidItem,
     SpendingPreference,
@@ -164,10 +165,6 @@ class SettingsUpdate(BaseModel):
     currency: Optional[str] = None
     date_format: Optional[str] = None
     locale: Optional[str] = None
-    sync_enabled: Optional[bool] = None
-    sync_hour: Optional[int] = None
-    sync_minute: Optional[int] = None
-    sync_timezone: Optional[str] = None
 
 
 def _settings_to_dict(s: UserSettings) -> dict:
@@ -175,10 +172,6 @@ def _settings_to_dict(s: UserSettings) -> dict:
         "currency": s.currency,
         "date_format": s.date_format,
         "locale": s.locale,
-        "sync_enabled": s.sync_enabled,
-        "sync_hour": s.sync_hour,
-        "sync_minute": s.sync_minute,
-        "sync_timezone": s.sync_timezone,
     }
 
 
@@ -198,28 +191,13 @@ def update_settings(
 ):
     settings = _get_or_create_settings(session, user.id)
 
-    sync_fields = {"sync_enabled", "sync_hour", "sync_minute", "sync_timezone"}
-    sync_changed = False
-
     data = body.model_dump(exclude_unset=True)
-    if "sync_hour" in data and data["sync_hour"] is not None:
-        if not (0 <= data["sync_hour"] <= 23):
-            raise HTTPException(status_code=400, detail="sync_hour must be 0-23")
-    if "sync_minute" in data and data["sync_minute"] is not None:
-        if not (0 <= data["sync_minute"] <= 59):
-            raise HTTPException(status_code=400, detail="sync_minute must be 0-59")
     for field, value in data.items():
         setattr(settings, field, value)
-        if field in sync_fields:
-            sync_changed = True
 
     session.add(settings)
     session.commit()
     session.refresh(settings)
-
-    if sync_changed:
-        from app.scheduler import restart_scheduler
-        restart_scheduler()
 
     return _settings_to_dict(settings)
 
@@ -436,6 +414,119 @@ def delete_llm_config(
 
     session.delete(config)
     session.commit()
+
+
+# ── Sync Config (per-household) ─────────────────────────────────
+
+
+class SyncConfigUpdate(BaseModel):
+    sync_enabled: Optional[bool] = None
+    sync_hour: Optional[int] = None
+    sync_minute: Optional[int] = None
+    sync_timezone: Optional[str] = None
+
+
+def _sync_config_response(config: Optional[HouseholdSyncConfig]) -> dict:
+    if not config:
+        return {"configured": False, "sync_enabled": None, "sync_hour": None, "sync_minute": None, "sync_timezone": None}
+    return {
+        "configured": True,
+        "sync_enabled": config.sync_enabled,
+        "sync_hour": config.sync_hour,
+        "sync_minute": config.sync_minute,
+        "sync_timezone": config.sync_timezone,
+    }
+
+
+@router.get("/sync-config")
+def get_sync_config(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        return _sync_config_response(None)
+
+    config = session.exec(
+        select(HouseholdSyncConfig).where(
+            HouseholdSyncConfig.household_id == member.household_id
+        )
+    ).first()
+    return _sync_config_response(config)
+
+
+@router.put("/sync-config")
+def update_sync_config(
+    body: SyncConfigUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Not in a household")
+    if member.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the household owner can manage sync config")
+
+    data = body.model_dump(exclude_unset=True)
+    if "sync_hour" in data and data["sync_hour"] is not None:
+        if not (0 <= data["sync_hour"] <= 23):
+            raise HTTPException(status_code=400, detail="sync_hour must be 0-23")
+    if "sync_minute" in data and data["sync_minute"] is not None:
+        if not (0 <= data["sync_minute"] <= 59):
+            raise HTTPException(status_code=400, detail="sync_minute must be 0-59")
+
+    config = session.exec(
+        select(HouseholdSyncConfig).where(
+            HouseholdSyncConfig.household_id == member.household_id
+        )
+    ).first()
+
+    if config:
+        for field, value in data.items():
+            setattr(config, field, value)
+    else:
+        config = HouseholdSyncConfig(household_id=member.household_id, **data)
+
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+
+    from app.scheduler import restart_scheduler
+    restart_scheduler()
+
+    return _sync_config_response(config)
+
+
+@router.delete("/sync-config", status_code=204)
+def delete_sync_config(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Not in a household")
+    if member.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the household owner can manage sync config")
+
+    config = session.exec(
+        select(HouseholdSyncConfig).where(
+            HouseholdSyncConfig.household_id == member.household_id
+        )
+    ).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Sync config not found")
+
+    session.delete(config)
+    session.commit()
+
+    from app.scheduler import restart_scheduler
+    restart_scheduler()
 
 
 # ── Category Rules ─────────────────────────────────────────────

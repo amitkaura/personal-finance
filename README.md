@@ -13,7 +13,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 | **Auth** | Google OAuth 2.0, JWT session cookies |
 | **AI Categorization** | OpenAI-compatible API (GPT, Ollama, Azure, etc.) |
 | **Charts** | Nivo (bar) |
-| **Scheduling** | APScheduler (daily transaction sync + statement reminders) |
+| **Scheduling** | APScheduler (per-household cron jobs for transaction sync + statement reminders) |
 | **Infrastructure** | Docker Compose (Postgres + Redis + API) |
 
 ## Features
@@ -166,7 +166,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Settings & Configuration
 - **Profile & Account** -- display name, avatar URL, bio (with Google fallback)
 - **General** -- currency (CAD, USD, EUR, GBP, etc.), date format, number locale; "Settings saved" flash on save
-- **Sync Schedule** -- enable/disable auto-sync, pick hour, minute, and timezone; "Schedule saved" flash on save
+- **Sync Schedule** -- per-household sync config (enable/disable, hour, minute, timezone); owner-only editing; "Schedule saved" flash on save; each household gets its own cron job on its own schedule
 - **AI Categorization** — per-household LLM config (OpenAI, Ollama, Azure, or any OpenAI-compatible API)
 - **Integrations** -- household owner configures Plaid client ID, secret, and environment (sandbox/development/production); credentials encrypted at rest with Fernet; masked last-4 display for verification; auto-scrolls via `?section=integrations` deep link
 - **Data Management** -- CSV export, Bulk Import Accounts & Transactions, Bulk Import Accounts & Balances, bulk delete, factory reset (wipes all financial data while preserving login and household), delete account (permanently removes user and all data with household cleanup)
@@ -193,7 +193,7 @@ personal-finance/
 │   ├── config.py                   # Pydantic settings from .env
 │   ├── database.py                 # Engine, session management, table creation
 │   ├── models.py                   # All SQLModel table definitions
-│   ├── scheduler.py                # APScheduler daily sync job
+│   ├── scheduler.py                # Per-household APScheduler cron jobs (sync + reminders)
 │   ├── plaid_client.py             # Plaid API client factory (per-household credentials)
 │   ├── crypto.py                   # Fernet encrypt/decrypt for access tokens
 │   ├── categorizer.py              # Rule-based + per-transaction LLM categorization
@@ -312,10 +312,11 @@ personal-finance/
 │   ├── test_goals.py               # CRUD, ownership
 │   ├── test_tags.py                # CRUD, transaction tagging
 │   ├── test_household.py           # Invite, accept, decline, leave, scope
-│   ├── test_settings.py            # Profile, rules, export, clear, factory reset, balance import
+│   ├── test_settings.py            # Profile, rules, export, clear, factory reset, balance import (sync fields removed)
 │   ├── test_reports.py             # Spending, trends, merchants
 │   ├── test_net_worth.py           # Snapshots, history
-│   ├── test_scheduler.py            # Statement reminder scheduler job
+│   ├── test_scheduler.py            # Per-household scheduler + statement reminders
+│   ├── test_sync_config.py          # Sync config CRUD (owner-only)
 │   ├── test_plaid.py               # Link token, exchange token, sync (mocked)
 │   ├── test_plaid_config.py        # BYO Plaid config CRUD (owner-only, encryption)
 │   └── test_llm_config.py          # BYO LLM config CRUD (owner-only, encryption)
@@ -349,6 +350,7 @@ personal-finance/
 | `HouseholdMember` | User membership in a household with role |
 | `HouseholdPlaidConfig` | Per-household encrypted Plaid credentials (client_id, secret, env) |
 | `HouseholdLLMConfig` | Per-household LLM config (household_id FK unique, llm_base_url, encrypted_api_key, llm_model) |
+| `HouseholdSyncConfig` | Per-household sync schedule (sync_enabled, sync_hour, sync_minute, sync_timezone) |
 | `HouseholdInvitation` | Pending email invitation to join a household |
 
 ## API Reference
@@ -429,6 +431,9 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | GET | `/llm-config` | Get LLM config: configured, llm_base_url, llm_model, api_key_last4 |
 | PUT | `/llm-config` | Create or update LLM config (owner-only; body: llm_base_url, llm_api_key, llm_model) |
 | DELETE | `/llm-config` | Remove LLM config (owner-only) |
+| GET | `/sync-config` | Get household sync schedule config |
+| PUT | `/sync-config` | Create or update sync schedule (owner-only; body: sync_enabled, sync_hour, sync_minute, sync_timezone) |
+| DELETE | `/sync-config` | Remove sync config (owner-only) |
 | POST | `/import-balances` | Import account balance history CSV (creates accounts, balance snapshots, recomputes net worth) |
 
 ### Budgets (`/budgets`)
@@ -563,18 +568,19 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (346 tests across 18 files):**
+**What's tested (366 tests across 19 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `test_settings` | 61 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, delete account (full data + user removal, household cleanup, empty household deletion, cross-user goal contributions), import LLM fallback (per-account + bulk + streaming), bulk import account subtype and balance, skip-LLM import option, balance history import (create accounts, match existing, net worth recompute, upsert duplicates, validation) |
+| `test_settings` | 59 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, factory reset, delete account (full data + user removal, household cleanup, empty household deletion, cross-user goal contributions), import LLM fallback (per-account + bulk + streaming), bulk import account subtype and balance, skip-LLM import option, balance history import (create accounts, match existing, net worth recompute, upsert duplicates, validation) |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
-| `test_household` | 35 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations), accept dissolves solo household (with/without Plaid config), blocked when partnered, Plaid items warning |
+| `test_household` | 37 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations), accept dissolves solo household (with/without Plaid/LLM/Sync config), blocked when partnered, Plaid items warning |
 | `test_transactions` | 30 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize (rules, per-txn LLM, partial failure, NDJSON streaming), recurring, date validation, response schema |
 | `test_categories` | 27 | Full CRUD, auto-seed defaults, create validation (empty/whitespace/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
 | `test_accounts` | 35 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization, statement_available_day (create/update/clear/validate), statement-reminders endpoint (match/no-match/last-day-fallback/auth) |
-| `test_scheduler` | 4 | Statement reminder scheduler job (day match, de-duplication, last-day-of-month fallback, no-accounts) |
+| `test_scheduler` | 11 | Statement reminder scheduler job (day match, de-duplication, last-day-of-month fallback, no-accounts), per-household scheduler (reads DB config, no-config skips, disabled skips, multiple households, scoped sync items, scoped reminders) |
+| `test_sync_config` | 13 | Sync config CRUD (get configured/unconfigured/no-household/member-read, create/update/invalid-hour/invalid-minute/non-owner/no-household, delete/non-owner/not-configured/no-household) |
 | `test_plaid` | 17 | Link token, exchange token (success, relink, conflict, institution name), sync, sync-all-stream (NDJSON streaming), items (all Plaid calls mocked) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
@@ -665,10 +671,6 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `JWT_SECRET` | Yes | Secret for signing JWT session tokens |
 | `SECURE_COOKIES` | Conditionally required | Must be `true` when `DEBUG=false` |
 | `CORS_ORIGINS` | No | Comma-separated allowed frontend origins |
-| `SYNC_ENABLED` | No | Enable daily auto-sync (default: `true`) |
-| `SYNC_HOUR` | No | Hour for daily sync in 24h format (default: `0`) |
-| `SYNC_MINUTE` | No | Minute for daily sync (default: `0`) |
-| `SYNC_TIMEZONE` | No | Timezone for sync schedule (default: `America/Toronto`) |
 | `DEBUG` | No | Enable debug logging (default: `false`) |
 | `RUN_SCHEDULER` | No | Enable APScheduler background job runner (default: `true`) |
 | `RATE_LIMIT_ENABLED` | No | Enable API rate-limiting middleware (default: `true`) |
