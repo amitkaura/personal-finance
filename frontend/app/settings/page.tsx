@@ -21,6 +21,7 @@ import {
   UserCircle,
   RotateCcw,
   Upload,
+  UserX,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
@@ -1160,6 +1161,8 @@ function DataSection() {
   const [clearing, setClearing] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
@@ -1183,6 +1186,17 @@ function DataSection() {
       setConfirmResetOpen(false);
     } finally {
       setResetting(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setDeleting(true);
+    try {
+      await api.deleteAccount();
+      queryClient.clear();
+      window.location.href = "/login";
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -1270,6 +1284,19 @@ function DataSection() {
               Factory Reset
             </button>
           </div>
+          <div>
+            <p className="text-xs text-muted-foreground">
+              Permanently delete your account and all associated data. You will
+              be logged out and cannot undo this.
+            </p>
+            <button
+              onClick={() => setConfirmDeleteOpen(true)}
+              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
+            >
+              <UserX className="h-4 w-4" />
+              Delete Account
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1293,6 +1320,17 @@ function DataSection() {
         loading={resetting}
         onConfirm={handleFactoryReset}
         onCancel={() => setConfirmResetOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete your account?"
+        description="This will permanently delete your account and ALL associated data — transactions, accounts, budgets, goals, categories, rules, tags, net worth history, and household membership. You will be logged out. This action cannot be undone."
+        confirmLabel="Delete My Account"
+        destructive
+        loading={deleting}
+        onConfirm={handleDeleteAccount}
+        onCancel={() => setConfirmDeleteOpen(false)}
       />
     </div>
   );

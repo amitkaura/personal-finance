@@ -26,6 +26,8 @@ const mockApi = vi.hoisted(() => ({
   leaveHousehold: vi.fn(),
   clearTransactions: vi.fn(),
   exportTransactions: vi.fn(),
+  factoryReset: vi.fn(),
+  deleteAccount: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -331,6 +333,28 @@ describe("SettingsPage", () => {
 
       expect(screen.getByText("Danger Zone")).toBeInTheDocument();
       expect(screen.getByText("Clear All Transactions")).toBeInTheDocument();
+    });
+
+    it("renders Delete Account button in danger zone", () => {
+      renderWithProviders(<SettingsPage />);
+
+      expect(screen.getByText("Delete Account")).toBeInTheDocument();
+    });
+
+    it("opens confirm dialog and calls deleteAccount on confirm", async () => {
+      mockApi.deleteAccount.mockResolvedValue(undefined);
+      const user = userEvent.setup();
+      renderWithProviders(<SettingsPage />);
+
+      await user.click(screen.getByText("Delete Account"));
+
+      expect(screen.getByText("Delete your account?")).toBeInTheDocument();
+
+      await user.click(screen.getByText("Delete My Account"));
+
+      await waitFor(() => {
+        expect(mockApi.deleteAccount).toHaveBeenCalled();
+      });
     });
   });
 });

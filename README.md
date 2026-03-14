@@ -162,7 +162,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **General** -- currency (CAD, USD, EUR, GBP, etc.), date format, number locale; "Settings saved" flash on save
 - **Sync Schedule** -- enable/disable auto-sync, pick hour, minute, and timezone; "Schedule saved" flash on save
 - **AI Categorization** -- configure LLM base URL, model, and API key
-- **Data Management** -- CSV export of all transactions, bulk CSV import, bulk delete, factory reset (wipes all financial data while preserving login and household)
+- **Data Management** -- CSV export of all transactions, bulk CSV import, bulk delete, factory reset (wipes all financial data while preserving login and household), delete account (permanently removes user and all data with household cleanup)
 - Category rules management is on the dedicated Categories page
 
 ### Dashboard
@@ -403,6 +403,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | GET | `/export` | Export transactions as CSV |
 | DELETE | `/transactions` | Delete all user transactions |
 | DELETE | `/all-data` | Factory reset -- delete all financial data (preserves user and household) |
+| DELETE | `/account` | Delete user account and all associated data (irreversible) |
 
 ### Budgets (`/budgets`)
 | Method | Path | Description |
@@ -536,11 +537,11 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (302 tests across 16 files):**
+**What's tested (306 tests across 16 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `test_settings` | 51 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, import LLM fallback (per-account + bulk + streaming), bulk import account subtype and balance, skip-LLM import option |
+| `test_settings` | 55 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, delete account (full data + user removal, household cleanup, empty household deletion, cross-user goal contributions), import LLM fallback (per-account + bulk + streaming), bulk import account subtype and balance, skip-LLM import option |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
@@ -575,13 +576,13 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (361 tests across 35 files):**
+**What's tested (363 tests across 35 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
 | `rule-utils` | 11 | Keyword option generation: full name, cleaned name, progressive word combos, dedup, edge cases |
-| `settings-page` | 17 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management |
+| `settings-page` | 19 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + logout) |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `transactions-page` | 26 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion) |
 | `sidebar` | 12 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |

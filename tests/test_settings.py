@@ -12,6 +12,9 @@ from app.models import (
     Goal,
     GoalAccountLink,
     GoalContribution,
+    Household,
+    HouseholdInvitation,
+    HouseholdMember,
     NetWorthSnapshot,
     SpendingPreference,
     Tag,
@@ -847,3 +850,106 @@ def test_factory_reset_preserves_household(auth_client, session):
         select(HouseholdInvitation).where(HouseholdInvitation.household_id == household.id)
     ).all()
     assert len(invitations) == 1
+
+
+# -- Delete Account --------------------------------------------------------
+
+
+def test_delete_account_removes_all_data_and_user(auth_client, session):
+    from tests.conftest import make_net_worth_snapshot
+    client, user = auth_client
+
+    acct = make_account(session, user, name="Checking", is_linked=False)
+    txn = make_transaction(session, user, account=acct)
+    tag = make_tag(session, user, name="vacation")
+    session.add(TransactionTag(transaction_id=txn.id, tag_id=tag.id))
+    session.commit()
+
+    budget = make_budget(session, user)
+    goal = make_goal(session, user)
+    link_goal_to_account(session, goal, acct)
+    make_contribution(session, goal, user)
+    make_spending_preference(session, user)
+    make_net_worth_snapshot(session, user)
+    cat = make_category(session, user, name="Groceries")
+    rule = CategoryRule(user_id=user.id, keyword="store", category="Groceries")
+    session.add(rule)
+    session.commit()
+    make_settings(session, user)
+
+    resp = client.delete("/api/v1/settings/account")
+    assert resp.status_code == 204
+
+    assert session.get(User, user.id) is None
+    assert session.exec(select(Transaction).where(Transaction.user_id == user.id)).all() == []
+    assert session.exec(select(Account).where(Account.user_id == user.id)).all() == []
+    assert session.exec(select(Budget).where(Budget.user_id == user.id)).all() == []
+    assert session.exec(select(Goal).where(Goal.user_id == user.id)).all() == []
+    assert session.exec(select(Tag).where(Tag.user_id == user.id)).all() == []
+    assert session.exec(select(CategoryRule).where(CategoryRule.user_id == user.id)).all() == []
+    assert session.exec(select(Category).where(Category.user_id == user.id)).all() == []
+    assert session.exec(select(NetWorthSnapshot).where(NetWorthSnapshot.user_id == user.id)).all() == []
+    assert session.exec(select(SpendingPreference).where(SpendingPreference.user_id == user.id)).all() == []
+    assert session.exec(select(UserSettings).where(UserSettings.user_id == user.id)).all() == []
+    assert session.exec(select(TransactionTag)).all() == []
+    assert session.exec(select(GoalAccountLink)).all() == []
+    assert session.exec(select(GoalContribution)).all() == []
+
+    assert resp.headers.get("set-cookie") is not None
+    assert "session=" in resp.headers["set-cookie"]
+
+
+def test_delete_account_cleans_up_household(auth_client, session):
+    client, user = auth_client
+
+    partner = make_user(session, name="Partner")
+    household = make_household(session, user)
+    add_household_member(session, household, partner)
+    make_invitation(session, household, user, "someone@example.com")
+
+    resp = client.delete("/api/v1/settings/account")
+    assert resp.status_code == 204
+
+    assert session.get(User, user.id) is None
+    assert session.get(Household, household.id) is not None
+    members = session.exec(
+        select(HouseholdMember).where(HouseholdMember.household_id == household.id)
+    ).all()
+    assert len(members) == 1
+    assert members[0].user_id == partner.id
+
+
+def test_delete_account_deletes_empty_household(auth_client, session):
+    client, user = auth_client
+
+    household = make_household(session, user)
+    make_invitation(session, household, user, "pending@example.com")
+
+    resp = client.delete("/api/v1/settings/account")
+    assert resp.status_code == 204
+
+    assert session.get(User, user.id) is None
+    assert session.get(Household, household.id) is None
+    assert session.exec(
+        select(HouseholdInvitation).where(HouseholdInvitation.household_id == household.id)
+    ).all() == []
+
+
+def test_delete_account_removes_contributions_to_partner_goals(auth_client, session):
+    client, user = auth_client
+
+    partner = make_user(session, name="Partner")
+    household = make_household(session, user)
+    add_household_member(session, household, partner)
+
+    partner_goal = make_goal(session, partner, name="Shared Vacation", household_id=household.id)
+    make_contribution(session, partner_goal, user, note="my share")
+
+    resp = client.delete("/api/v1/settings/account")
+    assert resp.status_code == 204
+
+    assert session.get(User, user.id) is None
+    assert session.exec(
+        select(GoalContribution).where(GoalContribution.user_id == user.id)
+    ).all() == []
+    assert session.get(Goal, partner_goal.id) is not None

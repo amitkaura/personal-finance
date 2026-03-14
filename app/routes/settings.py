@@ -11,12 +11,13 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
 from app.categorizer import categorize_by_rules, categorize_single_llm
+from app.config import get_settings as get_app_settings
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
 from app.models import (
@@ -28,6 +29,8 @@ from app.models import (
     Goal,
     GoalAccountLink,
     GoalContribution,
+    Household,
+    HouseholdInvitation,
     HouseholdMember,
     NetWorthSnapshot,
     PlaidItem,
@@ -409,15 +412,15 @@ def clear_transactions(
     session.commit()
 
 
-# ── Factory Reset ──────────────────────────────────────────────
+# ── Factory Reset & Account Deletion ──────────────────────────
 
 
-@router.delete("/all-data", status_code=204)
-def factory_reset(
-    session: Session = Depends(get_session),
-    user: User = Depends(get_current_user),
-):
-    """Delete ALL user financial data while preserving the User record and household membership."""
+def _delete_all_user_data(session: Session, user: User) -> None:
+    """Delete ALL user financial data (transactions, accounts, budgets, etc.).
+
+    Does NOT delete the User row, household membership, or invitations.
+    Commits the session when done.
+    """
     user_account_ids = list(
         session.exec(select(Account.id).where(Account.user_id == user.id)).all()
     )
@@ -481,6 +484,77 @@ def factory_reset(
         session.delete(settings)
 
     session.commit()
+
+
+@router.delete("/all-data", status_code=204)
+def factory_reset(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Delete ALL user financial data while preserving the User record and household membership."""
+    _delete_all_user_data(session, user)
+
+
+_COOKIE_NAME = "session"
+
+
+@router.delete("/account", status_code=204)
+def delete_account(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Permanently delete the user account and all associated data."""
+    _delete_all_user_data(session, user)
+
+    # Clean up contributions to other users' goals (e.g. shared household goals)
+    for gc in session.exec(
+        select(GoalContribution).where(GoalContribution.user_id == user.id)
+    ).all():
+        session.delete(gc)
+
+    # Clean up invitations created by this user
+    for inv in session.exec(
+        select(HouseholdInvitation).where(HouseholdInvitation.invited_by_user_id == user.id)
+    ).all():
+        session.delete(inv)
+
+    # Clean up household membership
+    membership = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    household_id = membership.household_id if membership else None
+    if membership:
+        session.delete(membership)
+        session.flush()
+
+    # Delete household if it's now empty
+    if household_id is not None:
+        remaining = session.exec(
+            select(HouseholdMember).where(HouseholdMember.household_id == household_id)
+        ).all()
+        if not remaining:
+            for inv in session.exec(
+                select(HouseholdInvitation).where(HouseholdInvitation.household_id == household_id)
+            ).all():
+                session.delete(inv)
+            household = session.get(Household, household_id)
+            if household:
+                session.delete(household)
+
+    session.delete(user)
+    session.commit()
+
+    app_settings = get_app_settings()
+    secure_cookie = app_settings.secure_cookies and not app_settings.debug
+    resp = JSONResponse(content=None, status_code=204)
+    resp.delete_cookie(
+        key=_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        secure=secure_cookie,
+        samesite="lax",
+    )
+    return resp
 
 
 # ── Per-Account CSV Import (streaming NDJSON) ─────────────────

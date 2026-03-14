@@ -479,6 +479,9 @@ export const api = {
   factoryReset: () =>
     fetchVoid("/settings/all-data", { method: "DELETE" }),
 
+  deleteAccount: () =>
+    fetchVoid("/settings/account", { method: "DELETE" }),
+
   // Household
   getHousehold: () => fetcher<Household | null>("/household"),
 
