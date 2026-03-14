@@ -56,7 +56,7 @@ export default function TopMovers() {
           No investment accounts.
         </p>
       ) : (
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-4 max-h-64 space-y-2 overflow-y-auto">
           {investments.map((acct: Account) => {
             const positive = acct.current_balance >= 0;
             return (

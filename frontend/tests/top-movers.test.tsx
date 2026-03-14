@@ -69,6 +69,24 @@ describe("TopMovers", () => {
     expect(items[1].querySelector(".text-danger")).toBeTruthy();
   });
 
+  it("investment list is scrollable when many accounts", async () => {
+    const accounts = Array.from({ length: 10 }, (_, i) => ({
+      id: i + 1,
+      name: `Fund ${i + 1}`,
+      type: "investment",
+      is_linked: true,
+      current_balance: 1000 * (i + 1),
+      official_name: null,
+    }));
+    mockApi.getAccounts.mockResolvedValue(accounts);
+    renderWithProviders(<TopMovers />);
+    await waitFor(() => {
+      expect(screen.getByText("Fund 1")).toBeInTheDocument();
+    });
+    const list = document.querySelector("ul");
+    expect(list?.className).toContain("overflow-y-auto");
+  });
+
   it("uses official_name or 'Investment' as subtype", async () => {
     mockApi.getAccounts.mockResolvedValue([
       { id: 1, name: "Fund A", type: "investment", is_linked: true, current_balance: 1000, official_name: "Custom Name" },

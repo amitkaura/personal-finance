@@ -54,15 +54,29 @@ describe("NetWorthHistory", () => {
     expect(mockApi.takeNetWorthSnapshot).toHaveBeenCalled();
   });
 
-  it("renders chart with date range labels", async () => {
+  it("renders SVG line chart with date range labels", async () => {
     mockApi.getNetWorthHistory.mockResolvedValue([
       { date: "2025-01", net_worth: 10000, assets: 15000, liabilities: 5000 },
       { date: "2025-02", net_worth: 12000, assets: 16000, liabilities: 4000 },
     ]);
     renderWithProviders(<NetWorthHistory />);
     await waitFor(() => {
+      expect(screen.getByTestId("nw-chart")).toBeTruthy();
       expect(screen.getAllByText("2025-01").length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText("2025-02").length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it("renders SVG with polyline for multiple data points", async () => {
+    mockApi.getNetWorthHistory.mockResolvedValue([
+      { date: "2025-01", net_worth: 10000, assets: 15000, liabilities: 5000 },
+      { date: "2025-02", net_worth: 12000, assets: 16000, liabilities: 4000 },
+      { date: "2025-03", net_worth: 14000, assets: 18000, liabilities: 4000 },
+    ]);
+    renderWithProviders(<NetWorthHistory />);
+    await waitFor(() => {
+      const chart = screen.getByTestId("nw-chart");
+      expect(chart.innerHTML).toContain("polyline");
     });
   });
 

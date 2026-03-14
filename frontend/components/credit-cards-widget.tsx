@@ -55,7 +55,7 @@ export default function CreditCardsWidget() {
           No credit cards.
         </p>
       ) : (
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-4 max-h-64 space-y-2 overflow-y-auto">
           {cards.map((card) => {
             const balance = Math.abs(card.current_balance);
             const limit = card.credit_limit ?? 0;

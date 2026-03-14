@@ -69,7 +69,7 @@ export default function RecurringWidget() {
           No recurring transactions detected yet.
         </p>
       ) : (
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-4 max-h-64 space-y-2 overflow-y-auto">
           {recurring.slice(0, 6).map((txn) => (
             <li
               key={txn.id}

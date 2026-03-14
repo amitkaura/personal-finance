@@ -56,7 +56,7 @@ export default function ReviewSnippet() {
           All caught up — nothing to review.
         </p>
       ) : (
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-4 max-h-64 space-y-2 overflow-y-auto">
           {(data ?? []).map((txn) => (
             <li
               key={txn.id}

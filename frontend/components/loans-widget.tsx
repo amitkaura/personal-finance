@@ -53,7 +53,7 @@ export default function LoansWidget() {
           No loans.
         </p>
       ) : (
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-4 max-h-64 space-y-2 overflow-y-auto">
           {loans.map((loan) => (
             <li
               key={loan.id}

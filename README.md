@@ -168,7 +168,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 ### Dashboard
 - Net worth hero card with total assets, liabilities, and net worth
-- Net worth history chart
+- Net worth history SVG line chart with hover tooltips
 - Top spending movers (biggest category changes)
 - Budget and goals summary snippets
 - Credit cards widget (balances, limits, utilization)
@@ -581,7 +581,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (368 tests across 36 files):**
+**What's tested (370 tests across 36 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -604,7 +604,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
 | `recurring-page` | 7 | Title, loading, empty state, recurring cards, summary, consistent/varies badges, sort dropdown |
 | `connections-page` | 6 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync |
-| `net-worth-history` | 6 | Loading, empty state with snapshot, chart rendering, change indicator, period selector |
+| `net-worth-history` | 7 | Loading, empty state with snapshot, SVG line chart rendering, polyline assertion, change indicator, period selector |
 | `credit-cards-widget` | 6 | Loading, empty, card list, total owed, utilization bar colors, no-limit handling |
 | `recurring-widget` | 6 | Loading, empty, recurring detection, max 6 items, null merchant handling, sort by amount |
 | `household-provider` | 6 | Load household/partner, scope persistence per user in localStorage, reset |
@@ -613,7 +613,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `goals-snippet` | 6 | Loading, empty with "Set one" link, personal goals (max 3), shared summary, singular/plural, view all link |
 | `auth-gate` | 6 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, hamburger menu button, toggle sidebar open, responsive margin classes |
 | `net-worth-card` | 5 | Loading skeleton, net worth display, asset/liability breakdown, account count pluralization |
-| `top-movers` | 5 | Loading, empty, investment+linked filter, trend icons, official name fallback |
+| `top-movers` | 6 | Loading, empty, investment filter, scrollable list, trend icons, official name fallback |
 | `budget-snippet` | 5 | Loading, empty with "Create one" link, personal mini bar, top 3 sort, view all link |
 | `login-page` | 5 | Hero section, trust badges, feature cards, Google sign-in flow |
 | `loans-widget` | 4 | Loading, empty, loan list, total remaining |

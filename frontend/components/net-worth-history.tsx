@@ -6,6 +6,104 @@ import { TrendingUp, Camera } from "lucide-react";
 import { api } from "@/lib/api";
 import { useFormatCurrency, useScope } from "@/lib/hooks";
 
+const SVG_W = 600;
+const SVG_H = 192;
+const PAD = { top: 16, right: 16, bottom: 4, left: 16 };
+
+function LineChart({
+  snapshots,
+  minVal,
+  rawRange,
+  flat,
+  formatCurrency,
+}: {
+  snapshots: { date: string; net_worth: number; assets: number; liabilities: number }[];
+  minVal: number;
+  rawRange: number;
+  flat: boolean;
+  formatCurrency: (v: number) => string;
+}) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const plotW = SVG_W - PAD.left - PAD.right;
+  const plotH = SVG_H - PAD.top - PAD.bottom;
+
+  function x(i: number) {
+    return PAD.left + (snapshots.length === 1 ? plotW / 2 : (i / (snapshots.length - 1)) * plotW);
+  }
+  function y(val: number) {
+    if (flat) return PAD.top + plotH / 2;
+    return PAD.top + plotH - ((val - minVal) / rawRange) * plotH;
+  }
+
+  const points = snapshots.map((s, i) => `${x(i)},${y(s.net_worth)}`).join(" ");
+  const areaPoints = [
+    ...snapshots.map((s, i) => `${x(i)},${y(s.net_worth)}`),
+    `${x(snapshots.length - 1)},${PAD.top + plotH}`,
+    `${x(0)},${PAD.top + plotH}`,
+  ].join(" ");
+
+  return (
+    <div className="relative mt-4 h-48">
+      <svg
+        data-testid="nw-chart"
+        viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+        preserveAspectRatio="none"
+        className="h-full w-full"
+        onMouseLeave={() => setHovered(null)}
+      >
+        <polygon points={areaPoints} className="fill-accent/15" />
+        {snapshots.length > 1 && (
+          <polyline
+            points={points}
+            fill="none"
+            className="stroke-accent"
+            strokeWidth={2}
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+        {snapshots.map((s, i) => (
+          <circle
+            key={s.date}
+            cx={x(i)}
+            cy={y(s.net_worth)}
+            r={hovered === i || snapshots.length === 1 ? 5 : 3}
+            className={`fill-accent stroke-card ${hovered === i ? "opacity-100" : "opacity-0 hover:opacity-100"}`}
+            strokeWidth={2}
+            vectorEffect="non-scaling-stroke"
+            onMouseEnter={() => setHovered(i)}
+          />
+        ))}
+        {snapshots.map((_, i) => (
+          <rect
+            key={`hit-${i}`}
+            x={x(i) - (plotW / snapshots.length) / 2}
+            y={0}
+            width={plotW / snapshots.length}
+            height={SVG_H}
+            fill="transparent"
+            onMouseEnter={() => setHovered(i)}
+          />
+        ))}
+      </svg>
+      {hovered !== null && snapshots[hovered] && (
+        <div
+          className="pointer-events-none absolute z-10 rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-xl whitespace-nowrap"
+          style={{
+            left: `${(x(hovered) / SVG_W) * 100}%`,
+            bottom: `${((SVG_H - y(snapshots[hovered].net_worth)) / SVG_H) * 100 + 4}%`,
+            transform: "translateX(-50%)",
+          }}
+        >
+          <p className="font-medium">{formatCurrency(snapshots[hovered].net_worth)}</p>
+          <p className="text-muted-foreground">{snapshots[hovered].date}</p>
+          <p className="text-muted-foreground">Assets: {formatCurrency(snapshots[hovered].assets)}</p>
+          <p className="text-muted-foreground">Liabilities: {formatCurrency(snapshots[hovered].liabilities)}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function NetWorthHistory() {
   const formatCurrency = useFormatCurrency();
   const scope = useScope();
@@ -131,37 +229,7 @@ export default function NetWorthHistory() {
         </div>
       </div>
 
-      <div className="mt-4 flex h-48 gap-px">
-        {snapshots.map((s) => {
-          const height = flat ? 80 : ((s.net_worth - minVal) / rawRange) * 100;
-          return (
-            <div
-              key={s.date}
-              className="group relative flex-1 flex flex-col justify-end"
-              style={{ minWidth: 4 }}
-            >
-              <div
-                className={`w-full rounded-t transition-colors ${
-                  s.net_worth >= 0
-                    ? "bg-accent/60 group-hover:bg-accent"
-                    : "bg-danger/60 group-hover:bg-danger"
-                }`}
-                style={{ height: `${Math.max(height, 2)}%` }}
-              />
-              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-xl group-hover:block whitespace-nowrap">
-                <p className="font-medium">{formatCurrency(s.net_worth)}</p>
-                <p className="text-muted-foreground">{s.date}</p>
-                <p className="text-muted-foreground">
-                  Assets: {formatCurrency(s.assets)}
-                </p>
-                <p className="text-muted-foreground">
-                  Liabilities: {formatCurrency(s.liabilities)}
-                </p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <LineChart snapshots={snapshots} minVal={minVal} rawRange={rawRange} flat={flat} formatCurrency={formatCurrency} />
 
       {snapshots.length === 1 ? (
         <div className="mt-2 text-center text-[10px] text-muted-foreground">
