@@ -73,7 +73,7 @@ def list_transactions(
                 Transaction.user_id.in_(user_ids),  # type: ignore[union-attr]
             )
         )
-        .order_by(Transaction.date.desc())
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
     )
     if uncategorized is True:
         stmt = stmt.where(Transaction.category == None)  # noqa: E711

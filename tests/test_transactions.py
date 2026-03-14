@@ -28,6 +28,18 @@ def test_list_returns_transactions(auth_client, session):
     assert len(resp.json()) == 2
 
 
+def test_list_sorted_by_most_recent_transaction_date(auth_client, session):
+    client, user = auth_client
+    make_transaction(session, user, merchant="Old", txn_date=date(2026, 1, 1))
+    make_transaction(session, user, merchant="New", txn_date=date(2026, 2, 1))
+    make_transaction(session, user, merchant="Middle", txn_date=date(2026, 1, 15))
+
+    resp = client.get("/api/v1/transactions")
+    assert resp.status_code == 200
+    names = [t["merchant_name"] for t in resp.json()]
+    assert names == ["New", "Middle", "Old"]
+
+
 def test_list_filter_uncategorized(auth_client, session):
     client, user = auth_client
     make_transaction(session, user, category=None)

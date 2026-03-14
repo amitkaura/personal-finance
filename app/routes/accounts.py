@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import uuid4
 
+from sqlalchemy import func
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, or_, select
@@ -28,7 +29,9 @@ def list_accounts(
 ):
     user_ids = get_scoped_user_ids(session, user, scope)
     accounts = session.exec(
-        select(Account).where(Account.user_id.in_(user_ids))  # type: ignore[union-attr]
+        select(Account)
+        .where(Account.user_id.in_(user_ids))  # type: ignore[union-attr]
+        .order_by(func.lower(Account.name), Account.id)
     ).all()
     owner_info = _build_owner_info(session, user_ids)
     return [_acct_to_dict(a, owner_info) for a in accounts]

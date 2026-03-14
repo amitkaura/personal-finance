@@ -29,6 +29,18 @@ def test_list_returns_accounts(auth_client, session):
     assert len(resp.json()) == 2
 
 
+def test_list_returns_accounts_sorted_by_name(auth_client, session):
+    client, user = auth_client
+    make_account(session, user, name="zeta")
+    make_account(session, user, name="Alpha")
+    make_account(session, user, name="beta")
+
+    resp = client.get("/api/v1/accounts")
+    assert resp.status_code == 200
+    names = [a["name"] for a in resp.json()]
+    assert names == ["Alpha", "beta", "zeta"]
+
+
 def test_list_does_not_show_other_users(auth_client, session):
     client, user = auth_client
     other = make_user(session)

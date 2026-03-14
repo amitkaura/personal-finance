@@ -479,7 +479,7 @@ function CreateGoalDialog({
   });
 
   const depositoryAccounts = useMemo(
-    () => accounts?.filter((a) => a.is_linked && (a.type === "depository" || a.type === "investment")) ?? [],
+    () => accounts?.filter((a) => a.type === "depository" || a.type === "investment") ?? [],
     [accounts]
   );
 
