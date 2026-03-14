@@ -32,6 +32,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
   const { household } = useHousehold();
   const [step, setStep] = useState<Step>("upload");
   const [rawRows, setRawRows] = useState<string[][]>([]);
+  const [sourceFileName, setSourceFileName] = useState("");
   const [columnRoles, setColumnRoles] = useState<ColumnRole[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
@@ -87,6 +88,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setSourceFileName(file.name || "");
     const reader = new FileReader();
     reader.onload = () => {
       const parsed = parseCsv(reader.result as string);
@@ -95,8 +97,9 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
         return;
       }
       setError(null);
+      const guessedRoles = parsed[0].map((h) => guessRole(h));
       setRawRows(parsed);
-      setColumnRoles(parsed[0].map((h) => guessRole(h)));
+      setColumnRoles(guessedRoles);
       setStep("columns");
     };
     reader.readAsText(file);
@@ -156,21 +159,40 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
       const newAccountNames = csvAccountNames.filter(
         (n) => !existingAccountNames.has(n.toLowerCase()),
       );
+      const fallbackAccountNameBase = sourceFileName.replace(/\.[^/.]+$/, "").trim();
+      const fallbackAccountName = fallbackAccountNameBase || "Imported Account";
+      const shouldCreateFallbackAccount =
+        newAccountNames.length === 0 &&
+        csvAccountNames.length === 0 &&
+        (existingAccounts?.length ?? 0) === 0;
       const newCategories = categoryMatches
         .filter((m) => m.isNew)
         .map((m) => m.csvCategory);
+      const transactionsForImport = shouldCreateFallbackAccount
+        ? mappedRows.map((row) => ({ ...row, account_name: fallbackAccountName }))
+        : mappedRows;
 
       const payload: BulkImportPayload = {
-        accounts: newAccountNames.map((name) => {
-          const m = accountMeta[name];
-          return {
-            name,
-            type: m?.type ?? "depository",
-            subtype: m?.subtype ?? SUBTYPES["depository"]?.[0] ?? "",
-            current_balance: parseFloat(m?.balance ?? "0") || 0,
-          };
-        }),
-        transactions: mappedRows,
+        accounts: [
+          ...newAccountNames.map((name) => {
+            const m = accountMeta[name];
+            return {
+              name,
+              type: m?.type ?? "depository",
+              subtype: m?.subtype ?? SUBTYPES["depository"]?.[0] ?? "",
+              current_balance: parseFloat(m?.balance ?? "0") || 0,
+            };
+          }),
+          ...(shouldCreateFallbackAccount
+            ? [{
+                name: fallbackAccountName,
+                type: "depository",
+                subtype: SUBTYPES["depository"]?.[0] ?? "",
+                current_balance: 0,
+              }]
+            : []),
+        ],
+        transactions: transactionsForImport,
         new_categories: newCategories,
         skip_llm: true,
       };

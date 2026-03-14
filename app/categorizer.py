@@ -12,7 +12,7 @@ import logging
 from typing import Optional
 
 import httpx
-from sqlmodel import Session, select
+from sqlmodel import Session, or_, select
 
 from app.crypto import decrypt_token
 from app.database import engine
@@ -235,7 +235,10 @@ def auto_categorize_pending(session: Session, user_id: int) -> dict[str, int]:
     txns = session.exec(
         select(Transaction).where(
             Transaction.category == None,  # noqa: E711
-            Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+            or_(
+                Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+                Transaction.user_id == user_id,
+            ),
         )
     ).all()
 

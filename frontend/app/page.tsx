@@ -29,6 +29,9 @@ const ReviewSnippet = dynamic(() => import("@/components/review-snippet"), {
 const BudgetSnippet = dynamic(() => import("@/components/budget-snippet"), {
   loading: skeleton,
 });
+const GoalsSnippet = dynamic(() => import("@/components/goals-snippet"), {
+  loading: skeleton,
+});
 const DashboardActions = dynamic(() => import("@/components/dashboard-actions"), {
   loading: skeleton,
 });
@@ -69,6 +72,10 @@ export default function DashboardPage() {
 
       <div className="mt-6">
         <BudgetSnippet />
+      </div>
+
+      <div className="mt-6">
+        <GoalsSnippet />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">

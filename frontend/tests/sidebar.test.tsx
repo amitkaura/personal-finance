@@ -57,7 +57,7 @@ describe("Sidebar", () => {
     expect(screen.getByText("fino")).toBeInTheDocument();
   });
 
-  it("renders all navigation links including Categories", () => {
+  it("renders all navigation links including Categories and Goals", () => {
     render(<Sidebar />);
 
     const expectedLinks = [
@@ -66,6 +66,7 @@ describe("Sidebar", () => {
       "Transactions",
       "Categories",
       "Budgets",
+      "Goals",
       "Cash Flow",
       "Reports",
       "Recurring",
@@ -160,6 +161,19 @@ describe("Sidebar", () => {
     const budIdx = labels.indexOf("Budgets");
     expect(catIdx).toBe(txnIdx + 1);
     expect(budIdx).toBe(catIdx + 1);
+  });
+
+  it("Goals appears between Budgets and Cash Flow", () => {
+    render(<Sidebar />);
+    const links = screen.getAllByRole("link").filter(
+      (el) => el.closest("nav") !== null
+    );
+    const labels = links.map((el) => el.textContent);
+    const budIdx = labels.indexOf("Budgets");
+    const goalsIdx = labels.indexOf("Goals");
+    const cashflowIdx = labels.indexOf("Cash Flow");
+    expect(goalsIdx).toBe(budIdx + 1);
+    expect(cashflowIdx).toBe(goalsIdx + 1);
   });
 
   it("has navigation role and aria-label", () => {

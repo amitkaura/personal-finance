@@ -278,7 +278,10 @@ def _auto_categorize_stream(session: Session, user: User):
     txns = session.exec(
         select(Transaction).where(
             Transaction.category == None,  # noqa: E711
-            Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+            or_(
+                Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+                Transaction.user_id == user.id,
+            ),
         )
     ).all()
 

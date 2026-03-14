@@ -204,6 +204,32 @@ describe("BulkCsvImportDialog", () => {
     });
   });
 
+  it("creates a fallback account when no account column and no existing accounts", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
+
+    await uploadCsv(
+      "Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n",
+    );
+    await waitFor(() => expect(screen.getByText("Next")).toBeInTheDocument());
+    await user.click(screen.getByText("Next"));
+    await waitFor(() => expect(screen.getByText(/Import 2 transactions/)).toBeInTheDocument());
+    await user.click(screen.getByText(/Import 2 transactions/));
+
+    await waitFor(() => {
+      expect(mockApi.bulkImportTransactions).toHaveBeenCalled();
+      const [payload] = mockApi.bulkImportTransactions.mock.calls[0];
+      expect(payload.accounts).toHaveLength(1);
+      expect(payload.accounts[0]).toMatchObject({
+        name: "test",
+        type: "depository",
+      });
+      expect(payload.transactions).toHaveLength(2);
+      expect(payload.transactions[0].account_name).toBe("test");
+      expect(payload.transactions[1].account_name).toBe("test");
+    });
+  });
+
   it("skips to preview when no accounts or categories", async () => {
     const user = userEvent.setup();
     renderWithProviders(<BulkCsvImportDialog onClose={onClose} />);
