@@ -17,9 +17,10 @@ import {
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
-import type { AutoCatProgressEvent } from "@/lib/api";
+import { useCategorizationProgress } from "@/components/categorization-progress-provider";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
-import type { Account, Transaction } from "@/lib/types";
+import type { Account, Transaction, CategoryRule } from "@/lib/types";
+import { generateKeywordOptions } from "@/lib/rule-utils";
 import ConfirmDialog from "@/components/confirm-dialog";
 
 export default function TransactionsPage() {
@@ -55,8 +56,15 @@ export default function TransactionsPage() {
   const PAGE_SIZE = 50;
 
   const [deleteConfirm, setDeleteConfirm] = useState<Transaction | null>(null);
-  const [autoCatProgress, setAutoCatProgress] = useState<AutoCatProgressEvent | null>(null);
+  const { startAutoCategorize, state: catState } = useCategorizationProgress();
   const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const [ruleSuggestion, setRuleSuggestion] = useState<{
+    merchantName: string;
+    category: string;
+    selectedKeyword: string;
+  } | null>(null);
+  const [ruleCreated, setRuleCreated] = useState(false);
 
   useEffect(() => {
     if (!filtersOpen) return;
@@ -125,16 +133,7 @@ export default function TransactionsPage() {
     queryFn: api.getCategories,
   });
 
-  const autoCatMutation = useMutation({
-    mutationFn: () => api.autoCategorize((event) => setAutoCatProgress(event)),
-    onSuccess: () => {
-      setAutoCatProgress(null);
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-    },
-    onError: () => {
-      setAutoCatProgress(null);
-    },
-  });
+  const catBusy = catState === "categorizing" || catState === "syncing";
 
   const recategorizeMutation = useMutation({
     mutationFn: ({ id, category }: { id: number; category: string }) =>
@@ -157,6 +156,19 @@ export default function TransactionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       setShowAddForm(false);
+    },
+  });
+
+  const { data: rules } = useQuery({
+    queryKey: ["rules"],
+    queryFn: api.getRules,
+  });
+
+  const createRuleMutation = useMutation({
+    mutationFn: (body: { keyword: string; category: string; case_sensitive?: boolean }) =>
+      api.createRule(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
     },
   });
 
@@ -246,17 +258,17 @@ export default function TransactionsPage() {
               Add Transaction
             </button>
             <button
-              onClick={() => autoCatMutation.mutate()}
-              disabled={autoCatMutation.isPending}
+              onClick={startAutoCategorize}
+              disabled={catBusy}
               className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
               title="Use rules and AI to categorize uncategorized transactions"
             >
-              {autoCatMutation.isPending ? (
+              {catBusy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Sparkles className="h-4 w-4" />
               )}
-              {autoCatMutation.isPending ? "Categorizing..." : "Auto-Categorize"}
+              {catBusy ? "Categorizing..." : "Auto-Categorize"}
             </button>
           </div>
         )}
@@ -269,41 +281,6 @@ export default function TransactionsPage() {
           onCancel={() => setShowAddForm(false)}
           isPending={createMutation.isPending}
         />
-      )}
-
-      {autoCatMutation.isPending && autoCatProgress && (
-        <div className="mt-4 rounded-lg border border-accent/30 bg-accent/10 px-4 py-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="flex items-center gap-2 text-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Categorizing &ldquo;{autoCatProgress.merchant_name}&rdquo;
-              {autoCatProgress.category && (
-                <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                  {autoCatProgress.category}
-                </span>
-              )}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {autoCatProgress.current} / {autoCatProgress.total}
-            </span>
-          </div>
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-accent transition-all duration-200"
-              style={{ width: `${(autoCatProgress.current / autoCatProgress.total) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {autoCatMutation.isSuccess && (
-        <div className="mt-4 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
-          Done — {autoCatMutation.data.categorized} of{" "}
-          {autoCatMutation.data.total} transactions categorized
-          {autoCatMutation.data.skipped > 0 &&
-            `, ${autoCatMutation.data.skipped} skipped`}
-          .
-        </div>
       )}
 
       {/* Search + toggle + filters — single row */}
@@ -544,6 +521,14 @@ export default function TransactionsPage() {
               }
               editable={isViewingOwn}
               showOwner={!isViewingOwn}
+              rules={rules ?? []}
+              onCreateRule={(keyword, category) =>
+                createRuleMutation.mutate({ keyword, category })
+              }
+              onSuggestRule={(merchantName, category, selectedKeyword) => {
+                setRuleCreated(false);
+                setRuleSuggestion({ merchantName, category, selectedKeyword });
+              }}
             />
           ))}
         </div>
@@ -576,6 +561,32 @@ export default function TransactionsPage() {
         onConfirm={() => deleteConfirm && deleteMutation.mutate(deleteConfirm.id)}
         onCancel={() => setDeleteConfirm(null)}
       />
+
+      {ruleSuggestion && (
+        <div className="fixed bottom-6 right-6 z-50 w-96 rounded-2xl border border-border bg-card p-4 shadow-2xl">
+          <RuleSuggestionCard
+            merchantName={ruleSuggestion.merchantName}
+            category={ruleSuggestion.category}
+            selectedKeyword={ruleSuggestion.selectedKeyword}
+            onSelectKeyword={(kw) =>
+              setRuleSuggestion((prev) => prev ? { ...prev, selectedKeyword: kw } : null)
+            }
+            onCreateRule={() => {
+              createRuleMutation.mutate({
+                keyword: ruleSuggestion.selectedKeyword,
+                category: ruleSuggestion.category,
+              });
+              setRuleCreated(true);
+              setTimeout(() => {
+                setRuleSuggestion(null);
+                setRuleCreated(false);
+              }, 1500);
+            }}
+            onDismiss={() => setRuleSuggestion(null)}
+            created={ruleCreated}
+          />
+        </div>
+      )}
     </>
   );
 }
@@ -588,6 +599,9 @@ function TransactionRow({
   onDelete,
   editable = true,
   showOwner = false,
+  rules = [],
+  onCreateRule,
+  onSuggestRule,
 }: {
   txn: Transaction;
   categories: string[];
@@ -596,6 +610,9 @@ function TransactionRow({
   onDelete: (id: number) => void;
   editable?: boolean;
   showOwner?: boolean;
+  rules?: CategoryRule[];
+  onCreateRule?: (keyword: string, category: string) => void;
+  onSuggestRule?: (merchantName: string, category: string, selectedKeyword: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -697,6 +714,22 @@ function TransactionRow({
                     onClick={() => {
                       onRecategorize(txn.id, cat);
                       setOpen(false);
+                      const merchant = txn.merchant_name || "";
+                      const hasMatchingRule = rules.some((r) => {
+                        const flags = r.case_sensitive ? "" : "i";
+                        try {
+                          return new RegExp(`\\b${r.keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, flags).test(merchant);
+                        } catch {
+                          return false;
+                        }
+                      });
+                      if (!hasMatchingRule && merchant && onSuggestRule) {
+                        const opts = generateKeywordOptions(merchant);
+                        if (opts.length > 0) {
+                          const keyword = opts.length > 1 ? opts[opts.length - 2] : opts[0];
+                          onSuggestRule(merchant, cat, keyword);
+                        }
+                      }
                     }}
                     className="block w-full px-3 py-1.5 text-left text-xs hover:bg-muted"
                   >
@@ -718,6 +751,79 @@ function TransactionRow({
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       )}
+
+    </div>
+  );
+}
+
+function RuleSuggestionCard({
+  merchantName,
+  category,
+  selectedKeyword,
+  onSelectKeyword,
+  onCreateRule,
+  onDismiss,
+  created,
+}: {
+  merchantName: string;
+  category: string;
+  selectedKeyword: string;
+  onSelectKeyword: (keyword: string) => void;
+  onCreateRule: () => void;
+  onDismiss: () => void;
+  created: boolean;
+}) {
+  const options = generateKeywordOptions(merchantName);
+
+  if (created) {
+    return (
+      <div className="col-span-full mt-1 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
+        <Check className="mr-1 inline-block h-3 w-3" />
+        Rule created
+      </div>
+    );
+  }
+
+  return (
+    <div className="col-span-full mt-1 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-foreground">
+            Always categorize &ldquo;{merchantName}&rdquo; as{" "}
+            <span className="rounded bg-muted px-1.5 py-0.5">{category}</span>?
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {options.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => onSelectKeyword(opt)}
+                className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                  selectedKeyword === opt
+                    ? "border-accent bg-accent/20 text-accent font-medium"
+                    : "border-border text-muted-foreground hover:border-accent/50"
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2">
+            <button
+              onClick={onCreateRule}
+              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent/80"
+            >
+              Create Rule
+            </button>
+          </div>
+        </div>
+        <button
+          onClick={onDismiss}
+          className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+          aria-label="Dismiss rule suggestion"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

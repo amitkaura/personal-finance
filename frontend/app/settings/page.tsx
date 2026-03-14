@@ -61,22 +61,22 @@ const TIMEZONES = [
   "UTC",
 ];
 const CATEGORIES = [
+  "Education",
+  "Entertainment",
   "Food & Dining",
   "Groceries",
-  "Transportation",
-  "Utilities",
-  "Entertainment",
-  "Shopping",
   "Health & Fitness",
-  "Travel",
-  "Education",
-  "Subscriptions",
   "Income",
-  "Transfer",
-  "Rent & Mortgage",
   "Insurance",
   "Investments",
   "Other",
+  "Rent & Mortgage",
+  "Shopping",
+  "Subscriptions",
+  "Transfer",
+  "Transportation",
+  "Travel",
+  "Utilities",
 ];
 
 const selectClass =

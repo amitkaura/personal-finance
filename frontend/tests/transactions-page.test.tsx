@@ -17,6 +17,8 @@ const mockApi = vi.hoisted(() => ({
   updateTransaction: vi.fn(),
   deleteTransaction: vi.fn(),
   createTransaction: vi.fn(),
+  getRules: vi.fn(),
+  createRule: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -43,6 +45,13 @@ vi.mock("@/lib/hooks", () => ({
   useScope: () => mockScope.value,
 }));
 
+vi.mock("@/components/categorization-progress-provider", () => ({
+  useCategorizationProgress: () => ({
+    startAutoCategorize: vi.fn(),
+    state: "idle",
+  }),
+}));
+
 describe("TransactionsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -58,6 +67,8 @@ describe("TransactionsPage", () => {
     mockApi.updateTransaction.mockResolvedValue({});
     mockApi.deleteTransaction.mockResolvedValue(undefined);
     mockApi.createTransaction.mockResolvedValue({});
+    mockApi.getRules.mockResolvedValue([]);
+    mockApi.createRule.mockResolvedValue({ id: 1, keyword: "Employer", category: "Income", case_sensitive: false });
   });
 
   // --- Enhancement 1: "Uncategorized" tab label ---
@@ -275,5 +286,106 @@ describe("TransactionsPage", () => {
     renderWithProviders(<TransactionsPage />);
     const skeletons = document.querySelectorAll(".animate-pulse");
     expect(skeletons.length).toBeGreaterThan(0);
+  });
+
+  // --- Rule suggestion on categorize ---
+
+  it("shows rule suggestion after categorizing a transaction", async () => {
+    const user = userEvent.setup();
+    mockApi.updateTransaction.mockResolvedValue({
+      ...TEST_TRANSACTIONS[1],
+      category: "Transportation",
+    });
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Employer Inc")).toBeInTheDocument();
+    });
+
+    const categorizeButtons = screen.getAllByText("Categorize");
+    await user.click(categorizeButtons[0]);
+    await user.click(screen.getByText("Transportation"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/always categorize/i)).toBeInTheDocument();
+    });
+  });
+
+  it("calls createRule when Create Rule is clicked", async () => {
+    const user = userEvent.setup();
+    mockApi.updateTransaction.mockResolvedValue({
+      ...TEST_TRANSACTIONS[1],
+      category: "Transportation",
+    });
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Employer Inc")).toBeInTheDocument();
+    });
+
+    const categorizeButtons = screen.getAllByText("Categorize");
+    await user.click(categorizeButtons[0]);
+    await user.click(screen.getByText("Transportation"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/always categorize/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /create rule/i }));
+
+    await waitFor(() => {
+      expect(mockApi.createRule).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: "Transportation",
+          keyword: expect.any(String),
+        }),
+      );
+    });
+  });
+
+  it("dismiss button hides the rule suggestion", async () => {
+    const user = userEvent.setup();
+    mockApi.updateTransaction.mockResolvedValue({
+      ...TEST_TRANSACTIONS[1],
+      category: "Transportation",
+    });
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Employer Inc")).toBeInTheDocument();
+    });
+
+    const categorizeButtons = screen.getAllByText("Categorize");
+    await user.click(categorizeButtons[0]);
+    await user.click(screen.getByText("Transportation"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/always categorize/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("Dismiss rule suggestion"));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/always categorize/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it("does not show rule suggestion when matching rule already exists", async () => {
+    mockApi.getRules.mockResolvedValue([
+      { id: 1, keyword: "Employer", category: "Transportation", case_sensitive: false },
+    ]);
+    mockApi.updateTransaction.mockResolvedValue({
+      ...TEST_TRANSACTIONS[1],
+      category: "Transportation",
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Employer Inc")).toBeInTheDocument();
+    });
+
+    const categorizeButtons = screen.getAllByText("Categorize");
+    await user.click(categorizeButtons[0]);
+    await user.click(screen.getByText("Transportation"));
+
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.queryByText(/always categorize/i)).not.toBeInTheDocument();
   });
 });

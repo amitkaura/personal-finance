@@ -1,5 +1,6 @@
 """Plaid endpoint tests (mocked Plaid client)."""
 
+from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -236,3 +237,78 @@ def test_exchange_token_conflict_other_user(auth_client, session):
         })
 
     assert resp.status_code == 409
+
+
+# -- Sync-all stream -------------------------------------------------------
+
+
+def _mock_plaid_transactions(transactions=None, total=None):
+    """Return a mock Plaid client that returns canned transactions."""
+    mock_client = MagicMock()
+    if transactions is None:
+        txn = MagicMock()
+        txn.transaction_id = "txn-stream-001"
+        txn.date = date(2026, 3, 1)
+        txn.amount = 29.99
+        txn.merchant_name = "Target"
+        txn.pending = False
+        txn.account_id = "plaid-acct-stream-001"
+        txn.personal_finance_category = None
+        txn.category = None
+        transactions = [txn]
+    resp = MagicMock()
+    resp.total_transactions = total if total is not None else len(transactions)
+    resp.transactions = transactions
+    mock_client.transactions_get.return_value = resp
+    accounts_resp = MagicMock()
+    accounts_resp.accounts = []
+    mock_client.accounts_get.return_value = accounts_resp
+    return mock_client
+
+
+def test_sync_all_stream_success(auth_client, session):
+    """Streaming sync returns NDJSON events for sync + categorization phases."""
+    import json as _json
+
+    client, user = auth_client
+    item = _make_plaid_item(session, user)
+    make_account(
+        session, user, name="Checking",
+        plaid_account_id="plaid-acct-stream-001",
+        plaid_item_id=item.id,
+    )
+
+    mock_client = _mock_plaid_transactions()
+    with patch("app.routes.plaid.get_plaid_client", return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "")):
+        resp = client.post(
+            "/api/v1/plaid/sync-all-stream",
+            headers={"Accept": "application/x-ndjson"},
+        )
+
+    assert resp.status_code == 200
+    lines = [l for l in resp.text.strip().split("\n") if l]
+    assert len(lines) >= 2  # at least one syncing + one complete event
+
+    events = [_json.loads(l) for l in lines]
+    statuses = [e["status"] for e in events]
+    assert "syncing" in statuses
+    assert "complete" in statuses
+
+    complete = events[-1]
+    assert complete["status"] == "complete"
+    assert complete["synced"] >= 1
+
+
+def test_sync_all_stream_no_items(auth_client):
+    """Streaming sync returns 404 when user has no Plaid items."""
+    client, _ = auth_client
+    resp = client.post("/api/v1/plaid/sync-all-stream")
+    assert resp.status_code == 404
+
+
+def test_sync_all_stream_requires_auth(client):
+    """Streaming sync requires authentication."""
+    resp = client.post("/api/v1/plaid/sync-all-stream")
+    assert resp.status_code == 401

@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import Sidebar from "@/components/sidebar";
 import InvitationBanner from "@/components/invitation-banner";
+import CategorizationDrawer from "@/components/categorization-drawer";
 import LoginPage from "@/app/login/page";
 import { Loader2, Menu } from "lucide-react";
 
@@ -44,6 +45,8 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           {children}
         </div>
       </main>
+
+      <CategorizationDrawer />
     </>
   );
 }

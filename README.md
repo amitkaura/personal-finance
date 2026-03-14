@@ -47,6 +47,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Inline auto-categorization: each transaction is categorized at import time (rules first, then per-transaction LLM fallback) with real-time streaming progress; optional **skip AI categorization** toggle for faster imports
 - Manual "auto-categorize" button with streaming progress bar (current/total, merchant name, assigned category) and tooltip describing the AI/rules categorization process
 - **Delete confirmation** -- manual transaction deletion requires confirmation via dialog; Plaid-synced transactions are protected
+- **Rule suggestion on categorize** -- after manually categorizing a transaction, an inline card offers to create a category rule from the merchant name with multiple keyword options (full name, cleaned name, progressive word combinations); skipped if a matching rule already exists
 
 ### Hybrid Categorization
 1. **Rule-based** -- user-defined keyword-to-category mappings checked first
@@ -138,6 +139,16 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Configurable per-route and global rate limiting (`memory` or `redis` backend)
 - Readiness endpoint (`/health/ready`) checks database and Redis dependencies
 
+### Global Categorization Progress Drawer
+- **Persistent progress drawer** -- fixed bottom-right card shows real-time progress during Plaid sync and auto-categorization, surviving page navigation
+- **Sync phase** -- displays institution name and account progress (e.g. "Syncing Chase... Account 1 of 3")
+- **Categorization phase** -- shows merchant name, assigned category badge, and progress bar (current/total)
+- **Completion summary** -- displays synced count, categorized count, and skipped count
+- **Error handling** -- displays error message with dismiss button
+- **Manual dismiss** -- completion and error states show an X button to reset to idle
+- Triggers from both the Sync Now button (connections page) and Auto-Categorize button (transactions page)
+- Backed by a global React Context (`CategorizationProgressProvider`) that wraps the app, streaming NDJSON events from the backend
+
 ### Navigation & Layout
 - **Mobile-responsive sidebar** -- hamburger toggle for small screens with overlay drawer
 - **Categories nav link** -- sidebar includes a dedicated Categories page link
@@ -204,16 +215,18 @@ personal-finance/
 │   │   ├── connections/page.tsx    # Plaid connections management
 │   │   ├── settings/page.tsx       # User preferences and configuration
 │   │   ├── layout.tsx              # Root layout
-│   │   └── providers.tsx           # React Query, Google OAuth, Auth, Household
+│   │   └── providers.tsx           # React Query, Google OAuth, Auth, Household, CategorizationProgress
 │   ├── components/
-│   │   ├── auth-gate.tsx           # Auth check wrapper with sidebar
+│   │   ├── auth-gate.tsx           # Auth check wrapper with sidebar + categorization drawer
 │   │   ├── auth-provider.tsx       # Auth context and useAuth hook
 │   │   ├── household-provider.tsx  # Household context and useHousehold hook
 │   │   ├── view-switcher.tsx       # Mine / Yours / Ours toggle
 │   │   ├── invitation-banner.tsx   # Accept/decline household invitations
 │   │   ├── sidebar.tsx             # Navigation, user profile, logout
 │   │   ├── link-account.tsx        # Plaid Link flow
-│   │   ├── sync-button.tsx         # Trigger sync for all items
+│   │   ├── categorization-progress-provider.tsx # Global categorization progress context
+│   │   ├── categorization-drawer.tsx  # Persistent progress drawer (fixed bottom-right)
+│   │   ├── sync-button.tsx         # Trigger sync for all items (uses global context)
 │   │   ├── net-worth-card.tsx      # Net worth summary
 │   │   ├── net-worth-history.tsx   # Net worth line chart
 │   │   ├── credit-cards-widget.tsx # Credit card balances
@@ -231,6 +244,7 @@ personal-finance/
 │   │   ├── api.ts                  # API client (fetch with credentials)
 │   │   ├── types.ts                # TypeScript interfaces
 │   │   ├── csv-utils.ts            # CSV parsing, column role detection, date normalization
+│   │   ├── rule-utils.ts           # Keyword option generation for category rule suggestions
 │   │   └── hooks.ts                # useSettings, useFormatCurrency, useScope
 │   └── tests/                      # Frontend test suite (Vitest + RTL)
 │       ├── setup.tsx               # Global mocks (next/image, next/link, next/navigation)
@@ -243,6 +257,7 @@ personal-finance/
 │       ├── sidebar.test.tsx        # Nav links, branding, active state, user section
 │       ├── hooks.test.tsx          # useFormatCurrency, useFormatCurrencyPrecise, useScope
 │       ├── csv-utils.test.ts       # CSV parser, column role guessing, date normalization, row mapping
+│       ├── rule-utils.test.ts     # Keyword option generation for rule suggestions
 │       ├── accounts-page.test.tsx  # Manual/Plaid account rendering, add form, import/delete actions, edit modal
 │       ├── csv-import-dialog.test.tsx # Upload, column mapping, debit/credit, preview, import flow
 │       ├── bulk-csv-import-dialog.test.tsx # Bulk upload, multi-account mapping, category matching
@@ -261,7 +276,8 @@ personal-finance/
 │       ├── loans-widget.test.tsx   # Loan list, total remaining
 │       ├── recurring-widget.test.tsx # Recurring detection, max 6, sort by amount
 │       ├── top-movers.test.tsx     # Investment filter, trend icons
-│       ├── sync-button.test.tsx    # Click, syncing state, idle after delay
+│       ├── categorization-drawer.test.tsx # Idle, syncing, categorizing, complete, dismiss
+│       ├── sync-button.test.tsx    # Click, syncing state, idle after completion
 │       ├── review-snippet.test.tsx # Transaction list, "all caught up", view all link
 │       ├── budget-snippet.test.tsx # Personal/shared bars, top 3, "Create one" link
 │       ├── goals-snippet.test.tsx  # Personal goals, shared summary, "Set one" link
@@ -340,7 +356,8 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | POST | `/link-token` | Create a Plaid Link token |
 | POST | `/exchange-token` | Exchange public token for access token |
 | POST | `/sync/:plaid_item_id` | Sync transactions for a specific item |
-| POST | `/sync-all` | Sync all linked Plaid items |
+| POST | `/sync-all` | Sync all linked Plaid items (background) |
+| POST | `/sync-all-stream` | Sync all items with streaming NDJSON progress (sync + categorize phases) |
 | GET | `/items` | List all Plaid connections with accounts |
 | POST | `/items/:id/unlink` | Revoke and delete a Plaid connection |
 
@@ -513,7 +530,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (279 tests across 15 files):**
+**What's tested (287 tests across 15 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -524,7 +541,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_transactions` | 30 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize (rules, per-txn LLM, partial failure, NDJSON streaming), recurring, date validation, response schema |
 | `test_categories` | 27 | Full CRUD, auto-seed defaults, create validation (empty/whitespace/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
 | `test_accounts` | 24 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization |
-| `test_plaid` | 14 | Link token, exchange token (success, relink, conflict, institution name), sync, items (all Plaid calls mocked) |
+| `test_plaid` | 17 | Link token, exchange token (success, relink, conflict, institution name), sync, sync-all-stream (NDJSON streaming), items (all Plaid calls mocked) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 6 | SMTP service, invitation template, send/skip/fail handling, port-465 SSL |
@@ -551,15 +568,16 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (321 tests across 32 files):**
+**What's tested (341 tests across 34 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
+| `rule-utils` | 11 | Keyword option generation: full name, cleaned name, progressive word combos, dedup, edge cases |
 | `settings-page` | 17 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
-| `transactions-page` | 15 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params |
-| `sidebar` | 13 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
+| `transactions-page` | 19 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists) |
+| `sidebar` | 12 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
 | `accounts-page` | 20 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form with subtype selector, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid, friendly type/subtype labels |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
 | `bulk-csv-import-dialog` | 11 | Upload, preview, account detection, import flow, progress, results, errors |
@@ -584,7 +602,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `budget-snippet` | 5 | Loading, empty with "Create one" link, personal mini bar, top 3 sort, view all link |
 | `login-page` | 5 | Hero section, trust badges, feature cards, Google sign-in flow |
 | `loans-widget` | 4 | Loading, empty, loan list, total remaining |
-| `sync-button` | 4 | Idle state, click triggers API, syncing state (disabled), returns to idle after delay |
+| `categorization-drawer` | 5 | Idle hidden, syncing state, categorizing progress, completion summary with dismiss, dismiss resets to idle |
+| `sync-button` | 4 | Idle state, click triggers sync stream, syncing state (disabled), returns to idle after completion |
 | `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
 | `link-account` | 4 | Idle button, token fetch on click, success message, pluralization |
 

@@ -88,6 +88,20 @@ export interface AutoCatCompleteEvent {
   skipped: number;
 }
 
+export interface SyncProgressEvent {
+  status: "syncing";
+  institution: string;
+  current: number;
+  total: number;
+}
+
+export interface SyncCompleteEvent {
+  status: "complete";
+  synced: number;
+  categorized: number;
+  skipped: number;
+}
+
 export interface BulkImportPayload {
   accounts: { name: string; type: string; subtype?: string; current_balance?: number }[];
   transactions: {
@@ -221,6 +235,63 @@ async function streamAutoCategorize(
   return result;
 }
 
+async function streamSyncAll(
+  path: string,
+  onEvent?: (event: SyncProgressEvent | AutoCatProgressEvent) => void,
+): Promise<SyncCompleteEvent> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/x-ndjson",
+    },
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${await res.text()}`);
+  }
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: SyncCompleteEvent | null = null;
+  let lastProgressTime = 0;
+  let pendingEvent: (SyncProgressEvent | AutoCatProgressEvent) | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.status === "complete") {
+        result = event as SyncCompleteEvent;
+      } else if (onEvent) {
+        const now = Date.now();
+        if (now - lastProgressTime >= 100) {
+          onEvent(event);
+          lastProgressTime = now;
+          pendingEvent = null;
+        } else {
+          pendingEvent = event;
+        }
+      }
+    }
+  }
+  if (pendingEvent && onEvent) {
+    onEvent(pendingEvent);
+  }
+  if (buffer.trim()) {
+    const event = JSON.parse(buffer);
+    if (event.status === "complete") result = event as SyncCompleteEvent;
+  }
+  if (!result) throw new Error("Sync stream ended without completion event");
+  return result;
+}
+
 export const api = {
   // Auth
   loginWithGoogle: (idToken: string) =>
@@ -283,7 +354,10 @@ export const api = {
     return all;
   },
 
-  getCategories: () => fetcher<string[]>("/transactions/categories"),
+  getCategories: async () => {
+    const cats = await fetcher<string[]>("/transactions/categories");
+    return cats.sort((a, b) => a.localeCompare(b));
+  },
 
   createTransaction: (body: {
     date: string; amount: number; merchant_name: string;
@@ -320,6 +394,12 @@ export const api = {
 
   triggerSyncAll: () =>
     fetcher<{ status: string; items_queued: number }>("/plaid/sync-all", { method: "POST" }),
+
+  syncAllStream: (
+    onEvent?: (event: SyncProgressEvent | AutoCatProgressEvent) => void,
+  ): Promise<SyncCompleteEvent> => {
+    return streamSyncAll("/plaid/sync-all-stream", onEvent);
+  },
 
   createLinkToken: () => fetcher<{ link_token: string }>("/plaid/link-token", { method: "POST" }),
 

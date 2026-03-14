@@ -184,6 +184,7 @@ export function createMockApi(overrides: Record<string, unknown> = {}) {
     getNetWorthHistory: vi.fn().mockResolvedValue([]),
     takeNetWorthSnapshot: vi.fn().mockResolvedValue({ ok: true }),
     triggerSyncAll: vi.fn().mockResolvedValue({ ok: true }),
+    syncAllStream: vi.fn().mockResolvedValue({ status: "complete", synced: 0, categorized: 0, skipped: 0 }),
     createLinkToken: vi.fn().mockResolvedValue({ link_token: "test-token" }),
     exchangeToken: vi.fn().mockResolvedValue({ item_id: "item-1", accounts_synced: 2 }),
     getPlaidItems: vi.fn().mockResolvedValue([]),

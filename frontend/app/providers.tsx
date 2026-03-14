@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { AuthProvider } from "@/components/auth-provider";
 import { HouseholdProvider } from "@/components/household-provider";
+import { CategorizationProgressProvider } from "@/components/categorization-progress-provider";
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
@@ -25,7 +26,11 @@ export default function Providers({ children }: { children: ReactNode }) {
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <HouseholdProvider>{children}</HouseholdProvider>
+          <HouseholdProvider>
+            <CategorizationProgressProvider>
+              {children}
+            </CategorizationProgressProvider>
+          </HouseholdProvider>
         </AuthProvider>
       </QueryClientProvider>
     </GoogleOAuthProvider>

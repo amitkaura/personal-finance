@@ -128,9 +128,9 @@ function CategoriesSection() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [deleteTarget]);
 
-  const otherCategories = categories?.filter(
-    (c) => c.id !== deleteTarget?.id
-  );
+  const otherCategories = categories
+    ?.filter((c) => c.id !== deleteTarget?.id)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
@@ -364,7 +364,7 @@ function CategoryRulesSection() {
     queryFn: api.getCategoryObjects,
   });
 
-  const categoryNames = categories?.map((c) => c.name) ?? [];
+  const categoryNames = (categories?.map((c) => c.name) ?? []).sort((a, b) => a.localeCompare(b));
 
   const [newKeyword, setNewKeyword] = useState("");
   const [newCategory, setNewCategory] = useState("");

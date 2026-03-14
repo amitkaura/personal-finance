@@ -66,7 +66,6 @@ describe("Sidebar", () => {
       "Transactions",
       "Categories",
       "Budgets",
-      "Goals",
       "Cash Flow",
       "Reports",
       "Recurring",

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from starlette.responses import StreamingResponse
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.country_code import CountryCode
 from plaid.model.item_public_token_exchange_request import (
@@ -154,6 +156,164 @@ def trigger_sync_all(
     for item in items:
         background_tasks.add_task(sync_transactions, item.id)
     return {"status": "sync_started", "items_queued": len(items)}
+
+
+@router.post("/sync-all-stream")
+def sync_all_stream(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Sync all Plaid items with streaming NDJSON progress events."""
+    items = session.exec(
+        select(PlaidItem).where(PlaidItem.user_id == user.id)
+    ).all()
+    if not items:
+        raise HTTPException(status_code=404, detail="No Plaid items linked")
+    return StreamingResponse(
+        _sync_all_stream_generator(items, user.id, session),
+        media_type="application/x-ndjson",
+    )
+
+
+def _sync_all_stream_generator(
+    items: list[PlaidItem], user_id: int, session: Session,
+):
+    """Generator that syncs Plaid items and yields NDJSON progress events."""
+    total_items = len(items)
+    total_synced = 0
+
+    for idx, item in enumerate(items, 1):
+        if not item:
+            continue
+
+        institution = item.institution_name or "Unknown Bank"
+        yield json.dumps({
+            "status": "syncing",
+            "institution": institution,
+            "current": idx,
+            "total": total_items,
+        }) + "\n"
+
+        access_token = decrypt_token(item.encrypted_access_token)
+        client = get_plaid_client()
+
+        end_date = date.today()
+        start_date = end_date - timedelta(days=30)
+
+        offset = 0
+        page_total = 1
+        while offset < page_total:
+            txn_request = TransactionsGetRequest(
+                access_token=access_token,
+                start_date=start_date,
+                end_date=end_date,
+                options=TransactionsGetRequestOptions(offset=offset, count=100),
+            )
+            txn_response = client.transactions_get(txn_request)
+            page_total = txn_response.total_transactions
+
+            for txn in txn_response.transactions:
+                existing = session.exec(
+                    select(Transaction).where(
+                        Transaction.plaid_transaction_id == txn.transaction_id
+                    )
+                ).first()
+
+                account = session.exec(
+                    select(Account).where(
+                        Account.plaid_account_id == txn.account_id
+                    )
+                ).first()
+
+                plaid_cat = None
+                if hasattr(txn, "personal_finance_category") and txn.personal_finance_category:
+                    plaid_cat = getattr(txn.personal_finance_category, "primary", None)
+                elif txn.category:
+                    plaid_cat = " > ".join(txn.category)
+
+                if existing:
+                    existing.amount = Decimal(str(txn.amount))
+                    existing.merchant_name = txn.merchant_name
+                    existing.plaid_category_code = plaid_cat
+                    existing.pending_status = txn.pending
+                    existing.date = txn.date
+                    session.add(existing)
+                else:
+                    new_txn = Transaction(
+                        plaid_transaction_id=txn.transaction_id,
+                        date=txn.date,
+                        amount=Decimal(str(txn.amount)),
+                        merchant_name=txn.merchant_name,
+                        plaid_category_code=plaid_cat,
+                        category=None,
+                        pending_status=txn.pending,
+                        account_id=account.id if account else None,
+                        user_id=user_id,
+                    )
+                    session.add(new_txn)
+                    total_synced += 1
+
+            session.commit()
+
+            batch_size = len(txn_response.transactions)
+            if batch_size == 0:
+                break
+            offset += batch_size
+
+        try:
+            _update_balances(session, access_token, item.id, user_id)
+        except Exception:
+            pass
+
+    # Categorization phase
+    user_account_ids = session.exec(
+        select(Account.id).where(Account.user_id == user_id)
+    ).all()
+    pending = session.exec(
+        select(Transaction).where(
+            Transaction.category == None,  # noqa: E711
+            Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+        )
+    ).all()
+
+    cat_total = len(pending)
+    categorized = 0
+
+    for cat_idx, t in enumerate(pending, 1):
+        cat = categorize_by_rules(t.merchant_name or "", session, user_id)
+        if not cat:
+            cat = categorize_single_llm(t, user_id)
+        status = "skipped"
+        if cat:
+            t.category = cat
+            session.add(t)
+            categorized += 1
+            status = "categorized"
+
+        yield json.dumps({
+            "status": status,
+            "current": cat_idx,
+            "total": cat_total,
+            "merchant_name": t.merchant_name,
+            "category": cat,
+        }) + "\n"
+
+    session.commit()
+
+    _refresh_linked_goal_balances(session, user_id)
+
+    from app.routes.net_worth import take_snapshot
+    try:
+        take_snapshot(session, user_id)
+    except Exception:
+        pass
+
+    yield json.dumps({
+        "status": "complete",
+        "synced": total_synced,
+        "categorized": categorized,
+        "skipped": cat_total - categorized,
+    }) + "\n"
 
 
 @router.get("/items")
