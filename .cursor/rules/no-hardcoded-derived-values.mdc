@@ -1,0 +1,34 @@
+---
+description: Never hardcode a value that is derived from a shared constant -- reference the constant instead
+alwaysApply: true
+---
+
+# No Hardcoded Derived Values
+
+When a value comes from a shared constant, array, or enum, always reference the source rather than duplicating the literal.
+
+## Why
+
+If the source changes (e.g. subtypes are renamed, reordered, or reformatted), hardcoded copies silently become stale and cause bugs in unrelated files.
+
+## Examples
+
+```tsx
+// ❌ BAD -- hardcoded default that drifts when SUBTYPES changes
+const [subtype, setSubtype] = useState("Checking");
+
+// ✅ GOOD -- derived from the source of truth
+const [subtype, setSubtype] = useState(SUBTYPES["depository"][0]);
+```
+
+```python
+# ❌ BAD -- duplicating enum values as raw strings
+if account.type in ["depository", "investment", "real_estate"]:
+
+# ✅ GOOD -- reference the enum
+if account.type in (AccountType.DEPOSITORY, AccountType.INVESTMENT, AccountType.REAL_ESTATE):
+```
+
+## Rule of thumb
+
+If you're typing a string that also exists in a constant, import, or enum elsewhere in the codebase -- reference that symbol instead.

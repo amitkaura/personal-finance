@@ -1,0 +1,27 @@
+---
+description: Checklist of all files that must be updated when adding a new AccountType enum value
+alwaysApply: false
+globs: app/models.py,frontend/app/accounts/page.tsx
+---
+
+# Adding a New Account Type
+
+When a new value is added to the `AccountType` enum, **all** of the following must be updated in the same change. Missing any one will cause a silent feature gap.
+
+## Backend
+
+1. **`app/models.py`** -- add the new value to the `AccountType` enum
+2. **`app/routes/accounts.py`** (`get_account_summary`) -- classify the new type as asset or liability and include its balance in the summary response
+3. **`app/routes/net_worth.py`** (`take_snapshot`, `recompute_snapshot_for_date`) -- include the new type in the correct side of the net worth calculation
+
+## Frontend
+
+4. **`frontend/lib/types.ts`** -- add the new type string to `Account["type"]` union; add a `*_balance` field to `AccountSummary` if applicable
+5. **`frontend/app/accounts/page.tsx`** -- add entry to `ACCOUNT_TYPES` (icon, color) and `SUBTYPES` (alphabetically sorted, camel case)
+6. **`frontend/components/net-worth-card.tsx`** -- add a line item for the new type's balance in the assets or liabilities breakdown
+7. **`frontend/components/balance-import-dialog.tsx`** -- add the new type to the `newType` select options
+
+## Tests
+
+8. **`frontend/tests/helpers.tsx`** -- add the new `*_balance` field to `mockApi.getAccountSummary` return value
+9. **Backend tests** -- add test cases covering the new type in account summary and net worth snapshot tests

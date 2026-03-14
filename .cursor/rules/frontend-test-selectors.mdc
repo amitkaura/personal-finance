@@ -1,0 +1,36 @@
+---
+description: Avoid ambiguous selectors in frontend tests -- use data-testid for custom rendered elements and specific queries for common text
+globs: frontend/tests/**
+alwaysApply: false
+---
+
+# Frontend Test Selectors
+
+## Use `data-testid` for custom rendered elements
+
+When the component renders SVG, canvas, or other non-text elements that could collide with icon libraries (e.g. Lucide), add a `data-testid` and select with `screen.getByTestId()`.
+
+```tsx
+// ❌ BAD -- grabs the first <svg>, which may be a Lucide icon
+document.querySelector("svg")
+
+// ✅ GOOD -- targets exactly the chart SVG
+screen.getByTestId("nw-chart")
+```
+
+## Avoid bare `getByText` for short/common strings
+
+If the text could appear in both mock data and UI controls (dropdowns, labels), `getByText` will throw "Found multiple elements". Use a more specific query.
+
+```tsx
+// ❌ BAD -- "Checking" appears as both an account name and a subtype option
+screen.getByText("Checking")
+
+// ✅ GOOD -- scope to a specific container or use getAllByText
+within(screen.getByRole("combobox")).getByText("Checking")
+screen.getAllByText("Checking")
+```
+
+## Prefer role-based queries when possible
+
+`getByRole`, `getByLabelText`, and `getByPlaceholderText` are more resilient to UI changes than `getByText`. Fall back to `getByTestId` only when no semantic query fits.

@@ -19,6 +19,7 @@ PostgreSQL enforces foreign key constraints strictly. When deleting any entity, 
 ```
 Account
  ├── Transaction → TransactionTag
+ ├── AccountBalanceSnapshot
  └── GoalAccountLink
 
 Goal
