@@ -9,7 +9,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 | **Backend** | Python 3.12, FastAPI, SQLModel (SQLAlchemy + Pydantic) |
 | **Database** | PostgreSQL 16 |
 | **Frontend** | Next.js 16 (App Router), React 19, Tailwind CSS 4 |
-| **Bank Integration** | Plaid (sandbox / production) |
+| **Bank Integration** | Plaid (sandbox / production), per-household BYO credentials |
 | **Auth** | Google OAuth 2.0, JWT session cookies |
 | **AI Categorization** | OpenAI-compatible API (GPT, Ollama, Azure, etc.) |
 | **Charts** | Nivo (bar) |
@@ -20,6 +20,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 ### Account Management
 - Connect bank accounts, credit cards, loans, and investment accounts via Plaid Link
+- **Bring Your Own Plaid** -- each household configures its own Plaid API keys in Settings (no global keys); Link Account redirects to settings when unconfigured
 - Supports US and Canadian institutions
 - Automatic balance refresh on every sync
 - Account type and subtype selection during creation, with editable subtypes
@@ -27,6 +28,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Unlink individual accounts or revoke full institution connections with confirmation dialog
 - **Sync feedback** -- clear "Synced" or "Sync failed" status after each connection sync
 - **Dashboard quick actions** -- Link Account, Add Account, and Add Partner buttons in the dashboard header; Add Account navigates to the accounts page with the add form pre-opened
+- **Plaid setup banner** -- dismissible dashboard banner prompts household owners to configure Plaid when not yet set up
 - **Click-to-filter** -- click any account row to navigate to the Transactions page pre-filtered by that account
 - Accounts page hides unlinked accounts by default (toggle to show all)
 - **Manual accounts** -- create accounts without Plaid (all types: depository, credit, loan, investment)
@@ -110,6 +112,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Top merchants by total spend
 
 ### Household Sharing
+- **Auto-household** -- every new user gets a personal household on signup, ensuring a place to store Plaid credentials even before inviting a partner
 - Invite a partner by email to form a household
 - Three view modes across the entire app:
   - **Mine** -- only your accounts, transactions, budgets, and goals
@@ -119,7 +122,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Shared budgets and goals are editable by either household member
 - Partner's personal budgets and goals are visible but read-only
 - **Dashboard partner status** -- shows "Sharing with {name}" badge when a partner exists, or an "Add Partner" button with invite dialog when not
-- Invitation accept/decline/cancel flow with banner notifications
+- Invitation accept/decline/cancel flow with banner notifications; accepting dissolves the invitee's solo household (including its Plaid config) and warns if they have linked Plaid items
 - Editable household name (displayed in ViewSwitcher)
 - Leave household at any time; personal data is unaffected
 
@@ -165,6 +168,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **General** -- currency (CAD, USD, EUR, GBP, etc.), date format, number locale; "Settings saved" flash on save
 - **Sync Schedule** -- enable/disable auto-sync, pick hour, minute, and timezone; "Schedule saved" flash on save
 - **AI Categorization** -- configure LLM base URL, model, and API key
+- **Integrations** -- household owner configures Plaid client ID, secret, and environment (sandbox/development/production); credentials encrypted at rest with Fernet; masked last-4 display for verification; auto-scrolls via `?section=integrations` deep link
 - **Data Management** -- CSV export of all transactions, bulk CSV import, balance history CSV import, bulk delete, factory reset (wipes all financial data while preserving login and household), delete account (permanently removes user and all data with household cleanup)
 - Category rules management is on the dedicated Categories page
 
@@ -190,7 +194,7 @@ personal-finance/
 │   ├── database.py                 # Engine, session management, table creation
 │   ├── models.py                   # All SQLModel table definitions
 │   ├── scheduler.py                # APScheduler daily sync job
-│   ├── plaid_client.py             # Plaid API client factory
+│   ├── plaid_client.py             # Plaid API client factory (per-household credentials)
 │   ├── crypto.py                   # Fernet encrypt/decrypt for access tokens
 │   ├── categorizer.py              # Rule-based + per-transaction LLM categorization
 │   ├── household.py                # Scope helper (personal/partner/household)
@@ -231,6 +235,7 @@ personal-finance/
 │   │   ├── sidebar.tsx             # Navigation, user profile, logout
 │   │   ├── dashboard-actions.tsx    # Dashboard header actions (link/add account, partner status)
 │   │   ├── add-partner-dialog.tsx  # Invite partner email dialog
+│   │   ├── plaid-setup-banner.tsx  # Dismissible Plaid config prompt for household owners
 │   │   ├── link-account.tsx        # Plaid Link flow
 │   │   ├── categorization-progress-provider.tsx # Global categorization progress context
 │   │   ├── categorization-drawer.tsx  # Persistent progress drawer (fixed bottom-right)
@@ -311,7 +316,8 @@ personal-finance/
 │   ├── test_reports.py             # Spending, trends, merchants
 │   ├── test_net_worth.py           # Snapshots, history
 │   ├── test_scheduler.py            # Statement reminder scheduler job
-│   └── test_plaid.py               # Link token, exchange token, sync (mocked)
+│   ├── test_plaid.py               # Link token, exchange token, sync (mocked)
+│   └── test_plaid_config.py        # BYO Plaid config CRUD (owner-only, encryption)
 ├── docker-compose.yml              # Postgres + Redis + API services
 ├── Dockerfile                      # Python 3.12-slim, uvicorn
 ├── requirements.txt                # Python dependencies
@@ -340,6 +346,7 @@ personal-finance/
 | `TransactionTag` | Many-to-many link between transactions and tags |
 | `Household` | Shared household between two partners |
 | `HouseholdMember` | User membership in a household with role |
+| `HouseholdPlaidConfig` | Per-household encrypted Plaid credentials (client_id, secret, env) |
 | `HouseholdInvitation` | Pending email invitation to join a household |
 
 ## API Reference
@@ -414,6 +421,9 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | DELETE | `/transactions` | Delete all user transactions |
 | DELETE | `/all-data` | Factory reset -- delete all financial data (preserves user and household) |
 | DELETE | `/account` | Delete user account and all associated data (irreversible) |
+| GET | `/plaid-config` | Get household Plaid config status (masked credentials) |
+| PUT | `/plaid-config` | Create or update Plaid credentials (owner-only) |
+| DELETE | `/plaid-config` | Remove Plaid credentials (owner-only) |
 | POST | `/import-balances` | Import account balance history CSV (creates accounts, balance snapshots, recomputes net worth) |
 
 ### Budgets (`/budgets`)
@@ -481,11 +491,12 @@ cp .env.example .env
 ```
 
 Edit `.env` and fill in:
-- `PLAID_CLIENT_ID` and `PLAID_SECRET` from the Plaid dashboard
 - `ENCRYPTION_KEY` -- generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 - `GOOGLE_CLIENT_ID` from Google Cloud Console
 - `JWT_SECRET` -- generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`
 - `LLM_API_KEY` (optional, for AI categorization)
+
+Plaid credentials are configured per-household in the app's Settings > Integrations section (not via environment variables).
 
 ### 2. Start dependencies
 
@@ -548,14 +559,14 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (312 tests across 16 files):**
+**What's tested (331 tests across 17 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `test_settings` | 61 | Profile, user settings, category rules, export (header validation), clear, tag cleanup, sync validation, factory reset, delete account (full data + user removal, household cleanup, empty household deletion, cross-user goal contributions), import LLM fallback (per-account + bulk + streaming), bulk import account subtype and balance, skip-LLM import option, balance history import (create accounts, match existing, net worth recompute, upsert duplicates, validation) |
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
-| `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
+| `test_household` | 35 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations), accept dissolves solo household (with/without Plaid config), blocked when partnered, Plaid items warning |
 | `test_transactions` | 30 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize (rules, per-txn LLM, partial failure, NDJSON streaming), recurring, date validation, response schema |
 | `test_categories` | 27 | Full CRUD, auto-seed defaults, create validation (empty/whitespace/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
 | `test_accounts` | 35 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization, statement_available_day (create/update/clear/validate), statement-reminders endpoint (match/no-match/last-day-fallback/auth) |
@@ -564,7 +575,8 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 6 | SMTP service, invitation template, send/skip/fail handling, port-465 SSL |
-| `test_auth` | 6 | Google OAuth login (mocked), session, `/me`, logout |
+| `test_plaid_config` | 13 | GET (configured/not/no-household/member-read), PUT (create/update/non-owner/no-household/invalid-env), DELETE (success/non-owner/not-configured/no-household) |
+| `test_auth` | 8 | Google OAuth login (mocked), session, `/me`, logout, auto-household on signup, no duplicate household on re-login |
 | `test_net_worth` | 5 | Snapshots, history |
 | `test_health` | 2 | Liveness and readiness endpoints |
 
@@ -572,7 +584,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 - In-memory SQLite with per-test isolation (fresh tables for each test)
 - Google OAuth ID token verification is mocked
 - `get_current_user` dependency is overridden to inject a test user
-- Factory helpers for creating users, accounts, transactions, households, budgets, goals, tags, settings, and net worth snapshots
+- Factory helpers for creating users, accounts, transactions, households, Plaid configs, budgets, goals, tags, settings, and net worth snapshots
 - No network calls — all external services (Plaid, Google) are mocked
 
 ### Frontend (Vitest + React Testing Library)
@@ -643,10 +655,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `DB_POOL_SIZE` | No | SQLAlchemy connection pool size (default: `5`) |
 | `DB_MAX_OVERFLOW` | No | SQLAlchemy pool overflow limit (default: `10`) |
-| `PLAID_CLIENT_ID` | Yes | Plaid API client ID |
-| `PLAID_SECRET` | Yes | Plaid API secret |
-| `PLAID_ENV` | No | `sandbox` (default) or `production` |
-| `ENCRYPTION_KEY` | Yes | Fernet key for encrypting Plaid access tokens |
+| `ENCRYPTION_KEY` | Yes | Fernet key for encrypting Plaid access tokens and household Plaid credentials |
 | `GOOGLE_CLIENT_ID` | Yes | Google OAuth 2.0 client ID |
 | `JWT_SECRET` | Yes | Secret for signing JWT session tokens |
 | `SECURE_COOKIES` | Conditionally required | Must be `true` when `DEBUG=false` |
@@ -679,9 +688,9 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 ## Security
 
 - Designed to run on `localhost` behind a VPN -- not exposed to the public internet
-- Plaid access tokens are encrypted at rest with Fernet symmetric encryption
+- Plaid access tokens and per-household Plaid API credentials are encrypted at rest with Fernet symmetric encryption
 - JWT sessions use HttpOnly cookies (not accessible via JavaScript), with `Secure` in non-debug mode
-- LLM API keys are never returned to the frontend
+- LLM API keys are never returned to the frontend; Plaid credentials are returned masked (last 4 chars only)
 - All data queries are scoped to the authenticated user
 - CORS is configurable via `CORS_ORIGINS`
 - API applies baseline security headers on all responses

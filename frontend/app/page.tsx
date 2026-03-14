@@ -32,6 +32,9 @@ const BudgetSnippet = dynamic(() => import("@/components/budget-snippet"), {
 const DashboardActions = dynamic(() => import("@/components/dashboard-actions"), {
   loading: skeleton,
 });
+const PlaidSetupBanner = dynamic(() => import("@/components/plaid-setup-banner"), {
+  loading: () => null,
+});
 
 export default function DashboardPage() {
   return (
@@ -49,7 +52,11 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-3">
+      <div className="mt-6">
+        <PlaidSetupBanner />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 [&>div]:h-full">
           <NetWorthCard />
         </div>

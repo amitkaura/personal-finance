@@ -301,6 +301,13 @@ export interface HouseholdInvitation {
   status: string;
 }
 
+export interface PlaidConfig {
+  configured: boolean;
+  plaid_env: string | null;
+  client_id_last4: string | null;
+  secret_last4: string | null;
+}
+
 export interface Category {
   id: number;
   name: string;

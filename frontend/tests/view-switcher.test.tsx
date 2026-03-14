@@ -104,10 +104,10 @@ describe("ViewSwitcher", () => {
     expect(screen.getByText("Mine")).toBeInTheDocument();
   });
 
-  it("uses fallback label when partner is null", () => {
+  it("renders nothing when no partner (solo household)", () => {
     mockState.household = { ...mockState.household, partner: null };
-    render(<ViewSwitcher />);
 
-    expect(screen.getByText("Yours")).toBeInTheDocument();
+    const { container } = render(<ViewSwitcher />);
+    expect(container.firstChild).toBeNull();
   });
 });

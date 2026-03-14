@@ -3,24 +3,74 @@
 import plaid
 from plaid.api import plaid_api
 
-from app.config import get_settings
+from fastapi import HTTPException
+from sqlmodel import Session, select
+
+from app.crypto import decrypt_token
+from app.models import HouseholdMember, HouseholdPlaidConfig, User
 
 
-def get_plaid_client() -> plaid_api.PlaidApi:
-    settings = get_settings()
-    env_map = {
-        "sandbox": plaid.Environment.Sandbox,
-        "development": plaid.Environment.Production,
-        "production": plaid.Environment.Production,
-    }
+_ENV_MAP = {
+    "sandbox": plaid.Environment.Sandbox,
+    "development": plaid.Environment.Production,
+    "production": plaid.Environment.Production,
+}
+
+
+def get_plaid_client(client_id: str, secret: str, env: str = "sandbox") -> plaid_api.PlaidApi:
     configuration = plaid.Configuration(
-        host=env_map.get(settings.plaid_env, plaid.Environment.Sandbox),
+        host=_ENV_MAP.get(env, plaid.Environment.Sandbox),
         api_key={
-            "clientId": settings.plaid_client_id,
-            "secret": settings.plaid_secret,
+            "clientId": client_id,
+            "secret": secret,
         },
     )
     api_client = plaid.ApiClient(configuration)
-    # Avoid indefinite network hangs on upstream requests.
     api_client.rest_client.pool_manager.connection_pool_kw["timeout"] = 60
     return plaid_api.PlaidApi(api_client)
+
+
+def get_household_plaid_client(session: Session, user: User) -> plaid_api.PlaidApi:
+    """Build a Plaid client using the user's household-level credentials."""
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=400, detail="Plaid not configured")
+
+    config = session.exec(
+        select(HouseholdPlaidConfig).where(
+            HouseholdPlaidConfig.household_id == member.household_id
+        )
+    ).first()
+    if not config:
+        raise HTTPException(status_code=400, detail="Plaid not configured")
+
+    return get_plaid_client(
+        client_id=decrypt_token(config.encrypted_client_id),
+        secret=decrypt_token(config.encrypted_secret),
+        env=config.plaid_env,
+    )
+
+
+def get_household_plaid_client_for_user_id(session: Session, user_id: int) -> plaid_api.PlaidApi:
+    """Build a Plaid client given a user_id (for background tasks without a User object)."""
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user_id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=400, detail="Plaid not configured")
+
+    config = session.exec(
+        select(HouseholdPlaidConfig).where(
+            HouseholdPlaidConfig.household_id == member.household_id
+        )
+    ).first()
+    if not config:
+        raise HTTPException(status_code=400, detail="Plaid not configured")
+
+    return get_plaid_client(
+        client_id=decrypt_token(config.encrypted_client_id),
+        secret=decrypt_token(config.encrypted_secret),
+        env=config.plaid_env,
+    )

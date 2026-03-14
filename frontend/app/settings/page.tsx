@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import {
@@ -22,11 +22,14 @@ import {
   RotateCcw,
   Upload,
   UserX,
+  Link2,
+  AlertTriangle,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
-import type { UserSettings, UserProfile, CategoryRule } from "@/lib/types";
+import type { UserSettings, UserProfile, CategoryRule, PlaidConfig } from "@/lib/types";
 import ConfirmDialog from "@/components/confirm-dialog";
 import BulkCsvImportDialog from "@/components/bulk-csv-import-dialog";
 import BalanceImportDialog from "@/components/balance-import-dialog";
@@ -88,6 +91,15 @@ const inputClass =
 const labelClass = "block text-xs font-medium text-muted-foreground mb-1.5";
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  const integrationsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (searchParams.get("section") === "integrations" && integrationsRef.current) {
+      integrationsRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [searchParams]);
+
   return (
     <>
       <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
@@ -97,6 +109,9 @@ export default function SettingsPage() {
       <div className="mt-8 space-y-6">
         <ProfileSection />
         <HouseholdSection />
+        <div ref={integrationsRef}>
+          <IntegrationsSection />
+        </div>
         <GeneralSection />
         <SyncSection />
         <AiSection />
@@ -596,6 +611,210 @@ function HouseholdSection() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Integrations (Plaid) ──────────────────────────────────────
+
+function IntegrationsSection() {
+  const queryClient = useQueryClient();
+  const { household } = useHousehold();
+  const isOwner = household?.members.some(
+    (m) => m.role === "owner" && m.user_id === household.members.find((x) => x.role === "owner")?.user_id
+  );
+
+  const { data: config } = useQuery({
+    queryKey: ["plaid-config"],
+    queryFn: api.getPlaidConfig,
+  });
+
+  const [clientId, setClientId] = useState("");
+  const [secret, setSecret] = useState("");
+  const [plaidEnv, setPlaidEnv] = useState<string>("sandbox");
+  const [showClientId, setShowClientId] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  const ownerMember = household?.members.find((m) => m.role === "owner");
+  const currentUser = household?.members.find((m) =>
+    m.user_id === ownerMember?.user_id
+  );
+  const userIsOwner = ownerMember && currentUser && ownerMember.user_id === currentUser.user_id;
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.updatePlaidConfig({ client_id: clientId, secret, plaid_env: plaidEnv }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["plaid-config"] });
+      setClientId("");
+      setSecret("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    },
+  });
+
+  async function handleRemove() {
+    setRemoving(true);
+    try {
+      await api.deletePlaidConfig();
+      queryClient.invalidateQueries({ queryKey: ["plaid-config"] });
+      setConfirmRemove(false);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  if (!household) return null;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-6">
+      <div className="flex items-center gap-2">
+        <Link2 className="h-4 w-4 text-accent" />
+        <h2 className="text-base font-semibold">Integrations</h2>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Connect your bank accounts via Plaid. Credentials are encrypted and stored
+        per-household.
+      </p>
+
+      {/* Status indicator */}
+      <div className="mt-4">
+        {config?.configured ? (
+          <div className="inline-flex items-center gap-2 rounded-lg bg-green-500/10 border border-green-500/20 px-3 py-2">
+            <div className="h-2 w-2 rounded-full bg-green-400" />
+            <span className="text-xs font-medium text-green-400">Plaid is configured</span>
+            <span className="text-xs text-muted-foreground">
+              ({config.plaid_env} &middot; Client ID ending in {config.client_id_last4})
+            </span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+            <div className="h-2 w-2 rounded-full bg-amber-400" />
+            <span className="text-xs font-medium text-amber-400">Plaid is not configured</span>
+          </div>
+        )}
+      </div>
+
+      {ownerMember && ownerMember.user_id !== household.members[0]?.user_id && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Only the household owner can manage Plaid credentials.
+        </p>
+      )}
+
+      {/* Config form -- owner only */}
+      {userIsOwner !== false && (
+        <div className="mt-5 space-y-4">
+          {config?.configured && (
+            <div className="flex items-start gap-2 rounded-lg bg-amber-500/5 border border-amber-500/20 px-3 py-2.5">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+              <p className="text-xs text-amber-400/80">
+                Changing credentials will break existing linked accounts.
+                You&apos;ll need to re-link them with the new credentials.
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Client ID</label>
+              <div className="relative">
+                <input
+                  type={showClientId ? "text" : "password"}
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  placeholder={config?.configured ? `••••${config.client_id_last4}` : "Your Plaid Client ID"}
+                  className={`${inputClass} w-full pr-10`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowClientId(!showClientId)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showClientId ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>Secret</label>
+              <div className="relative">
+                <input
+                  type={showSecret ? "text" : "password"}
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  placeholder={config?.configured ? `••••${config.secret_last4}` : "Your Plaid Secret"}
+                  className={`${inputClass} w-full pr-10`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret(!showSecret)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-xs">
+            <label className={labelClass}>Environment</label>
+            <select
+              value={plaidEnv}
+              onChange={(e) => setPlaidEnv(e.target.value)}
+              className={`${selectClass} w-full`}
+            >
+              <option value="sandbox">Sandbox (testing)</option>
+              <option value="production">Production</option>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {saved && <span className="text-xs text-green-400">Plaid config saved</span>}
+              {saveMutation.isError && (
+                <span className="text-xs text-red-400">
+                  {(saveMutation.error as Error).message}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {config?.configured && (
+                <button
+                  onClick={() => setConfirmRemove(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Remove
+                </button>
+              )}
+              <button
+                onClick={() => saveMutation.mutate()}
+                disabled={!clientId.trim() || !secret.trim() || saveMutation.isPending}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+              >
+                {saveMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {config?.configured ? "Update" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmRemove}
+        title="Remove Plaid credentials?"
+        description="This will remove your Plaid API credentials. Existing linked accounts will stop syncing. You can re-configure Plaid at any time."
+        confirmLabel="Remove"
+        destructive
+        loading={removing}
+        onConfirm={handleRemove}
+        onCancel={() => setConfirmRemove(false)}
+      />
     </div>
   );
 }

@@ -282,7 +282,7 @@ def _revoke_and_delete_item(session: Session, plaid_item_id: int) -> None:
     """Revoke the Plaid access token and delete the PlaidItem record."""
     from app.crypto import decrypt_token
     from app.models import PlaidItem
-    from app.plaid_client import get_plaid_client
+    from app.plaid_client import get_household_plaid_client_for_user_id
 
     item = session.get(PlaidItem, plaid_item_id)
     if not item:
@@ -290,7 +290,7 @@ def _revoke_and_delete_item(session: Session, plaid_item_id: int) -> None:
 
     try:
         from plaid.model.item_remove_request import ItemRemoveRequest
-        client = get_plaid_client()
+        client = get_household_plaid_client_for_user_id(session, item.user_id)
         access_token = decrypt_token(item.encrypted_access_token)
         client.item_remove(ItemRemoveRequest(access_token=access_token))
     except Exception:

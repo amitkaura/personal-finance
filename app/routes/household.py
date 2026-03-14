@@ -20,6 +20,8 @@ from app.models import (
     Household,
     HouseholdInvitation,
     HouseholdMember,
+    HouseholdPlaidConfig,
+    PlaidItem,
     SpendingPreference,
     User,
 )
@@ -282,11 +284,27 @@ def accept_invitation(
     existing_member = session.exec(
         select(HouseholdMember).where(HouseholdMember.user_id == user.id)
     ).first()
+
     if existing_member:
-        raise HTTPException(
-            status_code=400,
-            detail="You already belong to a household. Leave your current household first, then accept.",
-        )
+        other_members = session.exec(
+            select(HouseholdMember).where(
+                HouseholdMember.household_id == existing_member.household_id,
+                HouseholdMember.user_id != user.id,
+            )
+        ).all()
+        if other_members:
+            raise HTTPException(
+                status_code=400,
+                detail="You already belong to a household with a partner. Leave first, then accept.",
+            )
+        old_hh_id = existing_member.household_id
+        session.delete(existing_member)
+        session.flush()
+        _destroy_household(session, old_hh_id)
+
+    has_plaid_items = session.exec(
+        select(PlaidItem).where(PlaidItem.user_id == user.id)
+    ).first() is not None
 
     new_member = HouseholdMember(
         household_id=invitation.household_id,
@@ -299,7 +317,11 @@ def accept_invitation(
     session.add(invitation)
     session.commit()
 
-    return {"status": "accepted", "household_id": invitation.household_id}
+    return {
+        "status": "accepted",
+        "household_id": invitation.household_id,
+        "plaid_items_warning": has_plaid_items,
+    }
 
 
 @router.post("/invitations/{token}/decline")
@@ -512,6 +534,12 @@ def _destroy_household(session: Session, household_id: int) -> None:
 
     for inv in session.exec(select(HouseholdInvitation).where(HouseholdInvitation.household_id == household_id)).all():
         session.delete(inv)
+
+    plaid_config = session.exec(
+        select(HouseholdPlaidConfig).where(HouseholdPlaidConfig.household_id == household_id)
+    ).first()
+    if plaid_config:
+        session.delete(plaid_config)
 
     household = session.get(Household, household_id)
     if household:

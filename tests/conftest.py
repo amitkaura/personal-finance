@@ -12,8 +12,6 @@ os.environ.update({
     "RUN_SCHEDULER": "false",
     "RATE_LIMIT_BACKEND": "memory",
     "SECURE_COOKIES": "false",
-    "PLAID_CLIENT_ID": "test-plaid-client",
-    "PLAID_SECRET": "test-plaid-secret",
     "LLM_API_KEY": "",
 })
 
@@ -47,6 +45,7 @@ from app.models import (
     Household,
     HouseholdInvitation,
     HouseholdMember,
+    HouseholdPlaidConfig,
     NetWorthSnapshot,
     PlaidItem,
     SpendingPreference,
@@ -327,3 +326,24 @@ def make_settings(session: Session, user: User, **overrides) -> UserSettings:
     session.commit()
     session.refresh(settings)
     return settings
+
+
+def make_plaid_config(
+    session: Session,
+    household: Household,
+    client_id: str = "test_client_id",
+    secret: str = "test_secret",
+    plaid_env: str = "sandbox",
+) -> HouseholdPlaidConfig:
+    from app.crypto import encrypt_token
+
+    config = HouseholdPlaidConfig(
+        household_id=household.id,
+        encrypted_client_id=encrypt_token(client_id),
+        encrypted_secret=encrypt_token(secret),
+        plaid_env=plaid_env,
+    )
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return config

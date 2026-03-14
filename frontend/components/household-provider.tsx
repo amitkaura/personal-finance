@@ -98,22 +98,23 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     staleTime: 60_000,
   });
 
+  const partner =
+    household?.members.find((m) => m.user_id !== user?.id) ?? null;
+
   useEffect(() => {
-    if (!householdLoading && !household && scope !== "personal") {
+    const shouldReset = !householdLoading && (!household || !partner) && scope !== "personal";
+    if (shouldReset) {
       setScopeState("personal");
       if (scopeKey) localStorage.setItem(scopeKey, "personal");
     }
-  }, [household, householdLoading, scope, scopeKey]);
-
-  const partner =
-    household?.members.find((m) => m.user_id !== user?.id) ?? null;
+  }, [household, householdLoading, partner, scope, scopeKey]);
 
   const refetch = useCallback(() => {
     refetchHousehold();
     refetchInvitations();
   }, [refetchHousehold, refetchInvitations]);
 
-  const effectiveScope: ViewScope = household ? scope : "personal";
+  const effectiveScope: ViewScope = household && partner ? scope : "personal";
 
   return (
     <HouseholdContext.Provider

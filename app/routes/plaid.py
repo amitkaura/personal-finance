@@ -28,7 +28,7 @@ from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
 from app.household import get_scoped_user_ids
 from app.models import Account, AccountType, PlaidItem, Transaction, User
-from app.plaid_client import get_plaid_client
+from app.plaid_client import get_household_plaid_client, get_household_plaid_client_for_user_id
 
 router = APIRouter(prefix="/plaid", tags=["plaid"])
 
@@ -48,9 +48,12 @@ class ExchangeTokenResponse(BaseModel):
 
 
 @router.post("/link-token", response_model=LinkTokenResponse)
-def create_link_token(user: User = Depends(get_current_user)):
+def create_link_token(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     """Generate a Plaid Link token to initialize the Link flow."""
-    client = get_plaid_client()
+    client = get_household_plaid_client(session, user)
     request = LinkTokenCreateRequest(
         user=LinkTokenCreateRequestUser(client_user_id=str(user.id)),
         client_name="Personal Finance",
@@ -70,7 +73,7 @@ def exchange_public_token(
     user: User = Depends(get_current_user),
 ):
     """Exchange a public token for an access token and persist the Plaid item."""
-    client = get_plaid_client()
+    client = get_household_plaid_client(session, user)
 
     exchange_request = ItemPublicTokenExchangeRequest(public_token=body.public_token)
     exchange_response = client.item_public_token_exchange(exchange_request)
@@ -169,6 +172,7 @@ def sync_all_stream(
     ).all()
     if not items:
         raise HTTPException(status_code=404, detail="No Plaid items linked")
+    get_household_plaid_client(session, user)
     return StreamingResponse(
         _sync_all_stream_generator(items, user.id, session),
         media_type="application/x-ndjson",
@@ -181,6 +185,8 @@ def _sync_all_stream_generator(
     """Generator that syncs Plaid items and yields NDJSON progress events."""
     total_items = len(items)
     total_synced = 0
+
+    client = get_household_plaid_client_for_user_id(session, user_id)
 
     for idx, item in enumerate(items, 1):
         if not item:
@@ -195,7 +201,6 @@ def _sync_all_stream_generator(
         }) + "\n"
 
         access_token = decrypt_token(item.encrypted_access_token)
-        client = get_plaid_client()
 
         end_date = date.today()
         start_date = end_date - timedelta(days=30)
@@ -261,7 +266,7 @@ def _sync_all_stream_generator(
             offset += batch_size
 
         try:
-            _update_balances(session, access_token, item.id, user_id)
+            _update_balances(session, access_token, item.id, user_id, client=client)
         except Exception:
             pass
 
@@ -397,7 +402,7 @@ def unlink_plaid_item(
         session.add(acct)
 
     try:
-        client = get_plaid_client()
+        client = get_household_plaid_client(session, user)
         access_token = decrypt_token(item.encrypted_access_token)
         client.item_remove(ItemRemoveRequest(access_token=access_token))
     except Exception:
@@ -424,7 +429,7 @@ def sync_transactions(plaid_item_id: int) -> None:
 
         user_id = item.user_id
         access_token = decrypt_token(item.encrypted_access_token)
-        client = get_plaid_client()
+        client = get_household_plaid_client_for_user_id(session, user_id)
 
         end_date = date.today()
         start_date = end_date - timedelta(days=30)
@@ -508,11 +513,10 @@ def sync_transactions(plaid_item_id: int) -> None:
 
         session.commit()
 
-        _update_balances(session, access_token, plaid_item_id, user_id)
+        _update_balances(session, access_token, plaid_item_id, user_id, client=client)
 
         _refresh_linked_goal_balances(session, user_id)
 
-        # Take a net worth snapshot after sync
         from app.routes.net_worth import take_snapshot
         try:
             take_snapshot(session, user_id)
@@ -555,9 +559,10 @@ def _refresh_linked_goal_balances(session: Session, user_id: int) -> None:
     session.commit()
 
 
-def _update_balances(session: Session, access_token: str, plaid_item_id: int, user_id: int) -> None:
+def _update_balances(session: Session, access_token: str, plaid_item_id: int, user_id: int, client=None) -> None:
     """Refresh account balances and metadata after a sync."""
-    client = get_plaid_client()
+    if client is None:
+        client = get_household_plaid_client_for_user_id(session, user_id)
     accounts_response = client.accounts_get(
         AccountsGetRequest(access_token=access_token)
     )

@@ -322,6 +322,18 @@ class HouseholdMember(SQLModel, table=True):
     household: Optional[Household] = Relationship(back_populates="members")
 
 
+class HouseholdPlaidConfig(SQLModel, table=True):
+    """Per-household Plaid API credentials (encrypted at rest)."""
+
+    __tablename__ = "household_plaid_configs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    household_id: int = Field(foreign_key="households.id", unique=True, index=True)
+    encrypted_client_id: str
+    encrypted_secret: str
+    plaid_env: str = Field(default="sandbox")
+
+
 class HouseholdInvitation(SQLModel, table=True):
     """Pending invitation to join a household."""
 

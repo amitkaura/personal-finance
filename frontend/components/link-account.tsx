@@ -1,15 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { usePlaidLink } from "react-plaid-link";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, CheckCircle, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 
 export default function LinkAccount() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "linking" | "exchanging" | "done">("idle");
+
+  const { data: plaidConfig } = useQuery({
+    queryKey: ["plaid-config"],
+    queryFn: api.getPlaidConfig,
+    staleTime: 30_000,
+  });
   const [result, setResult] = useState<{ accounts_synced: number } | null>(null);
 
   const fetchToken = useMutation({
@@ -68,6 +76,10 @@ export default function LinkAccount() {
   });
 
   const handleClick = () => {
+    if (plaidConfig && !plaidConfig.configured) {
+      router.push("/settings?section=integrations");
+      return;
+    }
     if (linkToken && ready) {
       open();
     } else {

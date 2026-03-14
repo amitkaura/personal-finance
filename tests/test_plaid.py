@@ -10,8 +10,12 @@ from tests.conftest import (
     add_household_member,
     make_account,
     make_household,
+    make_plaid_config,
     make_user,
 )
+
+MOCK_HH_CLIENT = "app.routes.plaid.get_household_plaid_client"
+MOCK_HH_CLIENT_UID = "app.routes.plaid.get_household_plaid_client_for_user_id"
 
 
 def _make_plaid_item(session, user, item_id="item-abc-123"):
@@ -34,8 +38,10 @@ def test_create_link_token(auth_client):
     mock_response = MagicMock()
     mock_response.link_token = "link-sandbox-test-token"
 
-    with patch("app.routes.plaid.get_plaid_client") as mock_client:
-        mock_client.return_value.link_token_create.return_value = mock_response
+    mock_plaid = MagicMock()
+    mock_plaid.link_token_create.return_value = mock_response
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_plaid):
         resp = client.post("/api/v1/plaid/link-token")
 
     assert resp.status_code == 200
@@ -114,7 +120,7 @@ def test_unlink_item(auth_client, session):
     item = _make_plaid_item(session, user)
     make_account(session, user, name="Linked", balance=Decimal("500"), plaid_item_id=item.id)
 
-    with patch("app.routes.plaid.get_plaid_client") as mock_client:
+    with patch(MOCK_HH_CLIENT, return_value=MagicMock()):
         with patch("app.routes.plaid.decrypt_token", return_value="access-test"):
             resp = client.post(f"/api/v1/plaid/items/{item.id}/unlink")
 
@@ -168,7 +174,7 @@ def test_exchange_token_success(auth_client, session):
     client, user = auth_client
     mock_client = _mock_plaid_exchange()
 
-    with patch("app.routes.plaid.get_plaid_client", return_value=mock_client):
+    with patch(MOCK_HH_CLIENT, return_value=mock_client):
         resp = client.post("/api/v1/plaid/exchange-token", json={
             "public_token": "public-sandbox-abc",
             "institution_name": "Test Bank",
@@ -184,7 +190,7 @@ def test_exchange_token_stores_institution_name(auth_client, session):
     client, user = auth_client
     mock_client = _mock_plaid_exchange()
 
-    with patch("app.routes.plaid.get_plaid_client", return_value=mock_client):
+    with patch(MOCK_HH_CLIENT, return_value=mock_client):
         client.post("/api/v1/plaid/exchange-token", json={
             "public_token": "public-sandbox-abc",
             "institution_name": "Chase",
@@ -207,7 +213,7 @@ def test_exchange_token_relink_existing(auth_client, session):
     )
 
     mock_client = _mock_plaid_exchange()
-    with patch("app.routes.plaid.get_plaid_client", return_value=mock_client):
+    with patch(MOCK_HH_CLIENT, return_value=mock_client):
         resp = client.post("/api/v1/plaid/exchange-token", json={
             "public_token": "public-sandbox-abc",
         })
@@ -231,7 +237,7 @@ def test_exchange_token_conflict_other_user(auth_client, session):
     )
 
     mock_client = _mock_plaid_exchange()
-    with patch("app.routes.plaid.get_plaid_client", return_value=mock_client):
+    with patch(MOCK_HH_CLIENT, return_value=mock_client):
         resp = client.post("/api/v1/plaid/exchange-token", json={
             "public_token": "public-sandbox-abc",
         })
@@ -279,7 +285,8 @@ def test_sync_all_stream_success(auth_client, session):
     )
 
     mock_client = _mock_plaid_transactions()
-    with patch("app.routes.plaid.get_plaid_client", return_value=mock_client), \
+    with patch(MOCK_HH_CLIENT, return_value=mock_client), \
+         patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
          patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
          patch("app.categorizer._get_llm_config", return_value=("", "", "")):
         resp = client.post(

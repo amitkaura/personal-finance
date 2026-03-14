@@ -33,6 +33,7 @@ from app.models import (
     Household,
     HouseholdInvitation,
     HouseholdMember,
+    HouseholdPlaidConfig,
     NetWorthSnapshot,
     PlaidItem,
     SpendingPreference,
@@ -231,6 +232,115 @@ def update_settings(
         restart_scheduler()
 
     return _settings_to_dict(settings)
+
+
+# ── Plaid Config (per-household) ───────────────────────────────
+
+_VALID_PLAID_ENVS = {"sandbox", "production"}
+
+
+class PlaidConfigUpdate(BaseModel):
+    client_id: str
+    secret: str
+    plaid_env: str
+
+
+def _plaid_config_response(config: Optional[HouseholdPlaidConfig]) -> dict:
+    if not config:
+        return {"configured": False, "plaid_env": None, "client_id_last4": None, "secret_last4": None}
+    client_id = decrypt_token(config.encrypted_client_id)
+    secret = decrypt_token(config.encrypted_secret)
+    return {
+        "configured": True,
+        "plaid_env": config.plaid_env,
+        "client_id_last4": client_id[-4:] if len(client_id) >= 4 else client_id,
+        "secret_last4": secret[-4:] if len(secret) >= 4 else secret,
+    }
+
+
+@router.get("/plaid-config")
+def get_plaid_config(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        return _plaid_config_response(None)
+
+    config = session.exec(
+        select(HouseholdPlaidConfig).where(
+            HouseholdPlaidConfig.household_id == member.household_id
+        )
+    ).first()
+    return _plaid_config_response(config)
+
+
+@router.put("/plaid-config")
+def update_plaid_config(
+    body: PlaidConfigUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Not in a household")
+    if member.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the household owner can manage Plaid config")
+
+    if body.plaid_env not in _VALID_PLAID_ENVS:
+        raise HTTPException(status_code=400, detail=f"plaid_env must be one of: {', '.join(sorted(_VALID_PLAID_ENVS))}")
+
+    config = session.exec(
+        select(HouseholdPlaidConfig).where(
+            HouseholdPlaidConfig.household_id == member.household_id
+        )
+    ).first()
+
+    if config:
+        config.encrypted_client_id = encrypt_token(body.client_id)
+        config.encrypted_secret = encrypt_token(body.secret)
+        config.plaid_env = body.plaid_env
+    else:
+        config = HouseholdPlaidConfig(
+            household_id=member.household_id,
+            encrypted_client_id=encrypt_token(body.client_id),
+            encrypted_secret=encrypt_token(body.secret),
+            plaid_env=body.plaid_env,
+        )
+
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return _plaid_config_response(config)
+
+
+@router.delete("/plaid-config", status_code=204)
+def delete_plaid_config(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Not in a household")
+    if member.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the household owner can manage Plaid config")
+
+    config = session.exec(
+        select(HouseholdPlaidConfig).where(
+            HouseholdPlaidConfig.household_id == member.household_id
+        )
+    ).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Plaid config not found")
+
+    session.delete(config)
+    session.commit()
 
 
 # ── Category Rules ─────────────────────────────────────────────
@@ -475,10 +585,9 @@ def _delete_all_user_data(session: Session, user: User) -> None:
 
     for item in session.exec(select(PlaidItem).where(PlaidItem.user_id == user.id)).all():
         try:
-            from app.crypto import decrypt_token
-            from app.plaid_client import get_plaid_client
+            from app.plaid_client import get_household_plaid_client_for_user_id
             from plaid.model.item_remove_request import ItemRemoveRequest
-            client = get_plaid_client()
+            client = get_household_plaid_client_for_user_id(session, user.id)
             access_token = decrypt_token(item.encrypted_access_token)
             client.item_remove(ItemRemoveRequest(access_token=access_token))
         except Exception:

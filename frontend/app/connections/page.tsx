@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
   AlertCircle,
@@ -14,6 +15,8 @@ import {
   RefreshCw,
   CheckCircle2,
   XCircle,
+  Link2,
+  Settings,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
@@ -36,14 +39,21 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 export default function ConnectionsPage() {
+  const router = useRouter();
   const formatCurrency = useFormatCurrencyPrecise();
   const scope = useScope();
   const { data: connections, isLoading, isError, refetch } = useQuery({
     queryKey: ["plaidItems", scope],
     queryFn: () => api.getPlaidItems(scope),
   });
+  const { data: plaidConfig } = useQuery({
+    queryKey: ["plaid-config"],
+    queryFn: api.getPlaidConfig,
+    staleTime: 30_000,
+  });
 
   const hasConnections = connections && connections.length > 0;
+  const plaidNotConfigured = plaidConfig && !plaidConfig.configured;
 
   return (
     <>
@@ -76,6 +86,24 @@ export default function ConnectionsPage() {
               className="h-32 animate-pulse rounded-2xl bg-card"
             />
           ))}
+        </div>
+      ) : plaidNotConfigured && !hasConnections ? (
+        <div className="mt-12 text-center">
+          <Link2 className="mx-auto h-10 w-10 text-muted-foreground" />
+          <p className="mt-3 text-muted-foreground">
+            Plaid integration is not set up.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Go to Settings to configure your Plaid credentials and start linking
+            bank accounts.
+          </p>
+          <button
+            onClick={() => router.push("/settings?section=integrations")}
+            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80"
+          >
+            <Settings className="h-4 w-4" />
+            Configure Plaid
+          </button>
         </div>
       ) : !hasConnections ? (
         <div className="mt-12 text-center">

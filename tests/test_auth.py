@@ -2,6 +2,9 @@
 
 from unittest.mock import patch
 
+from sqlmodel import select
+
+from app.models import Household, HouseholdMember
 from tests.conftest import make_user
 
 
@@ -22,6 +25,35 @@ def test_google_login_creates_user(client, session):
     assert data["email"] == "auth@example.com"
     assert data["name"] == "Auth User"
     assert "session" in resp.cookies
+
+
+def test_google_login_creates_auto_household(client, session):
+    """New user signup auto-creates a personal household with owner role."""
+    with patch("app.routes.auth.google_id_token.verify_oauth2_token", return_value=GOOGLE_PAYLOAD):
+        resp = client.post("/api/v1/auth/google", json={"id_token": "fake-token"})
+
+    assert resp.status_code == 200
+    user_id = resp.json()["id"]
+
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user_id)
+    ).first()
+    assert member is not None
+    assert member.role == "owner"
+
+    household = session.get(Household, member.household_id)
+    assert household is not None
+    assert "Auth User" in household.name
+
+
+def test_google_login_existing_user_no_duplicate_household(client, session):
+    """Returning user login does not create a second household."""
+    with patch("app.routes.auth.google_id_token.verify_oauth2_token", return_value=GOOGLE_PAYLOAD):
+        client.post("/api/v1/auth/google", json={"id_token": "tok1"})
+        client.post("/api/v1/auth/google", json={"id_token": "tok2"})
+
+    members = session.exec(select(HouseholdMember)).all()
+    assert len(members) == 1
 
 
 def test_google_login_is_idempotent(client, session):

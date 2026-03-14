@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
     _validate_startup_settings()
     await _initialize_rate_limiter_backend()
     create_db_and_tables()
+    _backfill_orphan_households()
     settings = get_settings()
     if settings.run_scheduler:
         start_scheduler()
@@ -44,6 +45,32 @@ async def lifespan(app: FastAPI):
     if settings.run_scheduler:
         stop_scheduler()
     await _shutdown_rate_limiter_backend()
+
+
+def _backfill_orphan_households() -> None:
+    """Create a personal household for any existing user who doesn't have one."""
+    import logging
+    from sqlmodel import Session, select
+    from app.models import Household, HouseholdMember, User
+
+    logger = logging.getLogger(__name__)
+    with Session(engine) as session:
+        all_user_ids = set(session.exec(select(User.id)).all())
+        member_user_ids = set(session.exec(select(HouseholdMember.user_id)).all())
+        orphans = all_user_ids - member_user_ids
+        if not orphans:
+            return
+        logger.info("Backfilling households for %d orphan user(s)", len(orphans))
+        for uid in orphans:
+            user = session.get(User, uid)
+            if not user:
+                continue
+            hh = Household(name=f"{user.name}'s Household")
+            session.add(hh)
+            session.flush()
+            session.add(HouseholdMember(household_id=hh.id, user_id=user.id, role="owner"))
+        session.commit()
+        logger.info("Backfill complete")
 
 
 def _validate_startup_settings() -> None:

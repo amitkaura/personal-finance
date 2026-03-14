@@ -2,8 +2,9 @@ import type {
   Account, AccountSummary, Budget, BudgetConflict, BudgetSummary,
   CategoryRule, Goal, GoalContribution, GoalsResponse,
   Household, HouseholdInvitation, MonthlyTrend, NetWorthSnapshot,
-  PlaidConnection, RecurringTransaction, SpendingByCategory, SpendingPreference,
-  Tag, TopMerchant, Transaction, User, UserProfile, UserSettings, ViewScope,
+  PlaidConfig, PlaidConnection, RecurringTransaction, SpendingByCategory,
+  SpendingPreference, Tag, TopMerchant, Transaction, User, UserProfile,
+  UserSettings, ViewScope,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -449,6 +450,18 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+
+  // Plaid config
+  getPlaidConfig: () => fetcher<PlaidConfig>("/settings/plaid-config"),
+
+  updatePlaidConfig: (body: { client_id: string; secret: string; plaid_env: string }) =>
+    fetcher<PlaidConfig>("/settings/plaid-config", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  deletePlaidConfig: () =>
+    fetchVoid("/settings/plaid-config", { method: "DELETE" }),
 
   // Category rules
   getRules: () => fetcher<CategoryRule[]>("/settings/rules"),

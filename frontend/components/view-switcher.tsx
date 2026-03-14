@@ -16,7 +16,7 @@ export default function ViewSwitcher() {
   const { user } = useAuth();
   const { household, partner, scope, setScope } = useHousehold();
 
-  if (!household) return null;
+  if (!household || !partner) return null;
 
   const firstName = (name: string) => name.split(" ")[0];
 

@@ -13,11 +13,6 @@ class Settings(BaseSettings):
     db_pool_size: int = 5
     db_max_overflow: int = 10
 
-    # Plaid (set via env vars - never commit real values)
-    plaid_client_id: str = ""
-    plaid_secret: str = ""
-    plaid_env: str = "sandbox"  # sandbox | production
-
     # Encryption key for access tokens (32 bytes hex = 64 chars)
     encryption_key: str = ""
 

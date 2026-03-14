@@ -15,6 +15,8 @@ from app.models import (
     Household,
     HouseholdInvitation,
     HouseholdMember,
+    HouseholdPlaidConfig,
+    PlaidItem,
     SpendingPreference,
 )
 from tests.conftest import (
@@ -26,6 +28,7 @@ from tests.conftest import (
     make_goal,
     make_household,
     make_invitation,
+    make_plaid_config,
     make_spending_preference,
     make_transaction,
     make_user,
@@ -117,6 +120,108 @@ def test_accept_nonexistent_token(auth_client):
     client, _ = auth_client
     resp = client.post("/api/v1/household/invitations/fakefake/accept")
     assert resp.status_code == 404
+
+
+# -- Accept: solo household dissolved ---------------------------------------
+
+def test_accept_dissolves_solo_household(auth_client, session):
+    """User in a solo household can accept an invite; their old household is deleted."""
+    client, owner = auth_client
+    partner = make_user(session, email="partner@test.com")
+
+    solo_hh = make_household(session, partner, name="Solo HH")
+    solo_hh_id = solo_hh.id
+
+    household = make_household(session, owner)
+    inv = make_invitation(session, household, owner, "partner@test.com")
+
+    try:
+        app.dependency_overrides[get_current_user] = lambda: partner
+        resp = client.post(f"/api/v1/household/invitations/{inv.token}/accept")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "accepted"
+        assert resp.json()["household_id"] == household.id
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert session.get(Household, solo_hh_id) is None
+    partner_member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == partner.id)
+    ).first()
+    assert partner_member is not None
+    assert partner_member.household_id == household.id
+
+
+def test_accept_dissolves_solo_household_with_plaid_config(auth_client, session):
+    """Solo household's PlaidConfig is also deleted when dissolved on accept."""
+    client, owner = auth_client
+    partner = make_user(session, email="partner@test.com")
+
+    solo_hh = make_household(session, partner, name="Solo HH")
+    make_plaid_config(session, solo_hh)
+    solo_hh_id = solo_hh.id
+
+    household = make_household(session, owner)
+    inv = make_invitation(session, household, owner, "partner@test.com")
+
+    try:
+        app.dependency_overrides[get_current_user] = lambda: partner
+        resp = client.post(f"/api/v1/household/invitations/{inv.token}/accept")
+        assert resp.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    configs = session.exec(
+        select(HouseholdPlaidConfig).where(HouseholdPlaidConfig.household_id == solo_hh_id)
+    ).all()
+    assert len(configs) == 0
+
+
+def test_accept_blocked_when_user_has_partner(auth_client, session):
+    """User already in a household with a partner cannot accept another invite."""
+    client, owner = auth_client
+    partner = make_user(session, email="partner@test.com")
+    third = make_user(session, email="third@test.com")
+
+    partner_hh = make_household(session, partner, name="Partner HH")
+    add_household_member(session, partner_hh, third)
+
+    household = make_household(session, owner)
+    inv = make_invitation(session, household, owner, "partner@test.com")
+
+    try:
+        app.dependency_overrides[get_current_user] = lambda: partner
+        resp = client.post(f"/api/v1/household/invitations/{inv.token}/accept")
+        assert resp.status_code == 400
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_accept_returns_plaid_items_warning(auth_client, session):
+    """Response includes plaid_items_warning when user has linked Plaid items."""
+    client, owner = auth_client
+    partner = make_user(session, email="partner@test.com")
+
+    solo_hh = make_household(session, partner, name="Solo HH")
+    from app.crypto import encrypt_token
+    plaid_item = PlaidItem(
+        user_id=partner.id,
+        encrypted_access_token=encrypt_token("fake-token"),
+        item_id="item-123",
+    )
+    session.add(plaid_item)
+    session.commit()
+
+    household = make_household(session, owner)
+    inv = make_invitation(session, household, owner, "partner@test.com")
+
+    try:
+        app.dependency_overrides[get_current_user] = lambda: partner
+        resp = client.post(f"/api/v1/household/invitations/{inv.token}/accept")
+        assert resp.status_code == 200
+        assert resp.json()["plaid_items_warning"] is True
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 # -- Decline ---------------------------------------------------------------
