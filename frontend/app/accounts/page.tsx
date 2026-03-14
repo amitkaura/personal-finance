@@ -63,16 +63,21 @@ export default function AccountsPage() {
   const [newType, setNewType] = useState("depository");
   const [newSubtype, setNewSubtype] = useState("checking");
   const [newBalance, setNewBalance] = useState("0");
+  const [newStatementDay, setNewStatementDay] = useState("");
   const [importAccount, setImportAccount] = useState<Account | null>(null);
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      api.createAccount({
+    mutationFn: () => {
+      const body: Parameters<typeof api.createAccount>[0] = {
         name: newName,
         type: newType,
         subtype: newSubtype,
         current_balance: parseFloat(newBalance) || 0,
-      }),
+      };
+      const dayVal = parseInt(newStatementDay, 10);
+      if (dayVal >= 1 && dayVal <= 31) body.statement_available_day = dayVal;
+      return api.createAccount(body);
+    },
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
@@ -82,6 +87,7 @@ export default function AccountsPage() {
       setNewType("depository");
       setNewSubtype("checking");
       setNewBalance("0");
+      setNewStatementDay("");
       setImportAccount(created);
     },
   });
@@ -204,6 +210,21 @@ export default function AccountsPage() {
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent tabular-nums"
               />
             </div>
+            <div className="w-32">
+              <label htmlFor="new-statement-day" className="text-xs text-muted-foreground mb-1 block">
+                Statement day
+              </label>
+              <input
+                id="new-statement-day"
+                type="number"
+                min={1}
+                max={31}
+                value={newStatementDay}
+                onChange={(e) => setNewStatementDay(e.target.value)}
+                placeholder="1-31"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent tabular-nums"
+              />
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={() => setShowAddForm(false)}
@@ -290,6 +311,9 @@ function AccountRow({
   const [editType, setEditType] = useState(account.type);
   const [editSubtype, setEditSubtype] = useState(account.subtype || "");
   const [editBalance, setEditBalance] = useState(String(account.current_balance));
+  const [editStatementDay, setEditStatementDay] = useState(
+    account.statement_available_day != null ? String(account.statement_available_day) : "",
+  );
   const config = typeConfig(account.type);
   const Icon = config.icon;
   const isManual = isManualAccount(account);
@@ -314,11 +338,14 @@ function AccountRow({
     setEditType(account.type);
     setEditSubtype(account.subtype || "");
     setEditBalance(String(account.current_balance));
+    setEditStatementDay(
+      account.statement_available_day != null ? String(account.statement_available_day) : "",
+    );
     setEditOpen(true);
   }
 
   function saveEdit() {
-    const body: { name?: string; type?: string; subtype?: string; current_balance?: number } = {
+    const body: { name?: string; type?: string; subtype?: string; current_balance?: number; statement_available_day?: number | null } = {
       name: editName,
       type: editType,
       subtype: editSubtype,
@@ -327,6 +354,8 @@ function AccountRow({
       const parsed = parseFloat(editBalance);
       if (!isNaN(parsed)) body.current_balance = parsed;
     }
+    const dayVal = parseInt(editStatementDay, 10);
+    body.statement_available_day = dayVal >= 1 && dayVal <= 31 ? dayVal : null;
     editMutation.mutate(body);
   }
 
@@ -551,6 +580,23 @@ function AccountRow({
                 {!isManual && (
                   <p className="mt-1 text-xs text-muted-foreground">Balance is synced from your bank</p>
                 )}
+              </div>
+
+              <div>
+                <label htmlFor="edit-statement-day" className="mb-1 block text-xs font-medium text-muted-foreground">Statement day</label>
+                <input
+                  id="edit-statement-day"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={editStatementDay}
+                  onChange={(e) => setEditStatementDay(e.target.value)}
+                  placeholder="1-31"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Day of month your statement is available
+                </p>
               </div>
             </div>
 

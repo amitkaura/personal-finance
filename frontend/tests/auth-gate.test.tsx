@@ -27,6 +27,11 @@ vi.mock("@/components/invitation-banner", () => ({
   default: () => <div data-testid="invitation-banner" />,
 }));
 
+vi.mock("@/components/statement-reminder-banner", () => ({
+  __esModule: true,
+  default: () => <div data-testid="statement-reminder-banner" />,
+}));
+
 vi.mock("@/app/login/page", () => ({
   __esModule: true,
   default: () => <div data-testid="login-page">Login</div>,

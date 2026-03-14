@@ -76,6 +76,8 @@ class Account(SQLModel, table=True):
     plaid_account_id: str = Field(unique=True, index=True)
     plaid_item_id: Optional[int] = Field(default=None, foreign_key="plaid_items.id")
     is_linked: bool = Field(default=True)
+    statement_available_day: Optional[int] = Field(default=None, ge=1, le=31)
+    last_statement_reminder_sent: Optional[date] = Field(default=None)
 
     plaid_item: Optional[PlaidItem] = Relationship(back_populates="accounts")
     transactions: list["Transaction"] = Relationship(back_populates="account")

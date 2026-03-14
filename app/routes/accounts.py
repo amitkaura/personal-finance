@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import calendar
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 from uuid import uuid4
@@ -60,6 +62,7 @@ def _acct_to_dict(a: Account, owner_names: dict[int, dict] | None = None) -> dic
         "plaid_account_id": a.plaid_account_id,
         "plaid_item_id": a.plaid_item_id,
         "is_linked": a.is_linked,
+        "statement_available_day": a.statement_available_day,
     }
     if owner_names:
         info = owner_names.get(a.user_id, {})
@@ -68,11 +71,40 @@ def _acct_to_dict(a: Account, owner_names: dict[int, dict] | None = None) -> dic
     return d
 
 
+@router.get("/statement-reminders")
+def statement_reminders(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Return accounts whose statement day matches today (with last-day-of-month fallback)."""
+    today = date.today()
+    last_day = calendar.monthrange(today.year, today.month)[1]
+
+    accounts = session.exec(
+        select(Account).where(
+            Account.user_id == user.id,
+            Account.statement_available_day.is_not(None),  # type: ignore[union-attr]
+        )
+    ).all()
+
+    results = []
+    for a in accounts:
+        day = a.statement_available_day
+        if day == today.day or (day > last_day and today.day == last_day):
+            results.append({
+                "id": a.id,
+                "name": a.name,
+                "statement_available_day": day,
+            })
+    return results
+
+
 class AccountCreate(BaseModel):
     name: str = Field(max_length=200)
     type: str = "depository"
     subtype: Optional[str] = None
     current_balance: float = 0
+    statement_available_day: Optional[int] = Field(default=None, ge=1, le=31)
 
 
 @router.post("")
@@ -98,6 +130,7 @@ def create_account(
         plaid_account_id=f"manual-{uuid4().hex}",
         plaid_item_id=None,
         is_linked=False,
+        statement_available_day=body.statement_available_day,
     )
     session.add(acct)
     session.commit()
@@ -149,6 +182,7 @@ class AccountUpdate(BaseModel):
     subtype: Optional[str] = None
     name: Optional[str] = None
     current_balance: Optional[float] = None
+    statement_available_day: Optional[int] = Field(default=None, ge=1, le=31)
 
 
 @router.patch("/{account_id}")
@@ -174,6 +208,9 @@ def update_account(
         acct.subtype = body.subtype
     if body.name is not None:
         acct.name = body.name
+    raw = body.model_dump(exclude_unset=True)
+    if "statement_available_day" in raw:
+        acct.statement_available_day = raw["statement_available_day"]
     session.add(acct)
     session.commit()
     session.refresh(acct)

@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import Sidebar from "@/components/sidebar";
 import InvitationBanner from "@/components/invitation-banner";
+import StatementReminderBanner from "@/components/statement-reminder-banner";
 import CategorizationDrawer from "@/components/categorization-drawer";
 import LoginPage from "@/app/login/page";
 import { Loader2, Menu } from "lucide-react";
@@ -42,6 +43,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       <main className="lg:ml-60 min-h-screen">
         <div className="mx-auto max-w-7xl px-6 py-8 pt-16 lg:pt-8">
           <InvitationBanner />
+          <StatementReminderBanner />
           {children}
         </div>
       </main>

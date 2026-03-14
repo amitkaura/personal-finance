@@ -369,4 +369,73 @@ describe("AccountsPage", () => {
       expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
     });
   });
+
+  // --- Statement available day ---
+
+  it("shows statement day field in add account form", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Add Account")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Account"));
+    expect(screen.getByLabelText(/Statement day/)).toBeInTheDocument();
+  });
+
+  it("submits statement_available_day when creating account", async () => {
+    const user = userEvent.setup();
+    mockApi.createAccount.mockResolvedValue({ ...MANUAL_ACCOUNT });
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Add Account")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Account"));
+
+    const nameInput = screen.getByPlaceholderText("e.g. TD Chequing");
+    await user.type(nameInput, "New Savings");
+
+    const dayInput = screen.getByLabelText(/Statement day/);
+    await user.type(dayInput, "15");
+
+    await user.click(screen.getByText("Create Account"));
+
+    await waitFor(() => {
+      expect(mockApi.createAccount).toHaveBeenCalledWith(
+        expect.objectContaining({ statement_available_day: 15 }),
+      );
+    });
+  });
+
+  it("shows statement day in edit modal", async () => {
+    const user = userEvent.setup();
+    const accountWithDay: Account = { ...MANUAL_ACCOUNT, statement_available_day: 20 };
+    mockApi.getAccounts.mockResolvedValue([accountWithDay]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Manual Checking")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle("Edit account"));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    expect(screen.getByDisplayValue("20")).toBeInTheDocument();
+  });
+
+  it("statement day is editable for Plaid accounts in edit modal", async () => {
+    const user = userEvent.setup();
+    mockApi.getAccounts.mockResolvedValue([PLAID_ACCOUNT]);
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("TD Savings")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle("Edit account"));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    const dayInput = screen.getByLabelText(/Statement day/);
+    expect(dayInput).not.toBeDisabled();
+  });
 });

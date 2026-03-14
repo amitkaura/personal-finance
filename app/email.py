@@ -126,6 +126,82 @@ _INVITATION_HTML = """\
 """
 
 
+_STATEMENT_REMINDER_HTML = """\
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="480" cellpadding="0" cellspacing="0" style="background:#18181b;border-radius:16px;border:1px solid #27272a;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#6d28d9,#7c3aed);padding:32px 40px;text-align:center;">
+              <h1 style="margin:0;color:#fff;font-size:22px;font-weight:600;">
+                Statement Available
+              </h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 40px;">
+              <p style="margin:0 0 16px;color:#fafafa;font-size:16px;line-height:1.6;">
+                Hi there,
+              </p>
+              <p style="margin:0 0 24px;color:#a1a1aa;font-size:15px;line-height:1.6;">
+                Your <strong style="color:#fafafa;">{account_name}</strong> statement should be
+                available now. Time to upload your latest transactions!
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding:8px 0 24px;">
+                    <a href="{app_url}"
+                       style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;
+                              padding:14px 32px;border-radius:10px;font-size:15px;font-weight:600;">
+                      Import Transactions
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0;color:#71717a;font-size:13px;line-height:1.5;">
+                You can change or remove the statement reminder day in your account settings.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 40px;border-top:1px solid #27272a;">
+              <p style="margin:0;color:#52525b;font-size:12px;text-align:center;">
+                This reminder was sent because you configured a statement day for
+                your {account_name} account in FinanceApp.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+
+def send_statement_reminder_email(
+    to_email: str,
+    account_name: str,
+    app_url: str | None = None,
+) -> bool:
+    """Send a statement availability reminder email."""
+    settings = get_settings()
+    html = _STATEMENT_REMINDER_HTML.format(
+        account_name=account_name,
+        app_url=app_url or settings.app_url,
+    )
+    subject = f"Statement reminder: {account_name}"
+    return _send(to_email, subject, html)
+
+
 def send_invitation_email(
     to_email: str,
     inviter_name: str,

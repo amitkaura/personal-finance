@@ -1,6 +1,8 @@
 """Account list, create, update, delete, unlink, and summary tests."""
 
+from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 from uuid import uuid4
 
 from app.main import app
@@ -287,3 +289,115 @@ def test_summary_aggregates(auth_client, session):
     assert data["investment_balance"] == 3000.0
     assert data["net_worth"] == 5000.0 + 3000.0 - 1200.0
     assert data["account_count"] == 3
+
+
+# -- Statement available day -- Create -------------------------------------
+
+def test_create_account_with_statement_day(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/accounts", json={
+        "name": "Savings",
+        "statement_available_day": 15,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["statement_available_day"] == 15
+
+
+def test_create_account_without_statement_day(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/accounts", json={"name": "Savings"})
+    assert resp.status_code == 200
+    assert resp.json()["statement_available_day"] is None
+
+
+def test_create_account_invalid_statement_day_zero(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/accounts", json={
+        "name": "Bad",
+        "statement_available_day": 0,
+    })
+    assert resp.status_code == 422
+
+
+def test_create_account_invalid_statement_day_32(auth_client):
+    client, _ = auth_client
+    resp = client.post("/api/v1/accounts", json={
+        "name": "Bad",
+        "statement_available_day": 32,
+    })
+    assert resp.status_code == 422
+
+
+# -- Statement available day -- Update -------------------------------------
+
+def test_update_statement_day_manual_account(auth_client, session):
+    client, user = auth_client
+    acct = make_account(
+        session, user,
+        plaid_account_id=f"manual-{uuid4().hex}",
+        is_linked=False,
+    )
+    resp = client.patch(f"/api/v1/accounts/{acct.id}", json={"statement_available_day": 20})
+    assert resp.status_code == 200
+    assert resp.json()["statement_available_day"] == 20
+
+
+def test_update_statement_day_plaid_account(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, is_linked=True)
+    resp = client.patch(f"/api/v1/accounts/{acct.id}", json={"statement_available_day": 5})
+    assert resp.status_code == 200
+    assert resp.json()["statement_available_day"] == 5
+
+
+def test_clear_statement_day(auth_client, session):
+    client, user = auth_client
+    acct = make_account(session, user, statement_available_day=15)
+    resp = client.patch(f"/api/v1/accounts/{acct.id}", json={"statement_available_day": None})
+    assert resp.status_code == 200
+    assert resp.json()["statement_available_day"] is None
+
+
+# -- Statement reminders endpoint ------------------------------------------
+
+def test_statement_reminders_match(auth_client, session):
+    client, user = auth_client
+    make_account(session, user, name="Visa", statement_available_day=15)
+    with patch("app.routes.accounts.date") as mock_date:
+        mock_date.today.return_value = date(2026, 3, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        resp = client.get("/api/v1/accounts/statement-reminders")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "Visa"
+
+
+def test_statement_reminders_no_match(auth_client, session):
+    client, user = auth_client
+    make_account(session, user, name="Visa", statement_available_day=15)
+    with patch("app.routes.accounts.date") as mock_date:
+        mock_date.today.return_value = date(2026, 3, 16)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        resp = client.get("/api/v1/accounts/statement-reminders")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_statement_reminders_last_day_fallback(auth_client, session):
+    """Day 31 should trigger on Feb 28 (last day of month)."""
+    client, user = auth_client
+    make_account(session, user, name="Amex", statement_available_day=31)
+    with patch("app.routes.accounts.date") as mock_date:
+        mock_date.today.return_value = date(2026, 2, 28)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        resp = client.get("/api/v1/accounts/statement-reminders")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "Amex"
+
+
+def test_statement_reminders_auth_required(client):
+    resp = client.get("/api/v1/accounts/statement-reminders")
+    assert resp.status_code == 401

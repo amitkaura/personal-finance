@@ -312,7 +312,7 @@ export const api = {
   getAccountSummary: (scope?: ViewScope) =>
     fetcher<AccountSummary>(`/accounts/summary${scope && scope !== "personal" ? `?scope=${scope}` : ""}`),
 
-  createAccount: (body: { name: string; type: string; subtype?: string; current_balance?: number }) =>
+  createAccount: (body: { name: string; type: string; subtype?: string; current_balance?: number; statement_available_day?: number | null }) =>
     fetcher<Account>("/accounts", {
       method: "POST",
       body: JSON.stringify(body),
@@ -321,7 +321,7 @@ export const api = {
   deleteAccount: (accountId: number) =>
     fetcher<{ ok: boolean }>(`/accounts/${accountId}`, { method: "DELETE" }),
 
-  updateAccount: (id: number, body: { type?: string; subtype?: string; name?: string; current_balance?: number }) =>
+  updateAccount: (id: number, body: { type?: string; subtype?: string; name?: string; current_balance?: number; statement_available_day?: number | null }) =>
     fetcher<Account>(`/accounts/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
@@ -419,6 +419,9 @@ export const api = {
 
   unlinkAccount: (accountId: number) =>
     fetcher<Account>(`/accounts/${accountId}/unlink`, { method: "POST" }),
+
+  getStatementReminders: () =>
+    fetcher<{ id: number; name: string; statement_available_day: number }[]>("/accounts/statement-reminders"),
 
   getPlaidItems: (scope?: ViewScope) =>
     fetcher<PlaidConnection[]>(`/plaid/items${scope && scope !== "personal" ? `?scope=${scope}` : ""}`),

@@ -13,7 +13,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 | **Auth** | Google OAuth 2.0, JWT session cookies |
 | **AI Categorization** | OpenAI-compatible API (GPT, Ollama, Azure, etc.) |
 | **Charts** | Nivo (bar) |
-| **Scheduling** | APScheduler (daily transaction sync) |
+| **Scheduling** | APScheduler (daily transaction sync + statement reminders) |
 | **Infrastructure** | Docker Compose (Postgres + Redis + API) |
 
 ## Features
@@ -31,6 +31,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Manual accounts** -- create accounts without Plaid (all types: depository, credit, loan, investment)
 - Manually adjust balances on manual accounts at any time
 - Delete manual or unlinked accounts (cascades associated transactions and goal links)
+- **Statement reminders** -- set a recurring day-of-month (1-31) per account for statement availability; triggers an in-app banner and email reminder on that day (with last-day-of-month fallback for days 29-31)
 
 ### Transaction Management
 - Automatic transaction sync from all linked Plaid items
@@ -223,6 +224,7 @@ personal-finance/
 │   │   ├── household-provider.tsx  # Household context and useHousehold hook
 │   │   ├── view-switcher.tsx       # Mine / Yours / Ours toggle
 │   │   ├── invitation-banner.tsx   # Accept/decline household invitations
+│   │   ├── statement-reminder-banner.tsx # Statement day reminder banners
 │   │   ├── sidebar.tsx             # Navigation, user profile, logout
 │   │   ├── link-account.tsx        # Plaid Link flow
 │   │   ├── categorization-progress-provider.tsx # Global categorization progress context
@@ -254,6 +256,7 @@ personal-finance/
 │       ├── household-provider.test.tsx # Scope persistence, reset on no household
 │       ├── view-switcher.test.tsx  # Labels, pictures, scope switching, visibility
 │       ├── invitation-banner.test.tsx  # Accept/decline, dismiss, multiple invites
+│       ├── statement-reminder-banner.test.tsx # Render, dismiss, localStorage, multiple
 │       ├── settings-page.test.tsx  # Profile, household, general, data management
 │       ├── sidebar.test.tsx        # Nav links, branding, active state, user section
 │       ├── hooks.test.tsx          # useFormatCurrency, useFormatCurrencyPrecise, useScope
@@ -298,6 +301,7 @@ personal-finance/
 │   ├── test_settings.py            # Profile, rules, export, clear, factory reset
 │   ├── test_reports.py             # Spending, trends, merchants
 │   ├── test_net_worth.py           # Snapshots, history
+│   ├── test_scheduler.py            # Statement reminder scheduler job
 │   └── test_plaid.py               # Link token, exchange token, sync (mocked)
 ├── docker-compose.yml              # Postgres + Redis + API services
 ├── Dockerfile                      # Python 3.12-slim, uvicorn
@@ -312,7 +316,7 @@ personal-finance/
 |-------|---------|
 | `User` | Google OAuth user (google_id, email, name, picture) |
 | `PlaidItem` | Bank connection with encrypted access token |
-| `Account` | Bank/credit/loan/investment account with balances |
+| `Account` | Bank/credit/loan/investment account with balances, optional `statement_available_day` (1-31) and `last_statement_reminder_sent` for recurring reminders |
 | `Transaction` | Financial transaction (Plaid-synced or manual) |
 | `CategoryRule` | Keyword-to-category mapping for auto-categorization |
 | `UserSettings` | Per-user preferences (currency, locale, sync, LLM config) |
@@ -371,6 +375,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | DELETE | `/:id` | Delete a manual or unlinked account (cascades transactions/goal links) |
 | POST | `/:id/unlink` | Unlink a single Plaid-linked account |
 | POST | `/:id/import` | Bulk import transactions from mapped CSV data |
+| GET | `/statement-reminders` | Accounts whose statement day matches today (with last-day-of-month fallback) |
 | GET | `/summary` | Aggregated balances by type for dashboard |
 
 ### Transactions (`/transactions`)
@@ -531,7 +536,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (287 tests across 15 files):**
+**What's tested (302 tests across 16 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -541,7 +546,8 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_household` | 31 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations) |
 | `test_transactions` | 30 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize (rules, per-txn LLM, partial failure, NDJSON streaming), recurring, date validation, response schema |
 | `test_categories` | 27 | Full CRUD, auto-seed defaults, create validation (empty/whitespace/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
-| `test_accounts` | 24 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization |
+| `test_accounts` | 35 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization, statement_available_day (create/update/clear/validate), statement-reminders endpoint (match/no-match/last-day-fallback/auth) |
+| `test_scheduler` | 4 | Statement reminder scheduler job (day match, de-duplication, last-day-of-month fallback, no-accounts) |
 | `test_plaid` | 17 | Link token, exchange token (success, relink, conflict, institution name), sync, sync-all-stream (NDJSON streaming), items (all Plaid calls mocked) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
@@ -569,7 +575,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (352 tests across 34 files):**
+**What's tested (361 tests across 35 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -579,11 +585,12 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `transactions-page` | 26 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion) |
 | `sidebar` | 12 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
-| `accounts-page` | 20 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form with subtype selector, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid, friendly type/subtype labels |
+| `accounts-page` | 24 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form with subtype selector, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid, friendly type/subtype labels, statement day in add form and edit modal (appears, submits, pre-fills, editable for Plaid) |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
 | `bulk-csv-import-dialog` | 17 | Upload, preview, account detection, category matching, import flow, progress, results, errors, payload validation, auto-categorize trigger after import |
 | `csv-import-dialog` | 16 | Upload, column mapping, debit/credit, preview, import, progress, results, errors, cancel/done, auto-categorize trigger after import |
 | `goals-page` | 10 | Title, empty state, active/completed sections, progress bar, target date, create dialog, shared summary, delete confirm |
+| `statement-reminder-banner` | 5 | Banner rendering, empty state, dismiss with localStorage, dismissed stays hidden, multiple banners |
 | `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
 | `reports-page` | 8 | Title, period selector, loading, summary cards, category bars, empty states, top merchants |
 | `budgets-page` | 9 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes, click row navigates to filtered transactions |

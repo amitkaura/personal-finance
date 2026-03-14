@@ -14,6 +14,7 @@ export interface Account {
   plaid_account_id: string;
   plaid_item_id: number | null;
   is_linked: boolean;
+  statement_available_day?: number | null;
   owner_name?: string;
   owner_picture?: string | null;
 }
