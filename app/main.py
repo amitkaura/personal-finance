@@ -10,6 +10,7 @@ from time import time
 from typing import Protocol
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis, from_url
@@ -210,6 +211,30 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(_request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    field_errors: list[dict[str, str]] = []
+    for err in errors:
+        loc = err.get("loc", ())
+        field = ".".join(str(part) for part in loc if part != "body")
+        field_errors.append(
+            {
+                "field": field,
+                "message": str(err.get("msg", "Invalid value.")),
+                "code": str(err.get("type", "validation_error")),
+            }
+        )
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={
+            "message": "Validation failed.",
+            "detail": errors,
+            "field_errors": field_errors,
+        },
+    )
 
 settings = get_settings()
 allow_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]

@@ -227,4 +227,19 @@ describe("BudgetsPage", () => {
     expect(screen.getByText("$530")).toBeInTheDocument();
     expect(screen.getByText("$170")).toBeInTheDocument();
   });
+
+  it("shows explicit validation when add budget amount is zero", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<BudgetsPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Category")).toBeInTheDocument();
+    });
+
+    const amountInput = screen.getByLabelText("Amount");
+    await user.type(amountInput, "0");
+
+    expect(amountInput).toHaveAttribute("aria-invalid", "true");
+    const errorEl = screen.getByText("Amount must be greater than 0.");
+    expect(errorEl.className).toContain("opacity-100");
+  });
 });

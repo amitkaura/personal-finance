@@ -201,6 +201,21 @@ describe("AccountsPage", () => {
     expect(createBtn).toBeDisabled();
   });
 
+  it("shows explicit validation when account name is empty", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AccountsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Account")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Account"));
+
+    const nameInput = screen.getByPlaceholderText("e.g. TD Chequing");
+    expect(nameInput).toHaveAttribute("aria-invalid", "true");
+    const errorEl = screen.getByText("Account name is required.");
+    expect(errorEl.className).toContain("opacity-100");
+  });
+
   it("calls createAccount on form submission", async () => {
     const user = userEvent.setup();
     mockApi.createAccount.mockResolvedValue({ ...MANUAL_ACCOUNT });
@@ -223,6 +238,25 @@ describe("AccountsPage", () => {
         subtype: "Cash Management",
         current_balance: 0,
       });
+    });
+  });
+
+  it("shows create-account error message when API fails", async () => {
+    const user = userEvent.setup();
+    mockApi.createAccount.mockRejectedValue(new Error("Name already exists"));
+    renderWithProviders(<AccountsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Account")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Account"));
+
+    const nameInput = screen.getByPlaceholderText("e.g. TD Chequing");
+    await user.type(nameInput, "New Savings");
+    await user.click(screen.getByText("Create Account"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Name already exists")).toBeInTheDocument();
     });
   });
 

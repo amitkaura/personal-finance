@@ -69,10 +69,12 @@ export default function AccountsPage() {
   const isViewingOwn = scope === "personal";
   const [hideUnlinked, setHideUnlinked] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [newNameTouched, setNewNameTouched] = useState(false);
 
   useEffect(() => {
     if (searchParams.get("add") === "true") {
       setShowAddForm(true);
+      setNewNameTouched(true);
     }
   }, [searchParams]);
   const [newName, setNewName] = useState("");
@@ -80,6 +82,7 @@ export default function AccountsPage() {
   const [newSubtype, setNewSubtype] = useState(SUBTYPES["depository"]?.[0] ?? "");
   const [newBalance, setNewBalance] = useState("0");
   const [newStatementDay, setNewStatementDay] = useState("");
+  const isNewNameInvalid = !newName.trim();
   const [importAccount, setImportAccount] = useState<Account | null>(null);
 
   const createMutation = useMutation({
@@ -104,6 +107,7 @@ export default function AccountsPage() {
       setNewSubtype(SUBTYPES["depository"]?.[0] ?? "");
       setNewBalance("0");
       setNewStatementDay("");
+      setNewNameTouched(false);
       setImportAccount(created);
     },
   });
@@ -150,7 +154,11 @@ export default function AccountsPage() {
           )}
           {isViewingOwn && (
             <button
-              onClick={() => setShowAddForm(!showAddForm)}
+              onClick={() => {
+                const nextOpen = !showAddForm;
+                setShowAddForm(nextOpen);
+                setNewNameTouched(nextOpen);
+              }}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -166,17 +174,25 @@ export default function AccountsPage() {
         <div className="mt-4 rounded-2xl border border-accent/30 bg-card p-5">
           <h3 className="text-sm font-semibold mb-3">Add Manual Account</h3>
           <div className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-[180px]">
+            <div className="relative flex-1 min-w-[180px]">
               <label className="text-xs text-muted-foreground mb-1 block">
                 Account Name
               </label>
               <input
                 type="text"
                 value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                onChange={(e) => {
+                  setNewName(e.target.value);
+                  setNewNameTouched(true);
+                }}
+                onBlur={() => setNewNameTouched(true)}
                 placeholder="e.g. TD Chequing"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent"
+                aria-invalid={newNameTouched && isNewNameInvalid}
+                className={`w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:border-accent ${newNameTouched && isNewNameInvalid ? "border-red-400" : "border-border"}`}
               />
+              <p className={`absolute left-0 top-full mt-0.5 text-xs text-red-400 transition-opacity ${newNameTouched && isNewNameInvalid ? "opacity-100" : "opacity-0"}`}>
+                Account name is required.
+              </p>
             </div>
             <div className="w-40">
               <label className="text-xs text-muted-foreground mb-1 block">
@@ -250,13 +266,18 @@ export default function AccountsPage() {
               </button>
               <button
                 onClick={() => createMutation.mutate()}
-                disabled={!newName.trim() || createMutation.isPending}
+                disabled={isNewNameInvalid || createMutation.isPending}
                 className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
               >
                 Create Account
               </button>
             </div>
           </div>
+          {createMutation.isError && (
+            <p className="mt-2 text-xs text-red-400">
+              {(createMutation.error as Error).message}
+            </p>
+          )}
         </div>
       )}
 

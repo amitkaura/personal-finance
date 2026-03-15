@@ -68,6 +68,7 @@ export default function TransactionsPage() {
   } | null>(null);
   const [ruleCreated, setRuleCreated] = useState(false);
   const [editingTxnId, setEditingTxnId] = useState<number | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!filtersOpen) return;
@@ -159,6 +160,10 @@ export default function TransactionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       setShowAddForm(false);
+      setCreateError(null);
+    },
+    onError: (err) => {
+      setCreateError((err as Error).message);
     },
   });
 
@@ -289,9 +294,16 @@ export default function TransactionsPage() {
       {showAddForm && (
         <AddTransactionForm
           categories={categories ?? []}
-          onSubmit={(data) => createMutation.mutate(data)}
-          onCancel={() => setShowAddForm(false)}
+          onSubmit={(data) => {
+            setCreateError(null);
+            createMutation.mutate(data);
+          }}
+          onCancel={() => {
+            setCreateError(null);
+            setShowAddForm(false);
+          }}
           isPending={createMutation.isPending}
+          error={createError}
         />
       )}
 
@@ -1022,6 +1034,7 @@ function AddTransactionForm({
   onSubmit,
   onCancel,
   isPending,
+  error,
 }: {
   categories: string[];
   onSubmit: (data: {
@@ -1033,6 +1046,7 @@ function AddTransactionForm({
   }) => void;
   onCancel: () => void;
   isPending: boolean;
+  error: string | null;
 }) {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState("");
@@ -1040,9 +1054,14 @@ function AddTransactionForm({
   const [category, setCategory] = useState("");
   const [notes, setNotes] = useState("");
   const [isExpense, setIsExpense] = useState(true);
+  const [amountTouched, setAmountTouched] = useState(false);
+  const parsedAmount = parseFloat(amount);
+  const isAmountInvalid = !amount || isNaN(parsedAmount) || parsedAmount <= 0;
+  const isMerchantInvalid = !merchant.trim();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setAmountTouched(true);
     const numAmount = parseFloat(amount);
     if (!numAmount || !merchant) return;
     onSubmit({
@@ -1093,14 +1112,22 @@ function AddTransactionForm({
             <input
               type="number"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                setAmountTouched(true);
+              }}
+              onBlur={() => setAmountTouched(true)}
               placeholder="0.00"
               step="0.01"
               min="0"
-              className={inputClass}
+              aria-invalid={amountTouched && isAmountInvalid}
+              className={`${inputClass} ${amountTouched && isAmountInvalid ? "!bg-red-500/5 !ring-1 !ring-red-400" : ""}`}
               required
             />
           </div>
+          <p className={`mt-1 min-h-[1.25rem] text-xs text-red-400 transition-opacity ${amountTouched && isAmountInvalid ? "opacity-100" : "opacity-0"}`}>
+            Amount must be greater than 0.
+          </p>
         </div>
         <div>
           <label className="block text-xs text-muted-foreground mb-1">
@@ -1146,7 +1173,7 @@ function AddTransactionForm({
       <div className="mt-4 flex items-center gap-2">
         <button
           type="submit"
-          disabled={isPending || !merchant || !amount}
+          disabled={isPending || isMerchantInvalid || isAmountInvalid}
           className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
         >
           {isPending ? (
@@ -1164,6 +1191,7 @@ function AddTransactionForm({
           Cancel
         </button>
       </div>
+      {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
     </form>
   );
 }

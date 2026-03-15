@@ -69,6 +69,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Budgets
 - Monthly category budgets with configurable amounts; **click-to-edit** inline amount editing
 - Optional rollover of unspent budget to the next month (tooltip explains rollover behavior)
+- **Inline add-budget validation** -- amount now shows explicit feedback when invalid (e.g. `0` or empty) instead of silently staying disabled
 - **Click-to-filter** -- click any budget row to navigate to the Transactions page pre-filtered by that category and month date range
 - **Accessible progress bars** -- ARIA `progressbar` role with `aria-valuenow`/`aria-valuemax`
 - Copy all budgets from one month to another
@@ -76,7 +77,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Per-person spending breakdown** -- shared budget rows show a two-tone progress bar with per-person contribution amounts
 - **Spending preferences** -- when both a personal and shared budget exist for the same category, choose where your spending counts
 - **Sectioned household view** -- household scope groups budgets into "Your Budgets", "Partner's Budgets", and "Shared Budgets" sections
-- Dashboard snippet shows personal and shared budget progress side-by-side
+- Dashboard snippet shows personal/shared totals and expanded shared category rows in Mine, Yours, and Ours views
 
 ### Financial Goals
 - Set savings goals with target amount, target date, icon, and color
@@ -84,8 +85,15 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Shared goals** -- create household-level goals that either partner can contribute to
 - **Account-linked goals** -- link one or more accounts to auto-track progress from balances (updated on every Plaid sync)
 - **Contribution history** -- expandable log showing who added what, with user avatar, amount, note, and date
-- **Collapsed shared summary** -- personal scope shows a compact "N shared goals — X% avg progress" banner
-- Dashboard snippet shows personal goals plus a shared goals summary
+- **Inline goal validation** -- create and contribution dialogs show explicit messages for invalid amounts (including `0`)
+- Dashboard snippet shows expanded shared goal rows in Mine, Yours, and Ours views
+
+### Validation UX + Error Contract
+- API request validation errors now include a normalized payload with `message`, `detail`, and `field_errors` (`field`, `message`, `code`)
+- Frontend API client parses validation payloads and surfaces cleaner user-facing mutation errors instead of raw `API error 422: ...` blobs
+- Core create/update flows now pair disabled submit states with explicit validation text for invalid required fields (including numeric `> 0` checks where business rules require it)
+- Expanded inline/mutation feedback now covers budget and goal amounts, account-name creation, add-transaction amount validation, create-account/create-transaction mutation failures, and household invite email format errors
+- **No-shift layout** -- validation errors use reserved-height containers (`min-h` + `opacity` transition) and `aria-invalid` red-bordered inputs so error messages never push adjacent fields out of alignment
 
 ### Net Worth Tracking
 - Automatic net worth snapshots taken after every Plaid sync, manual account creation, and balance update
@@ -568,7 +576,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (366 tests across 19 files):**
+**What's tested (368 tests across 19 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -610,26 +618,26 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (384 tests across 38 files):**
+**What's tested (398 tests across 38 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
 | `rule-utils` | 11 | Keyword option generation: full name, cleaned name, progressive word combos, dedup, edge cases |
-| `settings-page` | 19 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + logout) |
+| `settings-page` | 20 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + logout), explicit invalid invite email feedback |
 | `balance-import-dialog` | 5 | Upload step rendering, column mapping, error handling, account matching, API call on submit |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
-| `transactions-page` | 26 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion) |
+| `transactions-page` | 28 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion), explicit add-amount validation for `0`, create mutation error rendering |
 | `sidebar` | 12 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
-| `accounts-page` | 25 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form with subtype selector, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid, friendly type/subtype labels, statement day in add form and edit modal (appears, submits, pre-fills, editable for Plaid), auto-open add form via ?add=true query param |
+| `accounts-page` | 27 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form with subtype selector, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid, friendly type/subtype labels, statement day in add form and edit modal (appears, submits, pre-fills, editable for Plaid), auto-open add form via ?add=true query param, explicit required-name validation, create mutation error rendering |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
 | `bulk-csv-import-dialog` | 17 | Upload, preview, account detection, category matching, import flow, progress, results, errors, payload validation, auto-categorize trigger after import |
 | `csv-import-dialog` | 16 | Upload, column mapping, debit/credit, preview, import, progress, results, errors, cancel/done, auto-categorize trigger after import |
-| `goals-page` | 10 | Title, empty state, active/completed sections, progress bar, target date, create dialog, shared summary, delete confirm |
+| `goals-page` | 12 | Title, empty state, active/completed sections, progress bar, target date, create dialog, shared summary, delete confirm, create validation message for zero target amount, contribution validation message for zero amount |
 | `statement-reminder-banner` | 5 | Banner rendering, empty state, dismiss with localStorage, dismissed stays hidden, multiple banners |
 | `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
 | `reports-page` | 8 | Title, period selector, loading, summary cards, category bars, empty states, top merchants |
-| `budgets-page` | 9 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes, click row navigates to filtered transactions |
+| `budgets-page` | 10 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes, click row navigates to filtered transactions, add-budget validation message for zero amount |
 | `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
 | `recurring-page` | 7 | Title, loading, empty state, recurring cards, summary, consistent/varies badges, sort dropdown |
 | `connections-page` | 6 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync |
@@ -639,11 +647,11 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `household-provider` | 6 | Load household/partner, scope persistence per user in localStorage, reset |
 | `hooks` | 6 | `useFormatCurrency`, `useFormatCurrencyPrecise`, `useScope` |
 | `auth-provider` | 6 | Loading state, login/logout, cache clearing, default context |
-| `goals-snippet` | 6 | Loading, empty with "Set one" link, personal goals (max 3), shared summary, singular/plural, view all link |
+| `goals-snippet` | 7 | Loading, empty with "Set one" link, personal goals (max 3), expanded shared rows in personal scope, partner/household shared visibility, view all link |
 | `auth-gate` | 6 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, hamburger menu button, toggle sidebar open, responsive margin classes |
 | `net-worth-card` | 5 | Loading skeleton, net worth display, asset/liability breakdown, account count pluralization |
 | `top-movers` | 6 | Loading, empty, investment filter, scrollable list, trend icons, official name fallback |
-| `budget-snippet` | 5 | Loading, empty with "Create one" link, personal mini bar, top 3 sort, view all link |
+| `budget-snippet` | 8 | Loading, empty with "Create one" link, personal/shared totals, top-3 category sort, expanded shared categories in personal scope, partner scope, and household scope, view all link |
 | `login-page` | 5 | Hero section, trust badges, feature cards, Google sign-in flow |
 | `loans-widget` | 4 | Loading, empty, loan list, total remaining |
 | `categorization-drawer` | 5 | Idle hidden, syncing state, categorizing progress, completion summary with dismiss, dismiss resets to idle |
@@ -658,6 +666,11 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 - Shared fixtures for users, households, invitations, and settings
 - Mock API factory with `vi.hoisted()` for proper hoisting with `vi.mock`
 - `renderWithProviders` wrapper with isolated `QueryClient` per test
+
+### Latest coverage snapshot
+
+- Backend (`pytest --cov=app --cov-report=term`): **85% total** (`3495` statements, `519` missed)
+- Frontend (`pnpm vitest run --coverage`): **76.72% statements**, **71.28% branches**, **62.85% functions**, **77.63% lines**
 
 ## Environment Variables
 

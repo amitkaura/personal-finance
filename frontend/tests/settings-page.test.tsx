@@ -207,6 +207,18 @@ describe("SettingsPage", () => {
       });
     });
 
+    it("shows explicit validation when partner email is invalid", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<SettingsPage />);
+
+      const input = screen.getByPlaceholderText("partner@email.com");
+      await user.type(input, "invalid-email");
+
+      expect(input).toHaveAttribute("aria-invalid", "true");
+      const errorEl = screen.getByText("Enter a valid email address.");
+      expect(errorEl.className).toContain("opacity-100");
+    });
+
     it("hides invite form when pending invitation exists", () => {
       mockHouseholdState.value.household = {
         ...TEST_HOUSEHOLD,

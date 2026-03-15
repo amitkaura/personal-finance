@@ -73,6 +73,7 @@ export default function BudgetsPage() {
   const [month, setMonth] = useState(getCurrentMonthKey);
   const [addCategory, setAddCategory] = useState("");
   const [addAmount, setAddAmount] = useState("");
+  const [addAmountTouched, setAddAmountTouched] = useState(false);
   const [addShared, setAddShared] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<BudgetSummaryItem | null>(null);
 
@@ -225,9 +226,12 @@ export default function BudgetsPage() {
     const budgeted = new Set(summary?.items.map((i) => i.category) ?? []);
     return categories?.filter((c) => !budgeted.has(c)) ?? [];
   }, [categories, summary?.items]);
+  const parsedAddAmount = parseFloat(addAmount);
+  const isAddAmountInvalid = !addAmount || isNaN(parsedAddAmount) || parsedAddAmount <= 0;
 
   const handleAddBudget = (e: React.FormEvent) => {
     e.preventDefault();
+    setAddAmountTouched(true);
     if (!addCategory || !addAmount || parseFloat(addAmount) <= 0) return;
     createMutation.mutate();
   };
@@ -355,7 +359,7 @@ export default function BudgetsPage() {
                 ))}
               </select>
             </div>
-            <div className="min-w-[120px]">
+            <div className="relative min-w-[120px]">
               <label htmlFor="add-amount" className="mb-1 block text-xs text-muted-foreground">
                 Amount
               </label>
@@ -365,10 +369,18 @@ export default function BudgetsPage() {
                 min="0"
                 step="0.01"
                 value={addAmount}
-                onChange={(e) => setAddAmount(e.target.value)}
+                onChange={(e) => {
+                  setAddAmount(e.target.value);
+                  setAddAmountTouched(true);
+                }}
+                onBlur={() => setAddAmountTouched(true)}
                 placeholder="0"
-                className="w-full rounded-md bg-muted px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground"
+                aria-invalid={addAmountTouched && isAddAmountInvalid}
+                className={`w-full rounded-md px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground ${addAmountTouched && isAddAmountInvalid ? "bg-red-500/5 ring-1 ring-red-400" : "bg-muted"}`}
               />
+              <p className={`absolute left-0 top-full mt-0.5 text-xs text-red-400 transition-opacity ${addAmountTouched && isAddAmountInvalid ? "opacity-100" : "opacity-0"}`}>
+                Amount must be greater than 0.
+              </p>
             </div>
             {household && (
               <label className="flex cursor-pointer items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm">
@@ -384,7 +396,7 @@ export default function BudgetsPage() {
             )}
             <button
               type="submit"
-              disabled={!addCategory || !addAmount || parseFloat(addAmount) <= 0 || createMutation.isPending}
+              disabled={!addCategory || isAddAmountInvalid || createMutation.isPending}
               className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
             >
               {createMutation.isPending ? (

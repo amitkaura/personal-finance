@@ -133,4 +133,45 @@ describe("GoalsPage", () => {
       expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     });
   });
+
+  it("shows explicit validation when goal target amount is zero", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<GoalsPage />);
+    await user.click(screen.getByText("New Goal"));
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("e.g. Emergency fund")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByPlaceholderText("e.g. Emergency fund"), "Trip");
+    const dialogNumberInputs = document.querySelectorAll('input[type="number"]');
+    expect(dialogNumberInputs.length).toBeGreaterThan(0);
+    const targetInput = dialogNumberInputs[0] as HTMLInputElement;
+    await user.type(targetInput, "0");
+
+    expect(targetInput).toHaveAttribute("aria-invalid", "true");
+    const errorEl = screen.getByText("Target amount must be greater than 0.");
+    expect(errorEl.className).toContain("opacity-100");
+  });
+
+  it("shows explicit validation when contribution amount is zero", async () => {
+    const user = userEvent.setup();
+    mockApi.getGoals.mockResolvedValue({ goals: [ACTIVE_GOAL], shared_goals_summary: null });
+    renderWithProviders(<GoalsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Emergency Fund")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Update Progress"));
+    await waitFor(() => {
+      expect(screen.getByText("Amount to add")).toBeInTheDocument();
+    });
+
+    const amountInput = document.querySelector('input[type="number"][min="0.01"]') as HTMLInputElement;
+    expect(amountInput).toBeTruthy();
+    await user.type(amountInput, "0");
+
+    expect(amountInput).toHaveAttribute("aria-invalid", "true");
+    const errorEl = screen.getByText("Amount must be greater than 0.");
+    expect(errorEl.className).toContain("opacity-100");
+  });
 });

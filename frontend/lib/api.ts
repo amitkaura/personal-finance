@@ -9,6 +9,45 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
+type ValidationErrorItem = {
+  field?: string;
+  message?: string;
+  loc?: (string | number)[];
+  msg?: string;
+};
+
+function formatApiError(status: number, rawBody: string): string {
+  if (!rawBody) return `Request failed (${status}).`;
+  try {
+    const parsed = JSON.parse(rawBody) as {
+      detail?: string | ValidationErrorItem[];
+      message?: string;
+      field_errors?: ValidationErrorItem[];
+    };
+    if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+      return parsed.detail;
+    }
+    if (parsed.message && parsed.message.trim()) {
+      return parsed.message;
+    }
+    const errors: ValidationErrorItem[] = parsed.field_errors?.length
+      ? parsed.field_errors
+      : Array.isArray(parsed.detail)
+        ? parsed.detail
+        : [];
+    if (errors.length > 0) {
+      const first = errors[0];
+      const locPath = first.field
+        ?? (Array.isArray(first.loc) ? first.loc.filter((p) => p !== "body").join(".") : "");
+      const msg = first.message ?? first.msg ?? "Invalid value.";
+      return locPath ? `${locPath}: ${msg}` : msg;
+    }
+  } catch {
+    // Fallback to raw body string below.
+  }
+  return rawBody;
+}
+
 async function fetcher<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   try {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -22,7 +61,7 @@ async function fetcher<T>(path: string, init?: RequestInit, retried = false): Pr
         await new Promise((r) => setTimeout(r, 1000));
         return fetcher<T>(path, init, true);
       }
-      throw new Error(`API error ${res.status}: ${await res.text()}`);
+      throw new Error(formatApiError(res.status, await res.text()));
     }
     return res.json();
   } catch (err) {
@@ -42,7 +81,7 @@ async function fetchVoid(path: string, init?: RequestInit): Promise<void> {
     ...init,
   });
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${await res.text()}`);
+    throw new Error(formatApiError(res.status, await res.text()));
   }
 }
 
@@ -52,7 +91,7 @@ async function fetchBlob(path: string, init?: RequestInit): Promise<Blob> {
     ...init,
   });
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${await res.text()}`);
+    throw new Error(formatApiError(res.status, await res.text()));
   }
   return res.blob();
 }
@@ -133,7 +172,7 @@ async function streamNdjson<T>(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${await res.text()}`);
+    throw new Error(formatApiError(res.status, await res.text()));
   }
   const reader = res.body?.getReader();
   if (!reader) throw new Error("No response body");
@@ -192,7 +231,7 @@ async function streamAutoCategorize(
     credentials: "include",
   });
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${await res.text()}`);
+    throw new Error(formatApiError(res.status, await res.text()));
   }
   const reader = res.body?.getReader();
   if (!reader) throw new Error("No response body");
@@ -249,7 +288,7 @@ async function streamSyncAll(
     credentials: "include",
   });
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${await res.text()}`);
+    throw new Error(formatApiError(res.status, await res.text()));
   }
   const reader = res.body?.getReader();
   if (!reader) throw new Error("No response body");

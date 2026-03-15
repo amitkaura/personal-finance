@@ -272,6 +272,25 @@ describe("TransactionsPage", () => {
     expect(screen.getByText("Transactions")).toBeInTheDocument();
   });
 
+  it("shows explicit validation when add-transaction amount is zero", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Transaction")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Transaction"));
+
+    const merchantInput = screen.getByPlaceholderText("e.g. Coffee Shop");
+    await user.type(merchantInput, "Cafe");
+    const amountInput = screen.getByPlaceholderText("0.00");
+    await user.type(amountInput, "0");
+
+    expect(amountInput).toHaveAttribute("aria-invalid", "true");
+    const errorEl = screen.getByText("Amount must be greater than 0.");
+    expect(errorEl.className).toContain("opacity-100");
+  });
+
   it("renders transactions list", async () => {
     renderWithProviders(<TransactionsPage />);
     await waitFor(() => {
@@ -433,6 +452,28 @@ describe("TransactionsPage", () => {
       expect(mockApi.updateTransaction).toHaveBeenCalledWith(1, expect.objectContaining({
         merchant_name: "Updated Coffee",
       }));
+    });
+  });
+
+  it("shows create-transaction error message when API fails", async () => {
+    const user = userEvent.setup();
+    mockApi.createTransaction.mockRejectedValue(new Error("Invalid date format"));
+    renderWithProviders(<TransactionsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Transaction")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Transaction"));
+
+    const merchantInput = screen.getByPlaceholderText("e.g. Coffee Shop");
+    await user.type(merchantInput, "Cafe");
+    await user.type(screen.getByPlaceholderText("0.00"), "12.34");
+    const form = merchantInput.closest("form");
+    expect(form).toBeTruthy();
+    await user.click(within(form as HTMLFormElement).getByRole("button", { name: /add transaction/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Invalid date format")).toBeInTheDocument();
     });
   });
 

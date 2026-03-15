@@ -329,6 +329,11 @@ def test_create_account_invalid_statement_day_zero(auth_client):
         "statement_available_day": 0,
     })
     assert resp.status_code == 422
+    payload = resp.json()
+    assert payload["message"] == "Validation failed."
+    assert any(
+        "statement_available_day" in err["field"] for err in payload.get("field_errors", [])
+    )
 
 
 def test_create_account_invalid_statement_day_32(auth_client):
@@ -338,6 +343,11 @@ def test_create_account_invalid_statement_day_32(auth_client):
         "statement_available_day": 32,
     })
     assert resp.status_code == 422
+    payload = resp.json()
+    assert payload["message"] == "Validation failed."
+    assert any(
+        "statement_available_day" in err["field"] for err in payload.get("field_errors", [])
+    )
 
 
 # -- Statement available day -- Update -------------------------------------

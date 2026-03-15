@@ -466,6 +466,7 @@ function CreateGoalDialog({
   const scope = useScope();
   const [name, setName] = useState("");
   const [targetAmount, setTargetAmount] = useState("");
+  const [targetAmountTouched, setTargetAmountTouched] = useState(false);
   const [currentAmount, setCurrentAmount] = useState("0");
   const [targetDate, setTargetDate] = useState("");
   const [color, setColor] = useState("#6d28d9");
@@ -507,9 +508,13 @@ function CreateGoalDialog({
       onSuccess();
     },
   });
+  const parsedTargetAmount = parseFloat(targetAmount);
+  const isTargetAmountInvalid =
+    !targetAmount || isNaN(parsedTargetAmount) || parsedTargetAmount <= 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setTargetAmountTouched(true);
     if (!name.trim() || !targetAmount || parseFloat(targetAmount) <= 0) return;
     createMutation.mutate();
   };
@@ -548,6 +553,7 @@ function CreateGoalDialog({
               Goal name
             </label>
             <input
+              id="goal-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -579,14 +585,23 @@ function CreateGoalDialog({
                 Target amount
               </label>
               <input
+                id="goal-target-amount"
                 type="number"
                 min="0"
                 step="0.01"
                 value={targetAmount}
-                onChange={(e) => setTargetAmount(e.target.value)}
+                onChange={(e) => {
+                  setTargetAmount(e.target.value);
+                  setTargetAmountTouched(true);
+                }}
+                onBlur={() => setTargetAmountTouched(true)}
                 placeholder="0"
-                className="w-full rounded-md bg-muted px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground"
+                aria-invalid={targetAmountTouched && isTargetAmountInvalid}
+                className={`w-full rounded-md px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground ${targetAmountTouched && isTargetAmountInvalid ? "bg-red-500/5 ring-red-400" : "bg-muted"}`}
               />
+              <p className={`mt-1 min-h-[1.25rem] text-xs text-red-400 transition-opacity ${targetAmountTouched && isTargetAmountInvalid ? "opacity-100" : "opacity-0"}`}>
+                Target amount must be greater than 0.
+              </p>
             </div>
             {!linkedAccounts.length && (
               <div>
@@ -691,8 +706,7 @@ function CreateGoalDialog({
               type="submit"
               disabled={
                 !name.trim() ||
-                !targetAmount ||
-                parseFloat(targetAmount) <= 0 ||
+                isTargetAmountInvalid ||
                 createMutation.isPending
               }
               className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
@@ -724,6 +738,7 @@ function UpdateProgressDialog({
   const queryClient = useQueryClient();
   const formatCurrency = useFormatCurrency();
   const [amount, setAmount] = useState("");
+  const [amountTouched, setAmountTouched] = useState(false);
   const [note, setNote] = useState("");
 
   useEffect(() => {
@@ -742,9 +757,13 @@ function UpdateProgressDialog({
       onSuccess();
     },
   });
+  const parsedContributionAmount = parseFloat(amount);
+  const isContributionAmountInvalid =
+    !amount || isNaN(parsedContributionAmount) || parsedContributionAmount <= 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setAmountTouched(true);
     const add = parseFloat(amount);
     if (isNaN(add) || add <= 0) return;
     contributeMutation.mutate();
@@ -829,15 +848,24 @@ function UpdateProgressDialog({
               Amount to add
             </label>
             <input
+              id="goal-contribution-amount"
               type="number"
               min="0.01"
               step="0.01"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                setAmountTouched(true);
+              }}
+              onBlur={() => setAmountTouched(true)}
               placeholder="0"
-              className="w-full rounded-md bg-muted px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground"
+              aria-invalid={amountTouched && isContributionAmountInvalid}
+              className={`w-full rounded-md px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground ${amountTouched && isContributionAmountInvalid ? "bg-red-500/5 ring-red-400" : "bg-muted"}`}
               autoFocus
             />
+            <p className={`mt-1 min-h-[1.25rem] text-xs text-red-400 transition-opacity ${amountTouched && isContributionAmountInvalid ? "opacity-100" : "opacity-0"}`}>
+              Amount must be greater than 0.
+            </p>
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-muted-foreground">
@@ -862,7 +890,7 @@ function UpdateProgressDialog({
             </button>
             <button
               type="submit"
-              disabled={!amount || parseFloat(amount) <= 0 || contributeMutation.isPending}
+              disabled={isContributionAmountInvalid || contributeMutation.isPending}
               className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
             >
               {contributeMutation.isPending ? (
