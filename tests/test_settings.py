@@ -16,7 +16,10 @@ from app.models import (
     GoalContribution,
     Household,
     HouseholdInvitation,
+    HouseholdLLMConfig,
     HouseholdMember,
+    HouseholdPlaidConfig,
+    HouseholdSyncConfig,
     NetWorthSnapshot,
     SpendingPreference,
     Tag,
@@ -36,8 +39,11 @@ from tests.conftest import (
     make_goal,
     make_household,
     make_invitation,
+    make_llm_config,
+    make_plaid_config,
     make_settings,
     make_spending_preference,
+    make_sync_config,
     make_tag,
     make_transaction,
     make_user,
@@ -914,6 +920,30 @@ def test_delete_account_deletes_empty_household(auth_client, session):
     assert session.exec(
         select(HouseholdInvitation).where(HouseholdInvitation.household_id == household.id)
     ).all() == []
+
+
+def test_delete_account_deletes_empty_household_with_configs(auth_client, session):
+    client, user = auth_client
+
+    household = make_household(session, user)
+    make_plaid_config(session, household)
+    make_llm_config(session, household)
+    make_sync_config(session, household)
+
+    resp = client.delete("/api/v1/settings/account")
+    assert resp.status_code == 204
+
+    assert session.get(User, user.id) is None
+    assert session.get(Household, household.id) is None
+    assert session.exec(
+        select(HouseholdPlaidConfig).where(HouseholdPlaidConfig.household_id == household.id)
+    ).first() is None
+    assert session.exec(
+        select(HouseholdLLMConfig).where(HouseholdLLMConfig.household_id == household.id)
+    ).first() is None
+    assert session.exec(
+        select(HouseholdSyncConfig).where(HouseholdSyncConfig.household_id == household.id)
+    ).first() is None
 
 
 def test_delete_account_removes_contributions_to_partner_goals(auth_client, session):
