@@ -1371,7 +1371,8 @@ def import_balances(
     user: User = Depends(get_current_user),
 ):
     """Import account balance history from CSV data."""
-    from app.routes.net_worth import recompute_snapshot_for_date
+    import bisect
+    from collections import defaultdict
 
     if not body.rows:
         raise HTTPException(status_code=400, detail="No rows to import")
@@ -1423,7 +1424,7 @@ def import_balances(
                 is_linked=False,
             )
             session.add(acct)
-            session.commit()
+            session.flush()
             session.refresh(acct)
             resolved[csv_name] = acct
             accounts_created += 1
@@ -1433,9 +1434,10 @@ def import_balances(
                 detail=f"Mapping for '{csv_name}' must have account_id or create",
             )
 
-    imported = 0
-    latest_date_per_acct: dict[int, tuple[date_type, Decimal]] = {}
+    # -- Phase 1: Collect all parsed rows in memory --
+    parsed_rows: list[tuple[int, date_type, Decimal]] = []
     unique_dates: set[date_type] = set()
+    latest_date_per_acct: dict[int, tuple[date_type, Decimal]] = {}
 
     for row in body.rows:
         acct = resolved[row.account_name]
@@ -1444,43 +1446,111 @@ def import_balances(
         except ValueError:
             continue
         balance = Decimal(str(row.balance))
-
-        existing = session.exec(
-            select(AccountBalanceSnapshot).where(
-                AccountBalanceSnapshot.account_id == acct.id,
-                AccountBalanceSnapshot.date == parsed_date,
-            )
-        ).first()
-
-        if existing:
-            existing.balance = balance
-            session.add(existing)
-        else:
-            snap = AccountBalanceSnapshot(
-                account_id=acct.id, date=parsed_date, balance=balance
-            )
-            session.add(snap)
-
-        imported += 1
+        parsed_rows.append((acct.id, parsed_date, balance))
         unique_dates.add(parsed_date)
-
         prev = latest_date_per_acct.get(acct.id)
         if prev is None or parsed_date > prev[0]:
             latest_date_per_acct[acct.id] = (parsed_date, balance)
 
-    session.commit()
+    # -- Phase 2: Batch-load existing snapshots (1 query instead of N) --
+    import_acct_ids = list({r[0] for r in parsed_rows})
+    existing_snaps = session.exec(
+        select(AccountBalanceSnapshot).where(
+            AccountBalanceSnapshot.account_id.in_(import_acct_ids),
+        )
+    ).all()
+    existing_map: dict[tuple[int, date_type], AccountBalanceSnapshot] = {
+        (s.account_id, s.date): s for s in existing_snaps
+    }
 
+    # -- Phase 3: Batch upsert balance snapshots (0 queries, just session.add) --
+    imported = 0
+    for acct_id, d, balance in parsed_rows:
+        key = (acct_id, d)
+        if key in existing_map:
+            existing_map[key].balance = balance
+        else:
+            snap = AccountBalanceSnapshot(account_id=acct_id, date=d, balance=balance)
+            session.add(snap)
+            existing_map[key] = snap
+        imported += 1
+
+    # -- Phase 4: Update current_balance on each account --
     for acct_id, (_, balance) in latest_date_per_acct.items():
         acct = session.get(Account, acct_id)
         if acct:
             acct.current_balance = balance
-            session.add(acct)
-    session.commit()
+
+    session.flush()
+
+    # -- Phase 5: Batch recompute net worth (3 queries instead of M * A) --
+    accounts = session.exec(
+        select(Account).where(
+            Account.user_id == user.id,
+            or_(
+                Account.is_linked == True,  # noqa: E712
+                Account.plaid_account_id.startswith("manual-"),  # type: ignore[union-attr]
+            ),
+        )
+    ).all()
+
+    all_acct_ids = [a.id for a in accounts]
+    all_snaps = session.exec(
+        select(AccountBalanceSnapshot)
+        .where(AccountBalanceSnapshot.account_id.in_(all_acct_ids))
+        .order_by(AccountBalanceSnapshot.account_id, AccountBalanceSnapshot.date)
+    ).all()
+
+    snaps_by_account: dict[int, list[tuple[date_type, Decimal]]] = defaultdict(list)
+    for snap in all_snaps:
+        snaps_by_account[snap.account_id].append((snap.date, snap.balance))
+
+    account_types: dict[int, str] = {}
+    for a in accounts:
+        account_types[a.id] = a.type.value if hasattr(a.type, "value") else a.type
+
+    nw_dates = sorted(unique_dates)
+    existing_nw = session.exec(
+        select(NetWorthSnapshot).where(
+            NetWorthSnapshot.user_id == user.id,
+            NetWorthSnapshot.date >= nw_dates[0],
+            NetWorthSnapshot.date <= nw_dates[-1],
+        )
+    ).all()
+    nw_map: dict[date_type, NetWorthSnapshot] = {s.date: s for s in existing_nw}
 
     snapshots_updated = 0
-    for d in sorted(unique_dates):
-        recompute_snapshot_for_date(session, user.id, d)
+    for target_date in nw_dates:
+        assets = Decimal("0")
+        liabilities = Decimal("0")
+        for acct_id in all_acct_ids:
+            snaps = snaps_by_account.get(acct_id)
+            if not snaps:
+                continue
+            idx = bisect.bisect_right([s[0] for s in snaps], target_date) - 1
+            if idx >= 0:
+                bal = snaps[idx][1]
+                t = account_types.get(acct_id, "")
+                if t in ("depository", "investment", "real_estate"):
+                    assets += bal
+                elif t in ("credit", "loan"):
+                    liabilities += bal
+
+        if target_date in nw_map:
+            nw_map[target_date].assets = assets
+            nw_map[target_date].liabilities = liabilities
+            nw_map[target_date].net_worth = assets - liabilities
+        else:
+            session.add(NetWorthSnapshot(
+                user_id=user.id,
+                date=target_date,
+                assets=assets,
+                liabilities=liabilities,
+                net_worth=assets - liabilities,
+            ))
         snapshots_updated += 1
+
+    session.commit()
 
     return {
         "imported": imported,
