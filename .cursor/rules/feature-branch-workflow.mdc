@@ -1,15 +1,22 @@
 ---
-description: All code changes must go through a feature branch and pull request -- never commit directly to main
+description: All code changes must go through a feature branch and pull request -- never commit directly to main or staging
 alwaysApply: true
 ---
 
 # Feature Branch + PR Workflow
 
-`main` is the production branch. Never commit directly to it.
+## Branches
+
+| Branch | Purpose | Deploys to |
+|--------|---------|------------|
+| `main` | Production — always stable | Railway production project |
+| `staging` | Pre-production testing | Railway staging project |
+
+Never commit directly to `main` or `staging`.
 
 ## Rules
 
-1. **Create a feature branch** before making any changes:
+1. **Create a feature branch** off `staging` before making any changes:
    - `fix/` -- bug fixes
    - `feat/` -- new features
    - `refactor/` -- code restructuring
@@ -17,18 +24,31 @@ alwaysApply: true
 
 2. **Merge via pull request only.** Use `gh pr create` to open the PR after pushing.
 
-3. **Run full test suites** (backend + frontend) before opening the PR.
+3. **PRs go to `staging` first**, not `main`. Test on the staging environment before promoting.
 
-4. **Keep branches short-lived.** One logical change per branch.
+4. **Promote to production** by merging `staging` into `main` (via PR) once verified.
+
+5. **Run full test suites** (backend + frontend) before opening the PR.
+
+6. **Keep branches short-lived.** One logical change per branch.
+
+## Flow
+
+```
+feature branch → PR into staging → test on staging → PR into main → production
+```
 
 ## Quick reference
 
 ```bash
-git checkout main && git pull
+git checkout staging && git pull
 git checkout -b feat/my-feature
 
 # ... make changes, commit ...
 
 git push -u origin HEAD
-gh pr create --title "feat: my feature" --body "..."
+gh pr create --base staging --title "feat: my feature" --body "..."
+
+# After testing on staging, promote to production:
+gh pr create --base main --head staging --title "release: promote staging" --body "..."
 ```
