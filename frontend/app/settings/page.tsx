@@ -186,7 +186,7 @@ function ProfileSection() {
         are used as defaults.
       </p>
 
-      <div className="mt-5 flex gap-6">
+      <div className="mt-5 flex flex-col sm:flex-row gap-6">
         {/* Avatar preview */}
         <div className="flex flex-col items-center gap-2">
           {previewPicture ? (
@@ -743,7 +743,7 @@ function IntegrationsSection() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Client ID</label>
               <div className="relative">
@@ -883,7 +883,7 @@ function GeneralSection() {
       <p className="mt-1 text-xs text-muted-foreground">
         Display preferences for currency, dates, and number formatting.
       </p>
-      <div className="mt-5 grid grid-cols-3 gap-4">
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
           <label className={labelClass}>Currency</label>
           <select
@@ -1008,7 +1008,7 @@ function SyncSection() {
         )}
       </div>
       {enabled && (
-        <div className="mt-5 grid grid-cols-3 gap-4">
+        <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className={labelClass}>Hour</label>
             <select
@@ -1258,8 +1258,8 @@ function CategoryRulesSection() {
       </div>
 
       {/* Add new rule */}
-      <div className="mt-4 flex items-end gap-3">
-        <div className="flex-1">
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <div className="flex-1 min-w-[180px]">
           <label className={labelClass}>Keyword</label>
           <input
             value={newKeyword}
@@ -1268,7 +1268,7 @@ function CategoryRulesSection() {
             className={`${inputClass} w-full`}
           />
         </div>
-        <div className="flex-1">
+        <div className="flex-1 min-w-[180px]">
           <label className={labelClass}>Category</label>
           <select
             value={newCategory}
@@ -1416,8 +1416,8 @@ function AiSection() {
               Changing credentials will affect AI categorization for all household members.
             </p>
           )}
-          <div className="mt-5 grid grid-cols-2 gap-4">
-            <div className="col-span-2">
+          <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
               <label className={labelClass}>Base URL</label>
               <input
                 value={baseUrl}
@@ -1570,7 +1570,7 @@ function DataSection() {
         Export your data or clear transaction history.
       </p>
 
-      <div className="mt-5 grid grid-cols-3 gap-4">
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <button
           onClick={handleExport}
           disabled={exporting}
@@ -1625,7 +1625,7 @@ function DataSection() {
 
       <div className="mt-6 rounded-lg border border-red-500/30 bg-red-500/5 p-4">
         <h3 className="text-sm font-semibold text-red-400">Danger Zone</h3>
-        <div className="mt-3 grid grid-cols-3 gap-4">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <button
             onClick={() => setConfirmOpen(true)}
             className="flex flex-col items-start gap-1 rounded-lg bg-red-600 px-4 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-red-700"

@@ -1,0 +1,34 @@
+---
+description: All code changes must go through a feature branch and pull request -- never commit directly to main
+alwaysApply: true
+---
+
+# Feature Branch + PR Workflow
+
+`main` is the production branch. Never commit directly to it.
+
+## Rules
+
+1. **Create a feature branch** before making any changes:
+   - `fix/` -- bug fixes
+   - `feat/` -- new features
+   - `refactor/` -- code restructuring
+   - `chore/` -- tooling, deps, config
+
+2. **Merge via pull request only.** Use `gh pr create` to open the PR after pushing.
+
+3. **Run full test suites** (backend + frontend) before opening the PR.
+
+4. **Keep branches short-lived.** One logical change per branch.
+
+## Quick reference
+
+```bash
+git checkout main && git pull
+git checkout -b feat/my-feature
+
+# ... make changes, commit ...
+
+git push -u origin HEAD
+gh pr create --title "feat: my feature" --body "..."
+```

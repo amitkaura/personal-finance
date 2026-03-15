@@ -14,7 +14,7 @@ export default function DashboardActions() {
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {partner ? (
           <span className="inline-flex items-center gap-1.5 rounded-lg bg-accent/10 px-3 py-2 text-sm font-medium text-accent">
             <Heart className="h-3.5 w-3.5" />

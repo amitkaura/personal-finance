@@ -127,14 +127,14 @@ export default function AccountsPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Accounts</h1>
           <p className="text-sm text-muted-foreground">
             All linked bank and investment accounts.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {unlinkedCount > 0 && (
             <button
               onClick={() => setHideUnlinked(!hideUnlinked)}

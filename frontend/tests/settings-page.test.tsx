@@ -109,6 +109,42 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Data Management")).toBeInTheDocument();
   });
 
+  describe("Responsive layout", () => {
+    it("Profile section stacks avatar and form on mobile (flex-col sm:flex-row)", () => {
+      const { container } = renderWithProviders(<SettingsPage />);
+      const profileCard = screen.getByText("Profile & Account").closest(".rounded-2xl")!;
+      const flexRow = profileCard.querySelector(".flex.flex-col.sm\\:flex-row");
+      expect(flexRow).not.toBeNull();
+    });
+
+    it("General section uses responsive grid", () => {
+      renderWithProviders(<SettingsPage />);
+      const generalCard = screen.getByText("General").closest(".rounded-2xl")!;
+      const grid = generalCard.querySelector(".grid");
+      expect(grid).not.toBeNull();
+      expect(grid!.className).toContain("grid-cols-1");
+      expect(grid!.className).toContain("sm:grid-cols-3");
+    });
+
+    it("Data Management uses responsive grid (not fixed grid-cols-3)", () => {
+      renderWithProviders(<SettingsPage />);
+      const dmCard = screen.getByText("Data Management").closest(".rounded-2xl")!;
+      const grid = dmCard.querySelector(".grid");
+      expect(grid).not.toBeNull();
+      expect(grid!.className).toContain("grid-cols-1");
+    });
+
+    it("Danger Zone uses responsive grid (not fixed grid-cols-3)", () => {
+      renderWithProviders(<SettingsPage />);
+      const dmCard = screen.getByText("Data Management").closest(".rounded-2xl")!;
+      const dangerZone = dmCard.querySelector(".border-red-500\\/30");
+      expect(dangerZone).not.toBeNull();
+      const grid = dangerZone!.querySelector(".grid");
+      expect(grid).not.toBeNull();
+      expect(grid!.className).toContain("grid-cols-1");
+    });
+  });
+
   describe("ProfileSection", () => {
     it("shows user email as read-only", async () => {
       renderWithProviders(<SettingsPage />);

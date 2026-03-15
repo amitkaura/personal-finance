@@ -98,6 +98,27 @@ describe("AccountsPage", () => {
     });
   });
 
+  it("page header stacks vertically on mobile (flex-col sm:flex-row)", async () => {
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Accounts")).toBeInTheDocument();
+    });
+    const heading = screen.getByText("Accounts");
+    const header = heading.closest(".flex.flex-col");
+    expect(header).not.toBeNull();
+    expect(header!.className).toContain("sm:flex-row");
+  });
+
+  it("action button group wraps on narrow screens", async () => {
+    renderWithProviders(<AccountsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Add Account")).toBeInTheDocument();
+    });
+    const addBtn = screen.getByText("Add Account");
+    const btnGroup = addBtn.closest(".flex-wrap");
+    expect(btnGroup).not.toBeNull();
+  });
+
   it("renders empty state when no accounts exist", async () => {
     renderWithProviders(<AccountsPage />);
     await waitFor(() => {

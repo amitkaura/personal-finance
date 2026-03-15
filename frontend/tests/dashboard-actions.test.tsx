@@ -49,6 +49,12 @@ describe("DashboardActions", () => {
     };
   });
 
+  it("action bar uses flex-wrap so buttons stack on mobile", () => {
+    const { container } = renderWithProviders(<DashboardActions />);
+    const wrapper = container.querySelector(".flex.flex-wrap");
+    expect(wrapper).not.toBeNull();
+  });
+
   it("renders Add Account button", () => {
     renderWithProviders(<DashboardActions />);
     expect(screen.getByText("Add Account")).toBeInTheDocument();
