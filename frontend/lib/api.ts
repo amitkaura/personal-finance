@@ -1,8 +1,8 @@
 import type {
-  Account, AccountSummary, Budget, BudgetConflict, BudgetSummary,
+  Account, AccountSummary, AdminPlaidConfig, Budget, BudgetConflict, BudgetSummary,
   CategoryRule, Goal, GoalContribution, GoalsResponse,
   Household, HouseholdInvitation, MonthlyTrend, NetWorthSnapshot,
-  LLMConfig, PlaidConfig, PlaidConnection, RecurringTransaction, SpendingByCategory, SyncConfig,
+  LLMConfig, PlaidConfig, PlaidConnection, PlaidModeResponse, RecurringTransaction, SpendingByCategory, SyncConfig,
   SpendingPreference, Tag, TopMerchant, Transaction, User, UserProfile,
   UserSettings, ViewScope,
 } from "./types";
@@ -501,6 +501,32 @@ export const api = {
 
   deletePlaidConfig: () =>
     fetchVoid("/settings/plaid-config", { method: "DELETE" }),
+
+  // Plaid mode (managed vs BYOK)
+  getPlaidMode: () => fetcher<PlaidModeResponse>("/settings/plaid-mode"),
+
+  setPlaidMode: (mode: string) =>
+    fetcher<PlaidModeResponse>("/settings/plaid-mode", {
+      method: "PUT",
+      body: JSON.stringify({ mode }),
+    }),
+
+  // Admin Plaid config (app-level)
+  getAdminPlaidConfig: () => fetcher<AdminPlaidConfig>("/settings/admin/plaid-config"),
+
+  updateAdminPlaidConfig: (body: {
+    client_id: string;
+    secret: string;
+    plaid_env: string;
+    enabled: boolean;
+  }) =>
+    fetcher<AdminPlaidConfig>("/settings/admin/plaid-config", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  deleteAdminPlaidConfig: () =>
+    fetchVoid("/settings/admin/plaid-config", { method: "DELETE" }),
 
   // LLM config
   getLLMConfig: () => fetcher<LLMConfig>("/settings/llm-config"),

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Link2, X } from "lucide-react";
 import { api } from "@/lib/api";
+import { PLAID_MODES } from "@/lib/types";
 import { useHousehold } from "@/components/household-provider";
 
 const DISMISS_KEY = "plaid-setup-banner-dismissed";
@@ -23,8 +24,15 @@ export default function PlaidSetupBanner() {
     staleTime: 30_000,
   });
 
+  const { data: plaidMode } = useQuery({
+    queryKey: ["plaid-mode"],
+    queryFn: api.getPlaidMode,
+    staleTime: 60_000,
+  });
+
   const isOwner = household?.members.some((m) => m.role === "owner");
 
+  if (plaidMode?.mode === PLAID_MODES.MANAGED) return null;
   if (dismissed || !config || config.configured || !isOwner) return null;
 
   function handleDismiss() {

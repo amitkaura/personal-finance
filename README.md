@@ -9,7 +9,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 | **Backend** | Python 3.12, FastAPI, SQLModel (SQLAlchemy + Pydantic) |
 | **Database** | PostgreSQL 16 |
 | **Frontend** | Next.js 16 (App Router), React 19, Tailwind CSS 4 |
-| **Bank Integration** | Plaid (sandbox / production), per-household BYO credentials |
+| **Bank Integration** | Plaid (sandbox / production), managed or per-household BYO credentials |
 | **Auth** | Google OAuth 2.0, JWT session cookies |
 | **AI Categorization** | OpenAI-compatible API (GPT, Ollama, Azure, etc.) |
 | **Charts** | Nivo (bar) |
@@ -20,7 +20,8 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 ### Account Management
 - Connect bank accounts, credit cards, loans, and investment accounts via Plaid Link
-- **Bring Your Own Plaid** -- each household configures its own Plaid API keys in Settings (no global keys); Link Account redirects to settings when unconfigured
+- **Managed or Bring Your Own Plaid** -- hosted instances can offer managed Plaid credentials so users connect instantly; alternatively each household configures its own Plaid API keys in Settings; one-time onboarding choice (managed vs BYOK) with no switching
+- **Admin Plaid config** -- instance admin (identified by `ADMIN_EMAIL` env var) can configure app-level Plaid credentials, toggle managed mode, and see how many households use it
 - Supports US and Canadian institutions
 - Automatic balance refresh on every sync
 - Account type and subtype selection during creation, with editable subtypes
@@ -202,7 +203,7 @@ personal-finance/
 │   ├── database.py                 # Engine, session management, table creation
 │   ├── models.py                   # All SQLModel table definitions
 │   ├── scheduler.py                # Per-household APScheduler cron jobs (sync + reminders)
-│   ├── plaid_client.py             # Plaid API client factory (per-household credentials)
+│   ├── plaid_client.py             # Plaid API client factory (managed or per-household credentials)
 │   ├── crypto.py                   # Fernet encrypt/decrypt for access tokens
 │   ├── categorizer.py              # Rule-based + per-transaction LLM categorization
 │   ├── household.py                # Scope helper (personal/partner/household)
@@ -229,8 +230,9 @@ personal-finance/
 │   │   ├── cashflow/page.tsx       # Cash flow with drill-down bar chart
 │   │   ├── reports/page.tsx        # Spending reports and trends
 │   │   ├── recurring/page.tsx      # Recurring transaction analysis
+│   │   ├── onboarding/page.tsx     # Plaid mode selection (managed vs BYOK)
 │   │   ├── connections/page.tsx    # Plaid connections management
-│   │   ├── settings/page.tsx       # User preferences and configuration
+│   │   ├── settings/page.tsx       # User preferences and configuration (incl. admin section)
 │   │   ├── layout.tsx              # Root layout
 │   │   └── providers.tsx           # React Query, Google OAuth, Auth, Household, CategorizationProgress
 │   ├── components/
@@ -243,8 +245,9 @@ personal-finance/
 │   │   ├── sidebar.tsx             # Navigation, user profile, logout
 │   │   ├── dashboard-actions.tsx    # Dashboard header actions (link/add account, partner status)
 │   │   ├── add-partner-dialog.tsx  # Invite partner email dialog
-│   │   ├── plaid-setup-banner.tsx  # Dismissible Plaid config prompt for household owners
-│   │   ├── link-account.tsx        # Plaid Link flow
+│   │   ├── plaid-setup-banner.tsx  # Dismissible Plaid config prompt (hidden for managed mode)
+│   │   ├── link-account.tsx        # Plaid Link flow (mode-aware: managed skips config redirect)
+│   │   ├── onboarding-redirect.tsx # Dashboard redirect to /onboarding when plaid_mode is null
 │   │   ├── categorization-progress-provider.tsx # Global categorization progress context
 │   │   ├── categorization-drawer.tsx  # Persistent progress drawer (fixed bottom-right)
 │   │   ├── sync-button.tsx         # Trigger sync for all items (uses global context)
@@ -308,6 +311,9 @@ personal-finance/
 │       ├── dashboard-actions.test.tsx # Dashboard action buttons, partner status, navigation
 │       ├── add-partner-dialog.test.tsx # Email input, invite submit, error handling, close
 │       ├── link-account.test.tsx   # Token fetch, Plaid link, success message
+│       ├── onboarding.test.tsx    # Managed vs BYOK cards, setPlaidMode, redirect
+│       ├── plaid-mode-aware.test.tsx # PlaidSetupBanner + LinkAccount mode awareness
+│       ├── admin-plaid-section.test.tsx # Admin section visibility and household count
 │       └── auth-gate.test.tsx      # Loading, unauthenticated, authenticated layout
 ├── tests/                          # Backend test suite (pytest)
 │   ├── conftest.py                 # Fixtures, in-memory SQLite, auth mocks
@@ -327,7 +333,9 @@ personal-finance/
 │   ├── test_sync_config.py          # Sync config CRUD (owner-only)
 │   ├── test_plaid.py               # Link token, exchange token, sync (mocked)
 │   ├── test_plaid_config.py        # BYO Plaid config CRUD (owner-only, encryption)
-│   └── test_llm_config.py          # BYO LLM config CRUD (owner-only, encryption)
+│   ├── test_llm_config.py          # BYO LLM config CRUD (owner-only, encryption)
+│   ├── test_managed_plaid.py       # PlaidMode enum, AppPlaidConfig model, client resolution
+│   └── test_managed_plaid_routes.py # Admin plaid-config + plaid-mode routes, is_admin
 ├── docker-compose.yml              # Postgres + Redis + API services
 ├── Dockerfile                      # Python 3.12-slim, uvicorn
 ├── requirements.txt                # Python dependencies
@@ -354,9 +362,10 @@ personal-finance/
 | `AccountBalanceSnapshot` | Per-account per-date historical balance for net worth recomputation |
 | `Tag` | User-defined label with color |
 | `TransactionTag` | Many-to-many link between transactions and tags |
-| `Household` | Shared household between two partners |
+| `Household` | Shared household between two partners; `plaid_mode` field (managed / byok / null) |
 | `HouseholdMember` | User membership in a household with role |
 | `HouseholdPlaidConfig` | Per-household encrypted Plaid credentials (client_id, secret, env) |
+| `AppPlaidConfig` | App-level managed Plaid credentials (singleton; encrypted client_id, secret, env, enabled toggle) |
 | `HouseholdLLMConfig` | Per-household LLM config (household_id FK unique, llm_base_url, encrypted_api_key, llm_model) |
 | `HouseholdSyncConfig` | Per-household sync schedule (sync_enabled, sync_hour, sync_minute, sync_timezone) |
 | `HouseholdInvitation` | Pending email invitation to join a household |
@@ -369,7 +378,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/google` | Exchange Google ID token for JWT session |
-| GET | `/me` | Get current authenticated user |
+| GET | `/me` | Get current authenticated user (includes `is_admin` flag) |
 | POST | `/logout` | Clear session cookie |
 
 ### Household (`/household`)
@@ -436,6 +445,11 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | GET | `/plaid-config` | Get household Plaid config status (masked credentials) |
 | PUT | `/plaid-config` | Create or update Plaid credentials (owner-only) |
 | DELETE | `/plaid-config` | Remove Plaid credentials (owner-only) |
+| GET | `/plaid-mode` | Get household's Plaid mode (managed/byok/null) and managed availability |
+| PUT | `/plaid-mode` | Set Plaid mode (one-time, no switching) |
+| GET | `/admin/plaid-config` | Get app-level Plaid config status (admin-only) |
+| PUT | `/admin/plaid-config` | Create/update managed Plaid credentials (admin-only) |
+| DELETE | `/admin/plaid-config` | Remove managed Plaid credentials (admin-only) |
 | GET | `/llm-config` | Get LLM config: configured, llm_base_url, llm_model, api_key_last4 |
 | PUT | `/llm-config` | Create or update LLM config (owner-only; body: llm_base_url, llm_api_key, llm_model) |
 | DELETE | `/llm-config` | Remove LLM config (owner-only) |
@@ -576,7 +590,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (374 tests across 19 files):**
+**What's tested (416 tests across 21 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -596,6 +610,8 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_plaid_config` | 13 | GET (configured/not/no-household/member-read), PUT (create/update/non-owner/no-household/invalid-env), DELETE (success/non-owner/not-configured/no-household) |
 | `test_llm_config` | — | BYO LLM config CRUD (owner-only, encryption) |
 | `test_auth` | 8 | Google OAuth login (mocked), session, `/me`, logout, auto-household on signup, no duplicate household on re-login |
+| `test_managed_plaid` | 16 | PlaidMode enum, AppPlaidConfig model, Household.plaid_mode field, plaid client resolution (managed vs BYOK: uses correct credentials, raises when disabled/missing/none) |
+| `test_managed_plaid_routes` | 26 | Plaid mode GET/PUT (managed/byok/none/switch-blocked/validation), admin plaid-config CRUD (admin-only guard, create/update/delete, household count), /auth/me is_admin field |
 | `test_net_worth` | 5 | Snapshots, history |
 | `test_health` | 2 | Liveness and readiness endpoints |
 
@@ -618,7 +634,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (406 tests across 38 files):**
+**What's tested (418 tests across 41 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -660,6 +676,9 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `dashboard-actions` | 6 | Add Account/Link Account/Add Partner buttons, partner status message, navigation to /accounts?add=true, partner dialog open |
 | `add-partner-dialog` | 6 | Email input and submit, invitePartner API call, onClose on success, error display, close button, hidden when closed |
 | `link-account` | 4 | Idle button, token fetch on click, success message, pluralization |
+| `onboarding` | 5 | Managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls, dashboard redirect |
+| `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
+| `admin-plaid-section` | 3 | AdminSection visibility (admin vs non-admin), managed household count |
 
 **Test infrastructure:**
 - jsdom environment with global mocks for `next/image`, `next/link`, `next/navigation`

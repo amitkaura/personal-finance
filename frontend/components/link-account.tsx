@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlaidLink } from "react-plaid-link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, CheckCircle, Loader2 } from "lucide-react";
+import { Plus, CheckCircle, Loader2, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
+import { PLAID_MODES } from "@/lib/types";
 
 export default function LinkAccount() {
   const router = useRouter();
@@ -17,6 +18,11 @@ export default function LinkAccount() {
     queryKey: ["plaid-config"],
     queryFn: api.getPlaidConfig,
     staleTime: 30_000,
+  });
+  const { data: plaidMode } = useQuery({
+    queryKey: ["plaid-mode"],
+    queryFn: api.getPlaidMode,
+    staleTime: 60_000,
   });
   const [result, setResult] = useState<{ accounts_synced: number } | null>(null);
 
@@ -75,8 +81,10 @@ export default function LinkAccount() {
     onExit,
   });
 
+  const isManaged = plaidMode?.mode === PLAID_MODES.MANAGED;
+
   const handleClick = () => {
-    if (plaidConfig && !plaidConfig.configured) {
+    if (!isManaged && plaidConfig && !plaidConfig.configured) {
       router.push("/settings?section=integrations");
       return;
     }
@@ -110,6 +118,15 @@ export default function LinkAccount() {
       open();
     }
   }, [status, linkToken, ready, open]);
+
+  if (isManaged && plaidMode && !plaidMode.managed_available) {
+    return (
+      <div className="inline-flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm text-muted-foreground">
+        <AlertCircle className="h-4 w-4" />
+        Bank linking temporarily unavailable
+      </div>
+    );
+  }
 
   if (status === "done" && result) {
     return (

@@ -207,6 +207,11 @@ export function createMockApi(overrides: Record<string, unknown> = {}) {
     getSyncConfig: vi.fn().mockResolvedValue(TEST_SYNC_CONFIG),
     updateSyncConfig: vi.fn().mockResolvedValue(TEST_SYNC_CONFIG),
     deleteSyncConfig: vi.fn().mockResolvedValue(undefined),
+    getPlaidMode: vi.fn().mockResolvedValue({ mode: null, managed_available: false }),
+    setPlaidMode: vi.fn().mockResolvedValue({ mode: "byok", managed_available: false }),
+    getAdminPlaidConfig: vi.fn().mockResolvedValue({ configured: false, enabled: false, plaid_env: null, client_id_last4: null, secret_last4: null, managed_household_count: 0 }),
+    updateAdminPlaidConfig: vi.fn().mockResolvedValue({ configured: true, enabled: true, plaid_env: "sandbox", client_id_last4: "1234", secret_last4: "5678" }),
+    deleteAdminPlaidConfig: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
