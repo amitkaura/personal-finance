@@ -1079,13 +1079,15 @@ def bulk_import(
     _create_new_categories(body.new_categories, session, user)
     session.commit()
 
+    user_id = user.id
+
     accepts = request.headers.get("accept", "")
     if "application/x-ndjson" in accepts:
         return StreamingResponse(
-            _bulk_import_generator(body.transactions, account_map, owner_map, session, user, body.skip_llm),
+            _bulk_import_generator(body.transactions, account_map, owner_map, session, user_id, body.skip_llm),
             media_type="application/x-ndjson",
         )
-    return _bulk_import_sync(body.transactions, account_map, owner_map, session, user, body.skip_llm)
+    return _bulk_import_sync(body.transactions, account_map, owner_map, session, user_id, body.skip_llm)
 
 
 def _resolve_accounts(
@@ -1172,7 +1174,7 @@ def _bulk_import_sync(
     account_map: dict[str, int],
     owner_map: dict[str, int],
     session: Session,
-    user: User,
+    user_id: int,
     skip_llm: bool = False,
 ) -> dict:
     imported = skipped = categorized = 0
@@ -1186,7 +1188,7 @@ def _bulk_import_sync(
             continue
 
         acct_id = account_map.get(row.account_name.lower()) if row.account_name else None
-        owner_id = _pick_owner_id(row.owner_name, owner_map, user.id)  # type: ignore[arg-type]
+        owner_id = _pick_owner_id(row.owner_name, owner_map, user_id)  # type: ignore[arg-type]
 
         dup_stmt = select(Transaction).where(
             Transaction.date == parsed_date,
@@ -1205,7 +1207,7 @@ def _bulk_import_sync(
         category = row.category
         auto_cat = False
         if not category:
-            category = categorize_by_rules(row.merchant_name, session, user.id)  # type: ignore[arg-type]
+            category = categorize_by_rules(row.merchant_name, session, user_id)  # type: ignore[arg-type]
             if category:
                 auto_cat = True
 
@@ -1224,7 +1226,7 @@ def _bulk_import_sync(
 
         if not category and not skip_llm:
             session.flush()
-            llm_cat = categorize_single_llm(txn, user.id)
+            llm_cat = categorize_single_llm(txn, user_id)
             if llm_cat:
                 txn.category = llm_cat
                 auto_cat = True
@@ -1248,7 +1250,7 @@ def _bulk_import_generator(
     account_map: dict[str, int],
     owner_map: dict[str, int],
     session: Session,
-    user: User,
+    user_id: int,
     skip_llm: bool = False,
 ):
     imported = skipped = categorized = 0
@@ -1269,7 +1271,7 @@ def _bulk_import_generator(
             continue
 
         acct_id = account_map.get(row.account_name.lower()) if row.account_name else None
-        owner_id = _pick_owner_id(row.owner_name, owner_map, user.id)  # type: ignore[arg-type]
+        owner_id = _pick_owner_id(row.owner_name, owner_map, user_id)  # type: ignore[arg-type]
 
         dup_stmt = select(Transaction).where(
             Transaction.date == parsed_date,
@@ -1289,7 +1291,7 @@ def _bulk_import_generator(
 
         cat = row.category
         if not cat:
-            cat = categorize_by_rules(row.merchant_name, session, user.id)  # type: ignore[arg-type]
+            cat = categorize_by_rules(row.merchant_name, session, user_id)  # type: ignore[arg-type]
             if cat:
                 auto_cat = True
 
@@ -1308,7 +1310,7 @@ def _bulk_import_generator(
 
         if not cat and not skip_llm:
             session.flush()
-            llm_cat = categorize_single_llm(txn, user.id)
+            llm_cat = categorize_single_llm(txn, user_id)
             if llm_cat:
                 txn.category = llm_cat
                 cat = llm_cat
