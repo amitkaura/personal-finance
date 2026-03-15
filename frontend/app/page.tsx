@@ -49,7 +49,7 @@ export default function DashboardPage() {
             Your financial overview at a glance.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <DashboardActions />
           <SyncButton />
         </div>

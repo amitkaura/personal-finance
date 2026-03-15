@@ -49,10 +49,22 @@ describe("DashboardActions", () => {
     };
   });
 
-  it("action bar uses flex-wrap so buttons stack on mobile", () => {
+  it("uses a 2-column grid on mobile, flex on desktop", () => {
     const { container } = renderWithProviders(<DashboardActions />);
-    const wrapper = container.querySelector(".flex.flex-wrap");
+    const wrapper = container.querySelector(".grid.grid-cols-2");
     expect(wrapper).not.toBeNull();
+    expect(wrapper!.className).toContain("sm:flex");
+  });
+
+  it("partner badge spans full grid row on mobile", () => {
+    mockState.household = {
+      ...mockState.household,
+      household: TEST_HOUSEHOLD,
+      partner: PARTNER_MEMBER,
+    };
+    renderWithProviders(<DashboardActions />);
+    const badge = screen.getByText(/Sharing with Bob Jones/).closest("span");
+    expect(badge!.className).toContain("col-span-full");
   });
 
   it("renders Add Account button", () => {
