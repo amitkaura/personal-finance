@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import delete as sa_delete
 from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
@@ -684,28 +685,22 @@ def clear_transactions(
     user: User = Depends(get_current_user),
 ):
     """Delete all transaction records for the current user. Irreversible."""
-    user_account_ids = session.exec(
-        select(Account.id).where(Account.user_id == user.id)
-    ).all()
-    txns = session.exec(
-        select(Transaction).where(
-            or_(
-                Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
-                Transaction.user_id == user.id,
-            )
+    acct_id_subq = select(Account.id).where(Account.user_id == user.id)
+    txn_id_subq = select(Transaction.id).where(
+        or_(
+            Transaction.account_id.in_(acct_id_subq),  # type: ignore[union-attr]
+            Transaction.user_id == user.id,
         )
-    ).all()
-    txn_ids = [t.id for t in txns if t.id is not None]
-    if txn_ids:
-        tags = session.exec(
-            select(TransactionTag).where(
-                TransactionTag.transaction_id.in_(txn_ids)  # type: ignore[union-attr]
-            )
-        ).all()
-        for tag_link in tags:
-            session.delete(tag_link)
-    for t in txns:
-        session.delete(t)
+    )
+    session.execute(sa_delete(TransactionTag).where(
+        TransactionTag.transaction_id.in_(txn_id_subq)  # type: ignore[union-attr]
+    ))
+    session.execute(sa_delete(Transaction).where(
+        or_(
+            Transaction.account_id.in_(acct_id_subq),  # type: ignore[union-attr]
+            Transaction.user_id == user.id,
+        )
+    ))
     session.commit()
 
 
@@ -718,57 +713,45 @@ def _delete_all_user_data(session: Session, user: User) -> None:
     Does NOT delete the User row, household membership, or invitations.
     Commits the session when done.
     """
-    user_account_ids = list(
-        session.exec(select(Account.id).where(Account.user_id == user.id)).all()
-    )
-    txn_ids = list(
-        session.exec(
-            select(Transaction.id).where(
-                or_(
-                    Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
-                    Transaction.user_id == user.id,
-                )
-            )
-        ).all()
+    acct_id_subq = select(Account.id).where(Account.user_id == user.id)
+    txn_id_subq = select(Transaction.id).where(
+        or_(
+            Transaction.account_id.in_(acct_id_subq),  # type: ignore[union-attr]
+            Transaction.user_id == user.id,
+        )
     )
 
-    if txn_ids:
-        for tl in session.exec(select(TransactionTag).where(TransactionTag.transaction_id.in_(txn_ids))).all():  # type: ignore[union-attr]
-            session.delete(tl)
-    for t in session.exec(select(Transaction).where(Transaction.id.in_(txn_ids))).all():  # type: ignore[union-attr]
-        session.delete(t)
+    session.execute(sa_delete(TransactionTag).where(
+        TransactionTag.transaction_id.in_(txn_id_subq)  # type: ignore[union-attr]
+    ))
+    session.execute(sa_delete(Transaction).where(
+        or_(
+            Transaction.account_id.in_(acct_id_subq),  # type: ignore[union-attr]
+            Transaction.user_id == user.id,
+        )
+    ))
 
-    goal_ids = list(
-        session.exec(select(Goal.id).where(Goal.user_id == user.id)).all()
-    )
-    if goal_ids:
-        for gl in session.exec(select(GoalAccountLink).where(GoalAccountLink.goal_id.in_(goal_ids))).all():  # type: ignore[union-attr]
-            session.delete(gl)
-        for gc in session.exec(select(GoalContribution).where(GoalContribution.goal_id.in_(goal_ids))).all():  # type: ignore[union-attr]
-            session.delete(gc)
-    for g in session.exec(select(Goal).where(Goal.user_id == user.id)).all():
-        session.delete(g)
+    goal_id_subq = select(Goal.id).where(Goal.user_id == user.id)
+    session.execute(sa_delete(GoalAccountLink).where(
+        GoalAccountLink.goal_id.in_(goal_id_subq)  # type: ignore[union-attr]
+    ))
+    session.execute(sa_delete(GoalContribution).where(
+        GoalContribution.goal_id.in_(goal_id_subq)  # type: ignore[union-attr]
+    ))
+    session.execute(sa_delete(Goal).where(Goal.user_id == user.id))
 
-    for sp in session.exec(select(SpendingPreference).where(SpendingPreference.user_id == user.id)).all():
-        session.delete(sp)
-    for b in session.exec(select(Budget).where(Budget.user_id == user.id)).all():
-        session.delete(b)
-    for nw in session.exec(select(NetWorthSnapshot).where(NetWorthSnapshot.user_id == user.id)).all():
-        session.delete(nw)
-    for tag in session.exec(select(Tag).where(Tag.user_id == user.id)).all():
-        session.delete(tag)
-    for rule in session.exec(select(CategoryRule).where(CategoryRule.user_id == user.id)).all():
-        session.delete(rule)
-    for cat in session.exec(select(Category).where(Category.user_id == user.id)).all():
-        session.delete(cat)
-    if user_account_ids:
-        for bs in session.exec(select(AccountBalanceSnapshot).where(
-            AccountBalanceSnapshot.account_id.in_(user_account_ids)  # type: ignore[union-attr]
-        )).all():
-            session.delete(bs)
-    for acct in session.exec(select(Account).where(Account.user_id == user.id)).all():
-        session.delete(acct)
+    session.execute(sa_delete(SpendingPreference).where(SpendingPreference.user_id == user.id))
+    session.execute(sa_delete(Budget).where(Budget.user_id == user.id))
+    session.execute(sa_delete(NetWorthSnapshot).where(NetWorthSnapshot.user_id == user.id))
+    session.execute(sa_delete(Tag).where(Tag.user_id == user.id))
+    session.execute(sa_delete(CategoryRule).where(CategoryRule.user_id == user.id))
+    session.execute(sa_delete(Category).where(Category.user_id == user.id))
+    session.execute(sa_delete(AccountBalanceSnapshot).where(
+        AccountBalanceSnapshot.account_id.in_(acct_id_subq)  # type: ignore[union-attr]
+    ))
+    session.execute(sa_delete(Account).where(Account.user_id == user.id))
 
+    # Plaid items need individual handling for the remote API revocation call
     for item in session.exec(select(PlaidItem).where(PlaidItem.user_id == user.id)).all():
         try:
             from app.plaid_client import get_household_plaid_client_for_user_id
@@ -778,11 +761,9 @@ def _delete_all_user_data(session: Session, user: User) -> None:
             client.item_remove(ItemRemoveRequest(access_token=access_token))
         except Exception:
             pass
-        session.delete(item)
+    session.execute(sa_delete(PlaidItem).where(PlaidItem.user_id == user.id))
 
-    settings = session.exec(select(UserSettings).where(UserSettings.user_id == user.id)).first()
-    if settings:
-        session.delete(settings)
+    session.execute(sa_delete(UserSettings).where(UserSettings.user_id == user.id))
 
     session.commit()
 
@@ -808,16 +789,12 @@ def delete_account(
     _delete_all_user_data(session, user)
 
     # Clean up contributions to other users' goals (e.g. shared household goals)
-    for gc in session.exec(
-        select(GoalContribution).where(GoalContribution.user_id == user.id)
-    ).all():
-        session.delete(gc)
+    session.execute(sa_delete(GoalContribution).where(GoalContribution.user_id == user.id))
 
     # Clean up invitations created by this user
-    for inv in session.exec(
-        select(HouseholdInvitation).where(HouseholdInvitation.invited_by_user_id == user.id)
-    ).all():
-        session.delete(inv)
+    session.execute(sa_delete(HouseholdInvitation).where(
+        HouseholdInvitation.invited_by_user_id == user.id
+    ))
 
     # Clean up household membership
     membership = session.exec(
