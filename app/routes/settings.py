@@ -1077,6 +1077,7 @@ def bulk_import(
     owner_map = _resolve_owners(session, user)
 
     _create_new_categories(body.new_categories, session, user)
+    session.commit()
 
     accepts = request.headers.get("accept", "")
     if "application/x-ndjson" in accepts:
