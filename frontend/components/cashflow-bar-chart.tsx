@@ -54,6 +54,7 @@ interface PeriodDatum {
   _periodKey: string;
   Income: number;
   Expenses: number;
+  [key: string]: string | number;
 }
 
 function buildChartData(transactions: Transaction[], granularity: Granularity): PeriodDatum[] {
@@ -85,6 +86,7 @@ function buildChartData(transactions: Transaction[], granularity: Granularity): 
 interface CategoryDatum {
   category: string;
   amount: number;
+  [key: string]: string | number;
 }
 
 function buildCategoryData(
@@ -222,7 +224,7 @@ export default function CashFlowBarChart() {
   function handleBarClick(datum: { id: string | number; indexValue: string | number; data: Record<string, unknown> }) {
     const type = datum.id as DrillType;
     const label = datum.indexValue as string;
-    const pKey = (datum.data as PeriodDatum)._periodKey;
+    const pKey = (datum.data as unknown as PeriodDatum)._periodKey;
     setDrillLevel(1);
     setSelectedPeriodLabel(label);
     setSelectedPeriodKey(pKey);

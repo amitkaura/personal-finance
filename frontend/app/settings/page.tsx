@@ -1480,7 +1480,7 @@ function AiSection() {
           </div>
           <ConfirmDialog
             open={confirmRemoveOpen}
-            onOpenChange={setConfirmRemoveOpen}
+            onCancel={() => setConfirmRemoveOpen(false)}
             title="Remove AI Configuration"
             description="This will remove the LLM API key and disable AI-powered categorization for your household. Rule-based categorization will continue to work."
             onConfirm={() => deleteMutation.mutate()}

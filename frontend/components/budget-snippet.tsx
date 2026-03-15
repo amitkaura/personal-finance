@@ -123,7 +123,7 @@ export default function BudgetSnippet() {
       ) : (
         <div className="mt-4">
           <div className={`flex gap-4 ${hasShared && hasOwn ? "" : ""}`}>
-            {hasOwn && (
+            {hasOwn && data && (
               <BudgetMini
                 label={ownLabel}
                 spent={data.total_spent}

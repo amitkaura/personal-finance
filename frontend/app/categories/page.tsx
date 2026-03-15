@@ -49,7 +49,7 @@ function CategoriesSection() {
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Pick<Category, "id" | "name"> | null>(null);
   const [reassignMode, setReassignMode] = useState<"reassign" | "uncategorize">(
     "uncategorize"
   );
@@ -81,12 +81,12 @@ function CategoriesSection() {
     },
   });
 
-  function startEdit(cat: Category) {
+  function startEdit(cat: Pick<Category, "id" | "name">) {
     setEditingId(cat.id);
     setEditName(cat.name);
   }
 
-  async function openDeleteDialog(cat: Category) {
+  async function openDeleteDialog(cat: Pick<Category, "id" | "name">) {
     setDeleteTarget(cat);
     setReassignMode("uncategorize");
     setReassignToId(null);
