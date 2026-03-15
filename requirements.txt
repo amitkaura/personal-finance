@@ -23,7 +23,7 @@ requests==2.32.5
 
 # Security & Config
 python-dotenv==1.2.2
-pydantic-settings==2.6.1
+pydantic-settings==2.13.1
 cryptography==44.0.0
 httpx==0.28.1
 redis==7.3.0
