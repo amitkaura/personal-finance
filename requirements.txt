@@ -1,6 +1,6 @@
 # FastAPI & Server
 fastapi==0.115.5
-uvicorn[standard]==0.32.1
+uvicorn[standard]==0.41.0
 
 # Database
 sqlmodel==0.0.22
