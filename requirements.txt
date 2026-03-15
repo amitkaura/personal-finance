@@ -14,7 +14,7 @@ plaid-python==38.4.0
 eval_type_backport==0.3.1
 
 # Scheduling
-apscheduler==3.11.0
+apscheduler==3.11.2
 
 # Authentication
 PyJWT==2.9.0
