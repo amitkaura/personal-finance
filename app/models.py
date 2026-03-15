@@ -3,7 +3,7 @@ Database models for the personal finance system.
 Uses SQLModel (SQLAlchemy + Pydantic) for schema definition.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Optional
@@ -195,7 +195,7 @@ class Goal(SQLModel, table=True):
     icon: str = Field(default="target")
     color: str = Field(default="#6d28d9")
     is_completed: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     household_id: Optional[int] = Field(default=None, foreign_key="households.id", index=True)
 
 
@@ -220,7 +220,7 @@ class GoalContribution(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id", index=True)
     amount: Decimal = Field(max_digits=15, decimal_places=2)
     note: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ── Net Worth History ──────────────────────────────────────────
@@ -293,7 +293,7 @@ class Household(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = "Our Household"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     members: list["HouseholdMember"] = Relationship(back_populates="household")
 
@@ -307,7 +307,7 @@ class HouseholdMember(SQLModel, table=True):
     household_id: int = Field(foreign_key="households.id", index=True)
     user_id: int = Field(foreign_key="users.id", unique=True, index=True)
     role: str = Field(default="member")
-    joined_at: datetime = Field(default_factory=datetime.utcnow)
+    joined_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     household: Optional[Household] = Relationship(back_populates="members")
 
@@ -360,4 +360,4 @@ class HouseholdInvitation(SQLModel, table=True):
     invited_email: str = Field(index=True)
     token: str = Field(default_factory=lambda: uuid4().hex, unique=True, index=True)
     status: str = Field(default="pending")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

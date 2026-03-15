@@ -25,7 +25,7 @@ import {
   Link2,
   AlertTriangle,
 } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
@@ -1475,6 +1475,7 @@ function AiSection() {
 
 function DataSection() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
@@ -1513,7 +1514,7 @@ function DataSection() {
     try {
       await api.deleteAccount();
       queryClient.clear();
-      window.location.href = "/login";
+      router.push("/login");
     } finally {
       setDeleting(false);
     }

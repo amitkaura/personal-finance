@@ -21,8 +21,27 @@ vi.mock("next/image", () => ({
 
 vi.mock("next/link", () => ({
   __esModule: true,
-  default: ({ children, href, ...rest }: { children: React.ReactNode; href: string; [k: string]: unknown }) => (
-    <a href={href} {...rest}>{children}</a>
+  default: ({
+    children,
+    href,
+    onClick,
+    ...rest
+  }: {
+    children: React.ReactNode;
+    href: string;
+    onClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
+    [k: string]: unknown;
+  }) => (
+    <a
+      href={href}
+      {...rest}
+      onClick={(e) => {
+        e.preventDefault();
+        onClick?.(e);
+      }}
+    >
+      {children}
+    </a>
   ),
 }));
 
