@@ -576,7 +576,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (368 tests across 19 files):**
+**What's tested (374 tests across 19 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -592,7 +592,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_plaid` | 17 | Link token, exchange token (success, relink, conflict, institution name), sync, sync-all-stream (NDJSON streaming), items (all Plaid calls mocked) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
-| `test_email` | 6 | SMTP service, invitation template, send/skip/fail handling, port-465 SSL |
+| `test_email` | 11 | Resend HTTP API, invitation + statement reminder templates, send/skip/fail/network-error handling, bearer auth, app_url in CTAs |
 | `test_plaid_config` | 13 | GET (configured/not/no-household/member-read), PUT (create/update/non-owner/no-household/invalid-env), DELETE (success/non-owner/not-configured/no-household) |
 | `test_llm_config` | — | BYO LLM config CRUD (owner-only, encryption) |
 | `test_auth` | 8 | Google OAuth login (mocked), session, `/me`, logout, auto-household on signup, no duplicate household on re-login |
@@ -618,7 +618,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (398 tests across 38 files):**
+**What's tested (406 tests across 38 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -669,8 +669,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 
 ### Latest coverage snapshot
 
-- Backend (`pytest --cov=app --cov-report=term`): **85% total** (`3495` statements, `519` missed)
-- Frontend (`pnpm vitest run --coverage`): **76.72% statements**, **71.28% branches**, **62.85% functions**, **77.63% lines**
+- Backend (`pytest --cov=app --cov-report=term`): **85% total** (`3512` statements, `538` missed)
+- Frontend (`npx vitest run --coverage`): **76.66% statements**, **71.65% branches**, **62.78% functions**, **77.56% lines**
 
 ## Environment Variables
 
@@ -693,14 +693,10 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `RATE_LIMIT_TRUST_PROXY` | No | Use `X-Forwarded-For` for client IP (default: `false`) |
 | `RATE_LIMIT_BACKEND` | No | `memory` or `redis` (default: `memory`) |
 | `REDIS_URL` | Required if Redis backend | Redis connection URL (default: `redis://redis:6379/0`) |
-| `SMTP_HOST` | No | SMTP server hostname (empty = email disabled) |
-| `SMTP_PORT` | No | SMTP server port (default: `587`) |
-| `SMTP_USER` | No | SMTP auth username |
-| `SMTP_PASSWORD` | No | SMTP auth password |
-| `SMTP_FROM_EMAIL` | No | Sender email address |
-| `SMTP_FROM_NAME` | No | Sender display name (default: `FinanceApp`) |
-| `SMTP_USE_TLS` | No | Use STARTTLS (default: `true`) |
-| `APP_URL` | No | Frontend URL for email links (default: `http://localhost:3000`) |
+| `RESEND_API_KEY` | No | Resend API key (empty = email disabled) |
+| `EMAIL_FROM_ADDRESS` | No | Sender email address |
+| `EMAIL_FROM_NAME` | No | Sender display name (default: `FinanceApp`) |
+| `APP_URL` | No | Public-facing frontend URL for email CTAs (default: `http://localhost:3000`) |
 
 LLM credentials (base URL, API key, model) are configured per-household in Settings > AI Categorization, not via environment variables.
 

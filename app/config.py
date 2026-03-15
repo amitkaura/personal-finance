@@ -25,14 +25,10 @@ class Settings(BaseSettings):
     # Sync schedule is now configured per-household in Settings > Sync Schedule.
     # No global sync env vars are needed.
 
-    # Email (SMTP)
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    smtp_from_email: str = ""
-    smtp_from_name: str = "FinanceApp"
-    smtp_use_tls: bool = True
+    # Email (Resend HTTP API)
+    resend_api_key: str = ""
+    email_from_address: str = ""
+    email_from_name: str = "FinanceApp"
     app_url: str = "http://localhost:3000"
 
     # Server

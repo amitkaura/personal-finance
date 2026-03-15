@@ -1,24 +1,46 @@
-"""Email service unit tests."""
+"""Email service unit tests (Resend HTTP API)."""
 
 from unittest.mock import patch, MagicMock
 
-from app.email import send_invitation_email, _smtp_configured
+from app.email import (
+    send_invitation_email,
+    send_statement_reminder_email,
+    _email_configured,
+)
 
 
 @patch("app.email.get_settings")
-def test_smtp_not_configured_when_host_empty(mock_settings):
+def test_email_not_configured_when_api_key_empty(mock_settings):
     settings = MagicMock()
-    settings.smtp_host = ""
-    settings.smtp_from_email = ""
+    settings.resend_api_key = ""
+    settings.email_from_address = ""
     mock_settings.return_value = settings
-    assert _smtp_configured() is False
+    assert _email_configured() is False
+
+
+@patch("app.email.get_settings")
+def test_email_not_configured_when_from_address_empty(mock_settings):
+    settings = MagicMock()
+    settings.resend_api_key = "re_test_key"
+    settings.email_from_address = ""
+    mock_settings.return_value = settings
+    assert _email_configured() is False
+
+
+@patch("app.email.get_settings")
+def test_email_configured_when_both_set(mock_settings):
+    settings = MagicMock()
+    settings.resend_api_key = "re_test_key"
+    settings.email_from_address = "noreply@test.com"
+    mock_settings.return_value = settings
+    assert _email_configured() is True
 
 
 @patch("app.email.get_settings")
 def test_send_invitation_skips_when_unconfigured(mock_settings):
     settings = MagicMock()
-    settings.smtp_host = ""
-    settings.smtp_from_email = ""
+    settings.resend_api_key = ""
+    settings.email_from_address = ""
     mock_settings.return_value = settings
     result = send_invitation_email(
         to_email="partner@test.com",
@@ -30,21 +52,19 @@ def test_send_invitation_skips_when_unconfigured(mock_settings):
 
 
 @patch("app.email.get_settings")
-@patch("app.email.smtplib.SMTP")
-def test_send_invitation_success(mock_smtp_cls, mock_settings):
+@patch("app.email.httpx.post")
+def test_send_invitation_success(mock_post, mock_settings):
     settings = MagicMock()
-    settings.smtp_host = "smtp.test.com"
-    settings.smtp_port = 587
-    settings.smtp_user = "user"
-    settings.smtp_password = "pass"
-    settings.smtp_from_email = "noreply@test.com"
-    settings.smtp_from_name = "TestApp"
-    settings.smtp_use_tls = True
-    settings.app_url = "http://localhost:3000"
+    settings.resend_api_key = "re_test_key"
+    settings.email_from_address = "noreply@test.com"
+    settings.email_from_name = "TestApp"
+    settings.app_url = "https://app.example.com"
     mock_settings.return_value = settings
 
-    mock_server = MagicMock()
-    mock_smtp_cls.return_value = mock_server
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"id": "msg_123"}
+    mock_post.return_value = mock_response
 
     result = send_invitation_email(
         to_email="partner@test.com",
@@ -53,29 +73,32 @@ def test_send_invitation_success(mock_smtp_cls, mock_settings):
         household_name="Our Home",
     )
     assert result is True
-    mock_server.starttls.assert_called_once()
-    mock_server.login.assert_called_once_with("user", "pass")
-    mock_server.sendmail.assert_called_once()
-    mock_server.quit.assert_called_once()
+    mock_post.assert_called_once()
 
-    sent_to = mock_server.sendmail.call_args[0][1]
-    assert sent_to == "partner@test.com"
+    call_kwargs = mock_post.call_args
+    assert call_kwargs[0][0] == "https://api.resend.com/emails"
+    payload = call_kwargs[1]["json"]
+    assert payload["to"] == ["partner@test.com"]
+    assert payload["from"] == "TestApp <noreply@test.com>"
+    assert "Alice" in payload["subject"]
+    assert "Our Home" in payload["subject"]
+    assert "https://app.example.com" in payload["html"]
 
 
 @patch("app.email.get_settings")
-@patch("app.email.smtplib.SMTP")
-def test_send_invitation_smtp_failure(mock_smtp_cls, mock_settings):
+@patch("app.email.httpx.post")
+def test_send_invitation_api_failure(mock_post, mock_settings):
     settings = MagicMock()
-    settings.smtp_host = "smtp.test.com"
-    settings.smtp_port = 587
-    settings.smtp_user = ""
-    settings.smtp_from_email = "noreply@test.com"
-    settings.smtp_from_name = "TestApp"
-    settings.smtp_use_tls = True
-    settings.app_url = "http://localhost:3000"
+    settings.resend_api_key = "re_test_key"
+    settings.email_from_address = "noreply@test.com"
+    settings.email_from_name = "TestApp"
+    settings.app_url = "https://app.example.com"
     mock_settings.return_value = settings
 
-    mock_smtp_cls.side_effect = ConnectionRefusedError("SMTP down")
+    mock_response = MagicMock()
+    mock_response.status_code = 422
+    mock_response.text = "Validation error"
+    mock_post.return_value = mock_response
 
     result = send_invitation_email(
         to_email="partner@test.com",
@@ -87,20 +110,40 @@ def test_send_invitation_smtp_failure(mock_smtp_cls, mock_settings):
 
 
 @patch("app.email.get_settings")
-@patch("app.email.smtplib.SMTP")
-def test_invitation_email_contains_inviter_info(mock_smtp_cls, mock_settings):
+@patch("app.email.httpx.post")
+def test_send_invitation_network_error(mock_post, mock_settings):
     settings = MagicMock()
-    settings.smtp_host = "smtp.test.com"
-    settings.smtp_port = 587
-    settings.smtp_user = ""
-    settings.smtp_from_email = "noreply@test.com"
-    settings.smtp_from_name = "TestApp"
-    settings.smtp_use_tls = True
-    settings.app_url = "http://localhost:3000"
+    settings.resend_api_key = "re_test_key"
+    settings.email_from_address = "noreply@test.com"
+    settings.email_from_name = "TestApp"
+    settings.app_url = "https://app.example.com"
     mock_settings.return_value = settings
 
-    mock_server = MagicMock()
-    mock_smtp_cls.return_value = mock_server
+    mock_post.side_effect = ConnectionError("Network unreachable")
+
+    result = send_invitation_email(
+        to_email="partner@test.com",
+        inviter_name="Alice",
+        inviter_email="alice@test.com",
+        household_name="Our Home",
+    )
+    assert result is False
+
+
+@patch("app.email.get_settings")
+@patch("app.email.httpx.post")
+def test_invitation_email_contains_inviter_info(mock_post, mock_settings):
+    settings = MagicMock()
+    settings.resend_api_key = "re_test_key"
+    settings.email_from_address = "noreply@test.com"
+    settings.email_from_name = "TestApp"
+    settings.app_url = "https://app.example.com"
+    mock_settings.return_value = settings
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"id": "msg_123"}
+    mock_post.return_value = mock_response
 
     send_invitation_email(
         to_email="bob@test.com",
@@ -109,42 +152,88 @@ def test_invitation_email_contains_inviter_info(mock_smtp_cls, mock_settings):
         household_name="The Johnsons",
     )
 
-    sent_raw = mock_server.sendmail.call_args[0][2]
-    assert "Alice Johnson invited you to join The Johnsons" in sent_raw
-
-    import base64, re
-    b64_match = re.search(r"\n\n([A-Za-z0-9+/=\n]+)\n\n--", sent_raw)
-    html = base64.b64decode(b64_match.group(1)).decode()
-    assert "Alice Johnson" in html
-    assert "The Johnsons" in html
-    assert "http://localhost:3000" in html
+    payload = mock_post.call_args[1]["json"]
+    assert "Alice Johnson" in payload["html"]
+    assert "The Johnsons" in payload["html"]
+    assert "alice@test.com" in payload["html"]
+    assert "Alice Johnson invited you to join The Johnsons" in payload["subject"]
 
 
 @patch("app.email.get_settings")
-@patch("app.email.smtplib.SMTP_SSL")
-def test_send_invitation_uses_smtp_ssl_on_port_465(mock_smtp_ssl_cls, mock_settings):
+@patch("app.email.httpx.post")
+def test_send_invitation_passes_bearer_token(mock_post, mock_settings):
     settings = MagicMock()
-    settings.smtp_host = "smtp.resend.com"
-    settings.smtp_port = 465
-    settings.smtp_user = "resend"
-    settings.smtp_password = "re_test_key"
-    settings.smtp_from_email = "noreply@example.com"
-    settings.smtp_from_name = "Fino"
-    settings.smtp_use_tls = True
-    settings.app_url = "http://localhost:3000"
+    settings.resend_api_key = "re_my_secret_key"
+    settings.email_from_address = "noreply@test.com"
+    settings.email_from_name = "TestApp"
+    settings.app_url = "https://app.example.com"
     mock_settings.return_value = settings
 
-    mock_server = MagicMock()
-    mock_smtp_ssl_cls.return_value = mock_server
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"id": "msg_123"}
+    mock_post.return_value = mock_response
 
-    result = send_invitation_email(
+    send_invitation_email(
         to_email="partner@test.com",
         inviter_name="Alice",
         inviter_email="alice@test.com",
         household_name="Our Home",
     )
+
+    headers = mock_post.call_args[1]["headers"]
+    assert headers["Authorization"] == "Bearer re_my_secret_key"
+
+
+@patch("app.email.get_settings")
+@patch("app.email.httpx.post")
+def test_send_statement_reminder_success(mock_post, mock_settings):
+    settings = MagicMock()
+    settings.resend_api_key = "re_test_key"
+    settings.email_from_address = "noreply@test.com"
+    settings.email_from_name = "TestApp"
+    settings.app_url = "https://app.example.com"
+    mock_settings.return_value = settings
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"id": "msg_456"}
+    mock_post.return_value = mock_response
+
+    result = send_statement_reminder_email(
+        to_email="user@test.com",
+        account_name="Chase Checking",
+    )
     assert result is True
-    mock_smtp_ssl_cls.assert_called_once_with("smtp.resend.com", 465, timeout=10)
-    mock_server.login.assert_called_once_with("resend", "re_test_key")
-    mock_server.sendmail.assert_called_once()
-    mock_server.quit.assert_called_once()
+
+    payload = mock_post.call_args[1]["json"]
+    assert payload["to"] == ["user@test.com"]
+    assert "Chase Checking" in payload["subject"]
+    assert "Chase Checking" in payload["html"]
+    assert "https://app.example.com" in payload["html"]
+
+
+@patch("app.email.get_settings")
+@patch("app.email.httpx.post")
+def test_send_statement_reminder_custom_app_url(mock_post, mock_settings):
+    settings = MagicMock()
+    settings.resend_api_key = "re_test_key"
+    settings.email_from_address = "noreply@test.com"
+    settings.email_from_name = "TestApp"
+    settings.app_url = "https://app.example.com"
+    mock_settings.return_value = settings
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"id": "msg_456"}
+    mock_post.return_value = mock_response
+
+    result = send_statement_reminder_email(
+        to_email="user@test.com",
+        account_name="Chase Checking",
+        app_url="https://custom.example.com",
+    )
+    assert result is True
+
+    payload = mock_post.call_args[1]["json"]
+    assert "https://custom.example.com" in payload["html"]

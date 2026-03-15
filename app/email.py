@@ -1,47 +1,51 @@
-"""Email service for sending notifications via SMTP."""
+"""Email service for sending notifications via Resend HTTP API."""
 
 from __future__ import annotations
 
 import logging
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+
+import httpx
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+_RESEND_API_URL = "https://api.resend.com/emails"
 
-def _smtp_configured() -> bool:
+
+def _email_configured() -> bool:
     settings = get_settings()
-    return bool(settings.smtp_host and settings.smtp_from_email)
+    return bool(settings.resend_api_key and settings.email_from_address)
 
 
 def _send(to: str, subject: str, html: str) -> bool:
-    """Send an email via SMTP. Returns True on success, False on failure."""
+    """Send an email via the Resend HTTP API. Returns True on success."""
     settings = get_settings()
-    if not _smtp_configured():
-        logger.info("SMTP not configured — skipping email to %s", to)
+    if not _email_configured():
+        logger.info("Email not configured — skipping email to %s", to)
         return False
 
-    msg = MIMEMultipart("alternative")
-    msg["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.attach(MIMEText(html, "html"))
-
     try:
-        if settings.smtp_port == 465:
-            server = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=10)
-        elif settings.smtp_use_tls:
-            server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10)
-            server.starttls()
-        else:
-            server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10)
-        if settings.smtp_user:
-            server.login(settings.smtp_user, settings.smtp_password)
-        server.sendmail(settings.smtp_from_email, to, msg.as_string())
-        server.quit()
+        response = httpx.post(
+            _RESEND_API_URL,
+            headers={
+                "Authorization": f"Bearer {settings.resend_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": f"{settings.email_from_name} <{settings.email_from_address}>",
+                "to": [to],
+                "subject": subject,
+                "html": html,
+            },
+            timeout=10,
+        )
+        if response.status_code >= 400:
+            logger.error(
+                "Resend API error (%d) sending to %s: %s",
+                response.status_code, to, response.text,
+            )
+            return False
         logger.info("Email sent to %s: %s", to, subject)
         return True
     except Exception:
