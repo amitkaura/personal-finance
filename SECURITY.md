@@ -7,7 +7,7 @@
 This application handles personal financial data. If you discover a security
 vulnerability, please report it responsibly by emailing:
 
-**security@amitkaura.com**
+**amitkaura@gmail.com**
 
 Include as much of the following as possible:
 
