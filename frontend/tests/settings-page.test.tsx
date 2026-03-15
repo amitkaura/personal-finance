@@ -32,7 +32,7 @@ const mockApi = vi.hoisted(() => ({
   clearTransactions: vi.fn(),
   exportTransactions: vi.fn(),
   factoryReset: vi.fn(),
-  deleteAccount: vi.fn(),
+  deleteUserAccount: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -368,7 +368,7 @@ describe("SettingsPage", () => {
     });
 
     it("opens confirm dialog and calls deleteAccount on confirm", async () => {
-      mockApi.deleteAccount.mockResolvedValue(undefined);
+      mockApi.deleteUserAccount.mockResolvedValue(undefined);
       const user = userEvent.setup();
       renderWithProviders(<SettingsPage />);
 
@@ -379,7 +379,7 @@ describe("SettingsPage", () => {
       await user.click(screen.getByText("Delete My Account"));
 
       await waitFor(() => {
-        expect(mockApi.deleteAccount).toHaveBeenCalled();
+        expect(mockApi.deleteUserAccount).toHaveBeenCalled();
       });
     });
   });

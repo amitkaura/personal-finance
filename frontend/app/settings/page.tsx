@@ -1533,7 +1533,7 @@ function DataSection() {
   async function handleDeleteAccount() {
     setDeleting(true);
     try {
-      await api.deleteAccount();
+      await api.deleteUserAccount();
       queryClient.clear();
       router.push("/login");
     } finally {
