@@ -263,6 +263,7 @@ export interface User {
   bio: string | null;
   google_name: string;
   google_picture: string | null;
+  is_admin?: boolean;
 }
 
 export interface UserProfile {
@@ -315,6 +316,22 @@ export interface PlaidConfig {
   client_id_last4: string | null;
   secret_last4: string | null;
 }
+
+export interface PlaidModeResponse {
+  mode: "managed" | "byok" | null;
+  managed_available: boolean;
+}
+
+export interface AdminPlaidConfig {
+  configured: boolean;
+  enabled: boolean;
+  plaid_env: string | null;
+  client_id_last4: string | null;
+  secret_last4: string | null;
+  managed_household_count: number;
+}
+
+export const PLAID_MODES = { MANAGED: "managed", BYOK: "byok" } as const;
 
 export interface Category {
   id: number;

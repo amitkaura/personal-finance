@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     email_from_name: str = "FinanceApp"
     app_url: str = "http://localhost:3000"
 
+    # Admin
+    admin_email: str = ""
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8000

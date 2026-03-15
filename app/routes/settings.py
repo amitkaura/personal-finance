@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+import sqlalchemy as sa
 from sqlalchemy import delete as sa_delete
 from sqlmodel import Session, or_, select
 
@@ -25,6 +26,7 @@ from app.models import (
     Account,
     AccountBalanceSnapshot,
     AccountType,
+    AppPlaidConfig,
     Budget,
     Category,
     CategoryRule,
@@ -39,6 +41,7 @@ from app.models import (
     HouseholdSyncConfig,
     NetWorthSnapshot,
     PlaidItem,
+    PlaidMode,
     SpendingPreference,
     Tag,
     Transaction,
@@ -307,6 +310,173 @@ def delete_plaid_config(
     ).first()
     if not config:
         raise HTTPException(status_code=404, detail="Plaid config not found")
+
+    session.delete(config)
+    session.commit()
+
+
+# ── Plaid Mode (managed vs BYOK) ───────────────────────────────
+
+
+class PlaidModeUpdate(BaseModel):
+    mode: PlaidMode
+
+
+@router.get("/plaid-mode")
+def get_plaid_mode(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+
+    mode = None
+    if member:
+        household = session.get(Household, member.household_id)
+        if household:
+            mode = household.plaid_mode
+
+    app_config = session.exec(select(AppPlaidConfig)).first()
+    managed_available = bool(app_config and app_config.enabled)
+
+    return {"mode": mode, "managed_available": managed_available}
+
+
+@router.put("/plaid-mode")
+def set_plaid_mode(
+    body: PlaidModeUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Not in a household")
+
+    household = session.get(Household, member.household_id)
+
+    if household.plaid_mode is not None:
+        raise HTTPException(status_code=409, detail="Plaid mode already set and cannot be changed")
+
+    if body.mode == PlaidMode.MANAGED:
+        app_config = session.exec(select(AppPlaidConfig)).first()
+        if not app_config or not app_config.enabled:
+            raise HTTPException(status_code=400, detail="Managed Plaid is not available")
+
+    household.plaid_mode = body.mode
+    session.add(household)
+    session.commit()
+
+    app_config = session.exec(select(AppPlaidConfig)).first()
+    managed_available = bool(app_config and app_config.enabled)
+
+    return {"mode": household.plaid_mode, "managed_available": managed_available}
+
+
+# ── Admin Plaid Config (app-level) ─────────────────────────────
+
+
+def _require_admin(user: User) -> None:
+    settings = get_app_settings()
+    if not settings.admin_email or user.email != settings.admin_email:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+class AdminPlaidConfigUpdate(BaseModel):
+    client_id: str
+    secret: str
+    plaid_env: str
+    enabled: bool
+
+
+@router.get("/admin/plaid-config")
+def get_admin_plaid_config(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+
+    config = session.exec(select(AppPlaidConfig)).first()
+    managed_count = session.exec(
+        select(sa.func.count()).select_from(Household).where(
+            Household.plaid_mode == PlaidMode.MANAGED
+        )
+    ).one()
+
+    if not config:
+        return {
+            "configured": False,
+            "enabled": False,
+            "plaid_env": None,
+            "client_id_last4": None,
+            "secret_last4": None,
+            "managed_household_count": managed_count,
+        }
+
+    client_id = decrypt_token(config.encrypted_client_id)
+    secret = decrypt_token(config.encrypted_secret)
+    return {
+        "configured": True,
+        "enabled": config.enabled,
+        "plaid_env": config.plaid_env,
+        "client_id_last4": client_id[-4:] if len(client_id) >= 4 else client_id,
+        "secret_last4": secret[-4:] if len(secret) >= 4 else secret,
+        "managed_household_count": managed_count,
+    }
+
+
+@router.put("/admin/plaid-config")
+def update_admin_plaid_config(
+    body: AdminPlaidConfigUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+
+    if body.plaid_env not in _VALID_PLAID_ENVS:
+        raise HTTPException(status_code=400, detail=f"plaid_env must be one of: {', '.join(sorted(_VALID_PLAID_ENVS))}")
+
+    config = session.exec(select(AppPlaidConfig)).first()
+    if config:
+        config.encrypted_client_id = encrypt_token(body.client_id)
+        config.encrypted_secret = encrypt_token(body.secret)
+        config.plaid_env = body.plaid_env
+        config.enabled = body.enabled
+    else:
+        config = AppPlaidConfig(
+            encrypted_client_id=encrypt_token(body.client_id),
+            encrypted_secret=encrypt_token(body.secret),
+            plaid_env=body.plaid_env,
+            enabled=body.enabled,
+        )
+
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+
+    client_id = decrypt_token(config.encrypted_client_id)
+    secret = decrypt_token(config.encrypted_secret)
+    return {
+        "configured": True,
+        "enabled": config.enabled,
+        "plaid_env": config.plaid_env,
+        "client_id_last4": client_id[-4:] if len(client_id) >= 4 else client_id,
+        "secret_last4": secret[-4:] if len(secret) >= 4 else secret,
+    }
+
+
+@router.delete("/admin/plaid-config", status_code=204)
+def delete_admin_plaid_config(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+
+    config = session.exec(select(AppPlaidConfig)).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="App Plaid config not found")
 
     session.delete(config)
     session.commit()
