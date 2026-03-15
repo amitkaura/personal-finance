@@ -815,6 +815,15 @@ def delete_account(
                 select(HouseholdInvitation).where(HouseholdInvitation.household_id == household_id)
             ).all():
                 session.delete(inv)
+            session.execute(sa_delete(HouseholdPlaidConfig).where(
+                HouseholdPlaidConfig.household_id == household_id
+            ))
+            session.execute(sa_delete(HouseholdLLMConfig).where(
+                HouseholdLLMConfig.household_id == household_id
+            ))
+            session.execute(sa_delete(HouseholdSyncConfig).where(
+                HouseholdSyncConfig.household_id == household_id
+            ))
             household = session.get(Household, household_id)
             if household:
                 session.delete(household)
