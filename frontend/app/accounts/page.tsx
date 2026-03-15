@@ -127,14 +127,14 @@ export default function AccountsPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Accounts</h1>
           <p className="text-sm text-muted-foreground">
             All linked bank and investment accounts.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {unlinkedCount > 0 && (
             <button
               onClick={() => setHideUnlinked(!hideUnlinked)}
@@ -418,23 +418,23 @@ function AccountRow({
   return (
     <>
       <div
-        className={`flex items-center justify-between rounded-2xl border px-6 py-4 ${
+        className={`flex flex-col gap-3 rounded-2xl border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 ${
           account.is_linked || isManual
             ? "border-border bg-card"
             : "border-border/50 bg-card/50 opacity-70"
         }`}
       >
         <div
-          className="flex flex-1 cursor-pointer items-center gap-4 rounded-xl transition-colors hover:bg-muted/50"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-xl transition-colors hover:bg-muted/50 sm:gap-4"
           onClick={() => router.push(`/transactions?account=${account.id}`)}
           role="link"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
             <Icon className={`h-5 w-5 ${config.color}`} />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="font-medium">{account.name}</p>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="truncate font-medium">{account.name}</p>
               {showOwner && account.owner_name && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
                   {account.owner_picture ? (
@@ -467,8 +467,8 @@ function AccountRow({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="text-right">
+        <div className="flex items-center gap-3 pl-[52px] sm:pl-0">
+          <div className="text-left sm:text-right">
             <p className="text-lg font-semibold">
               {formatCurrency(account.current_balance)}
             </p>

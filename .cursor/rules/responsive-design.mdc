@@ -1,0 +1,64 @@
+---
+description: Enforce mobile-first responsive design in all frontend components
+globs: frontend/**/*.tsx
+alwaysApply: false
+---
+
+# Responsive Design — Mobile First
+
+Every layout must work on a 320px-wide screen before adding breakpoints for larger sizes.
+
+## Grids
+
+Start at one column and scale up:
+
+```tsx
+// BAD -- forces 3 columns on all screen sizes
+<div className="grid grid-cols-3 gap-4">
+
+// GOOD
+<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+```
+
+## Page Headers (title + actions)
+
+Stack vertically on mobile, row on larger screens:
+
+```tsx
+// BAD -- overflows on mobile
+<div className="flex items-center justify-between">
+
+// GOOD
+<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+```
+
+## Button Groups / Action Bars
+
+Always allow wrapping:
+
+```tsx
+// BAD -- buttons overflow off screen
+<div className="flex items-center gap-2">
+
+// GOOD
+<div className="flex flex-wrap items-center gap-2">
+```
+
+## Flex Rows with Mixed Content
+
+Side-by-side content (e.g., avatar + form) should stack on mobile:
+
+```tsx
+// BAD
+<div className="flex gap-6">
+
+// GOOD
+<div className="flex flex-col sm:flex-row gap-6">
+```
+
+## General Rules
+
+- Never use bare `grid-cols-N` (N >= 2) without a responsive base of `grid-cols-1`.
+- Never use `flex justify-between` on a page header without `flex-col sm:flex-row`.
+- Use `min-w-0` on flex children that contain text to allow truncation instead of overflow.
+- Avoid fixed pixel widths (`w-[400px]`) on containers with dynamic content — use `max-w-*` or percentages.

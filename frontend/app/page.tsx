@@ -42,14 +42,14 @@ const PlaidSetupBanner = dynamic(() => import("@/components/plaid-setup-banner")
 export default function DashboardPage() {
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
             Your financial overview at a glance.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <DashboardActions />
           <SyncButton />
         </div>

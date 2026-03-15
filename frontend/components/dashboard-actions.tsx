@@ -14,16 +14,16 @@ export default function DashboardActions() {
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
         {partner ? (
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-accent/10 px-3 py-2 text-sm font-medium text-accent">
+          <span className="col-span-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent/10 px-3 py-2 text-sm font-medium text-accent sm:justify-start">
             <Heart className="h-3.5 w-3.5" />
             Sharing with {partner.name}
           </span>
         ) : (
           <button
             onClick={() => setShowPartnerDialog(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80"
           >
             <UserPlus className="h-4 w-4" />
             Add Partner
@@ -31,7 +31,7 @@ export default function DashboardActions() {
         )}
         <button
           onClick={() => router.push("/accounts?add=true")}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80"
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80"
         >
           <Plus className="h-4 w-4" />
           Add Account

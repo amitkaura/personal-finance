@@ -136,7 +136,7 @@ export default function LinkAccount() {
     <button
       onClick={handleClick}
       disabled={fetchToken.isPending}
-      className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+      className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
     >
       {fetchToken.isPending ? (
         <Loader2 className="h-4 w-4 animate-spin" />
