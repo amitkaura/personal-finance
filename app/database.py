@@ -15,7 +15,11 @@ if not settings.database_url.startswith("sqlite"):
     _engine_kwargs["pool_size"] = settings.db_pool_size
     _engine_kwargs["max_overflow"] = settings.db_max_overflow
 
-engine = create_engine(settings.database_url, **_engine_kwargs)
+_db_url = settings.database_url
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(_db_url, **_engine_kwargs)
 
 
 def create_db_and_tables() -> None:
