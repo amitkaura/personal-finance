@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+.DS_Store
 .cursor/*
 !.cursor/rules/
 Users/
