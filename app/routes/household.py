@@ -48,13 +48,32 @@ def get_household(
     user: User = Depends(get_current_user),
 ):
     """Return the current user's household with members, or null."""
+    # #region agent log
+    import json as _json, time as _time
+    _lp = "/Users/fds45740/dev/personal-finance/.cursor/debug-711b60.log"
+    def _d(m, d=None, h=""):
+        print(f"[DEBUG-711b60] {m} | {d}")
+        try:
+            with open(_lp,"a") as f: f.write(_json.dumps({"sessionId":"711b60","location":"household.py:get_household","message":m,"data":d or {},"timestamp":int(_time.time()*1000),"hypothesisId":h})+"\n")
+        except Exception: pass
+    _d("get_household called", {"user_id": user.id}, h="H7")
+    # #endregion
     member = session.exec(
         select(HouseholdMember).where(HouseholdMember.user_id == user.id)
     ).first()
     if not member:
+        # #region agent log
+        _d("no member found, returning None", h="H7")
+        # #endregion
         return None
 
+    # #region agent log
+    _d("member found, fetching household", {"household_id": member.household_id}, h="H7")
+    # #endregion
     household = session.get(Household, member.household_id)
+    # #region agent log
+    _d("household fetched", {"found": household is not None}, h="H7")
+    # #endregion
     if not household:
         return None
 

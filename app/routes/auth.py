@@ -71,19 +71,55 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
             user.picture = picture
         db.add(user)
     else:
+        # #region agent log
+        import json as _json, time as _time
+        _lp = "/Users/fds45740/dev/personal-finance/.cursor/debug-711b60.log"
+        def _d(m, d=None, h=""):
+            print(f"[DEBUG-711b60] {m} | {d}")
+            try:
+                with open(_lp,"a") as f: f.write(_json.dumps({"sessionId":"711b60","location":"auth.py:google_login","message":m,"data":d or {},"timestamp":int(_time.time()*1000),"hypothesisId":h})+"\n")
+            except Exception: pass
+        _d("new user: creating User", {"email": email}, h="H6")
+        # #endregion
         user = User(
             google_id=google_id, email=email, name=name, picture=picture,
             google_name=name, google_picture=picture,
         )
         db.add(user)
         db.flush()
+        # #region agent log
+        _d("new user: User flushed, creating Household", {"user_id": user.id}, h="H6")
+        # #endregion
         db.add(UserSettings(user_id=user.id))
         household = Household(name=f"{name}'s Household")
         db.add(household)
-        db.flush()
+        # #region agent log
+        _d("new user: about to flush Household", h="H6")
+        # #endregion
+        try:
+            db.flush()
+        except Exception as e:
+            # #region agent log
+            _d("new user: Household flush FAILED", {"error": str(e), "type": type(e).__name__}, h="H6")
+            # #endregion
+            raise
+        # #region agent log
+        _d("new user: Household flushed OK", {"household_id": household.id}, h="H6")
+        # #endregion
         db.add(HouseholdMember(household_id=household.id, user_id=user.id, role="owner"))
         db.add(HouseholdSyncConfig(household_id=household.id))
+    # #region agent log
+    try:
+        import json as _json2, time as _time2
+        print(f"[DEBUG-711b60] about to commit | None")
+    except Exception: pass
+    # #endregion
     db.commit()
+    # #region agent log
+    try:
+        print(f"[DEBUG-711b60] commit done, refreshing user | None")
+    except Exception: pass
+    # #endregion
     db.refresh(user)
 
     token = create_jwt(user.id)
