@@ -1520,6 +1520,7 @@ function AiSection() {
 function DataSection() {
   const queryClient = useQueryClient();
   const router = useRouter();
+  const { clearSession } = useAuth();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
@@ -1557,7 +1558,7 @@ function DataSection() {
     setDeleting(true);
     try {
       await api.deleteUserAccount();
-      queryClient.clear();
+      clearSession();
       router.push("/login");
     } finally {
       setDeleting(false);
@@ -1865,7 +1866,7 @@ function AdminSection() {
               }}
               className="h-4 w-4 rounded border-border bg-muted accent-accent"
             />
-            <span className="text-xs">{enabled ? "Enabled" : "Disabled"}</span>
+            <span className="text-xs">Allow households to use managed Plaid</span>
           </label>
         </div>
       )}

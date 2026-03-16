@@ -438,13 +438,19 @@ def update_admin_plaid_config(
     if body.plaid_env not in _VALID_PLAID_ENVS:
         raise HTTPException(status_code=400, detail=f"plaid_env must be one of: {', '.join(sorted(_VALID_PLAID_ENVS))}")
 
+    _SENTINEL = "unchanged"
+
     config = session.exec(select(AppPlaidConfig)).first()
     if config:
-        config.encrypted_client_id = encrypt_token(body.client_id)
-        config.encrypted_secret = encrypt_token(body.secret)
+        if body.client_id != _SENTINEL:
+            config.encrypted_client_id = encrypt_token(body.client_id)
+        if body.secret != _SENTINEL:
+            config.encrypted_secret = encrypt_token(body.secret)
         config.plaid_env = body.plaid_env
         config.enabled = body.enabled
     else:
+        if body.client_id == _SENTINEL or body.secret == _SENTINEL:
+            raise HTTPException(status_code=400, detail="Client ID and Secret are required for initial setup")
         config = AppPlaidConfig(
             encrypted_client_id=encrypt_token(body.client_id),
             encrypted_secret=encrypt_token(body.secret),

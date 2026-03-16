@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Zap, Key } from "lucide-react";
 import { api } from "@/lib/api";
 import { PLAID_MODES } from "@/lib/types";
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
 
   const { data: plaidMode, isLoading } = useQuery({
@@ -18,7 +19,10 @@ export default function OnboardingPage() {
 
   const selectMode = useMutation({
     mutationFn: (mode: string) => api.setPlaidMode(mode),
-    onSuccess: () => router.push("/"),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["plaid-mode"], data);
+      router.push("/");
+    },
     onError: (err: Error) => setError(err.message),
   });
 

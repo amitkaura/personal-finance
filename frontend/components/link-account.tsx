@@ -13,6 +13,7 @@ export default function LinkAccount() {
   const queryClient = useQueryClient();
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "linking" | "exchanging" | "done">("idle");
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   const { data: plaidConfig } = useQuery({
     queryKey: ["plaid-config"],
@@ -32,6 +33,7 @@ export default function LinkAccount() {
       setLinkToken(data.link_token);
       setStatus("linking");
     },
+    onError: (err: Error) => setLinkError(err.message),
   });
 
   const exchangeToken = useMutation({
@@ -84,6 +86,7 @@ export default function LinkAccount() {
   const isManaged = plaidMode?.mode === PLAID_MODES.MANAGED;
 
   const handleClick = () => {
+    setLinkError(null);
     if (!isManaged && plaidConfig && !plaidConfig.configured) {
       router.push("/settings?section=integrations");
       return;
@@ -150,17 +153,22 @@ export default function LinkAccount() {
   }
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={fetchToken.isPending}
-      className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
-    >
-      {fetchToken.isPending ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <Plus className="h-4 w-4" />
+    <div className="flex flex-col items-end gap-1">
+      <button
+        onClick={handleClick}
+        disabled={fetchToken.isPending}
+        className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+      >
+        {fetchToken.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Plus className="h-4 w-4" />
+        )}
+        Link Account
+      </button>
+      {linkError && (
+        <span className="text-xs text-destructive">{linkError}</span>
       )}
-      Link Account
-    </button>
+    </div>
   );
 }

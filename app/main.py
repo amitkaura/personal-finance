@@ -41,20 +41,6 @@ async def lifespan(app: FastAPI):
     _migrate_llm_fields_to_household()
     _migrate_sync_fields_to_household()
     _migrate_household_plaid_mode()
-    # #region agent log
-    import json as _json, time as _time
-    _lp = "/Users/fds45740/dev/personal-finance/.cursor/debug-711b60.log"
-    try:
-        with engine.connect() as _conn:
-            _cols = [r[0] for r in _conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='households'")).fetchall()]
-        _msg = f"households columns: {_cols}"
-        print(f"[DEBUG-711b60] {_msg}")
-        try:
-            with open(_lp,"a") as f: f.write(_json.dumps({"sessionId":"711b60","location":"main.py:lifespan","message":_msg,"data":{"columns":_cols},"timestamp":int(_time.time()*1000),"hypothesisId":"H6"})+"\n")
-        except Exception: pass
-    except Exception as e:
-        print(f"[DEBUG-711b60] column check failed: {e}")
-    # #endregion
     _backfill_orphan_households()
     settings = get_settings()
     if settings.run_scheduler:
