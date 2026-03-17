@@ -17,6 +17,7 @@ import {
   RotateCw,
   Tags,
   X,
+  Shield,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import ViewSwitcher from "@/components/view-switcher";
@@ -97,6 +98,21 @@ export default function Sidebar({
               </Link>
             );
           })}
+          {user?.is_admin && (
+            <Link
+              href="/admin"
+              onClick={onClose}
+              aria-current={pathname === "/admin" ? "page" : undefined}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                pathname === "/admin"
+                  ? "bg-accent/15 text-accent"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <Shield className="h-4 w-4" />
+              Admin
+            </Link>
+          )}
         </nav>
 
         {user && (

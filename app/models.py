@@ -34,6 +34,11 @@ class User(SQLModel, table=True):
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
 
+    # Admin & status
+    is_admin: bool = Field(default=False)
+    is_disabled: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 
 class PlaidMode(str, Enum):
     """Whether a household uses the app's managed Plaid or brings their own keys."""
@@ -381,3 +386,58 @@ class HouseholdInvitation(SQLModel, table=True):
     token: str = Field(default_factory=lambda: uuid4().hex, unique=True, index=True)
     status: str = Field(default="pending")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# ── Admin / Analytics ─────────────────────────────────────────
+
+
+class ActivityAction(str, Enum):
+    """Tracked user actions for analytics."""
+
+    LOGIN = "login"
+    SYNC = "sync"
+    IMPORT = "import"
+    CREATE_TRANSACTION = "create_transaction"
+    UPDATE_TRANSACTION = "update_transaction"
+    CATEGORIZE = "categorize"
+    CREATE_BUDGET = "create_budget"
+    CREATE_GOAL = "create_goal"
+
+
+class ErrorType(str, Enum):
+    """Tracked error categories."""
+
+    PLAID_SYNC = "plaid_sync"
+    PLAID_LINK = "plaid_link"
+    API_4XX = "api_4xx"
+    API_5XX = "api_5xx"
+
+
+class ActivityLog(SQLModel, table=True):
+    """Records user actions for DAU/WAU/MAU analytics."""
+
+    __tablename__ = "activity_log"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    action: ActivityAction = Field(sa_type=sa.String(30), index=True)
+    detail: Optional[str] = None
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
+class ErrorLog(SQLModel, table=True):
+    """Records errors for admin monitoring."""
+
+    __tablename__ = "error_log"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    error_type: ErrorType = Field(sa_type=sa.String(20), index=True)
+    endpoint: str
+    status_code: Optional[int] = None
+    detail: str
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), index=True
+    )

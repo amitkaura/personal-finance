@@ -1,5 +1,8 @@
 import type {
-  Account, AccountSummary, AdminPlaidConfig, Budget, BudgetConflict, BudgetSummary,
+  Account, AccountSummary, AdminPlaidConfig, AdminOverview, AdminUser, AdminUsersResponse,
+  AdminPlaidHealth, AdminErrorsResponse, ActiveUsersPoint, FeatureAdoption,
+  TransactionVolumePoint, StorageMetric,
+  Budget, BudgetConflict, BudgetSummary,
   CategoryRule, Goal, GoalContribution, GoalsResponse,
   Household, HouseholdInvitation, MonthlyTrend, NetWorthSnapshot,
   LLMConfig, PlaidConfig, PlaidConnection, PlaidModeResponse, RecurringTransaction, SpendingByCategory, SyncConfig,
@@ -799,4 +802,48 @@ export const api = {
       "/settings/import-balances",
       { method: "POST", body: JSON.stringify(payload) },
     ),
+
+  // Admin
+  getAdminOverview: () => fetcher<AdminOverview>("/admin/overview"),
+
+  getAdminUsers: (params?: { limit?: number; offset?: number; search?: string }) => {
+    const p = new URLSearchParams();
+    if (params?.limit != null) p.set("limit", String(params.limit));
+    if (params?.offset != null) p.set("offset", String(params.offset));
+    if (params?.search) p.set("search", params.search);
+    const qs = p.toString();
+    return fetcher<AdminUsersResponse>(`/admin/users${qs ? `?${qs}` : ""}`);
+  },
+
+  updateAdminUser: (userId: number, body: { is_admin?: boolean; is_disabled?: boolean }) =>
+    fetcher<AdminUser>(`/admin/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  deleteAdminUser: (userId: number) =>
+    fetchVoid(`/admin/users/${userId}`, { method: "DELETE" }),
+
+  getAdminPlaidHealth: () => fetcher<AdminPlaidHealth>("/admin/plaid-health"),
+
+  getAdminErrors: (params?: { limit?: number; offset?: number; error_type?: string }) => {
+    const p = new URLSearchParams();
+    if (params?.limit != null) p.set("limit", String(params.limit));
+    if (params?.offset != null) p.set("offset", String(params.offset));
+    if (params?.error_type) p.set("error_type", params.error_type);
+    const qs = p.toString();
+    return fetcher<AdminErrorsResponse>(`/admin/errors${qs ? `?${qs}` : ""}`);
+  },
+
+  getAdminActiveUsers: (days?: number) =>
+    fetcher<ActiveUsersPoint[]>(`/admin/analytics/active-users${days ? `?days=${days}` : ""}`),
+
+  getAdminFeatureAdoption: () =>
+    fetcher<FeatureAdoption[]>("/admin/analytics/feature-adoption"),
+
+  getAdminTransactionVolume: (days?: number) =>
+    fetcher<TransactionVolumePoint[]>(`/admin/analytics/transaction-volume${days ? `?days=${days}` : ""}`),
+
+  getAdminStorage: () =>
+    fetcher<StorageMetric[]>("/admin/analytics/storage"),
 };

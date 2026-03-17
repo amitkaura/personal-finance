@@ -338,3 +338,89 @@ export interface Category {
   name: string;
   user_id: number;
 }
+
+
+// ── Admin Types ────────────────────────────────────────────────
+
+export interface AdminOverview {
+  total_users: number;
+  active_7d: number;
+  active_30d: number;
+  total_accounts: number;
+  linked_accounts: number;
+  manual_accounts: number;
+  total_transactions: number;
+  total_households: number;
+  recent_errors: number;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  name: string;
+  picture: string | null;
+  is_admin: boolean;
+  is_disabled: boolean;
+  created_at: string | null;
+  account_count: number;
+  transaction_count: number;
+  last_active: string | null;
+}
+
+export interface AdminUsersResponse {
+  items: AdminUser[];
+  total: number;
+}
+
+export interface AdminPlaidError {
+  id: number;
+  user_id: number | null;
+  error_type: string;
+  endpoint: string;
+  status_code: number | null;
+  detail: string;
+  created_at: string;
+}
+
+export interface AdminPlaidHealth {
+  total_plaid_errors: number;
+  recent_errors: AdminPlaidError[];
+}
+
+export interface AdminErrorEntry {
+  id: number;
+  user_id: number | null;
+  error_type: string;
+  endpoint: string;
+  status_code: number | null;
+  detail: string;
+  created_at: string;
+}
+
+export interface AdminErrorsResponse {
+  items: AdminErrorEntry[];
+  total: number;
+}
+
+export interface ActiveUsersPoint {
+  date: string;
+  dau: number;
+  wau: number;
+  mau: number;
+}
+
+export interface FeatureAdoption {
+  feature: string;
+  user_count: number;
+  percentage: number;
+}
+
+export interface TransactionVolumePoint {
+  date: string;
+  count: number;
+}
+
+export interface StorageMetric {
+  table_name: string;
+  row_count: number;
+}

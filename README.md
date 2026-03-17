@@ -143,6 +143,17 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Reset buttons to revert individual fields to Google defaults
 - Profile changes reflect immediately in the sidebar
 
+### Admin Panel
+- **Multi-admin system** -- admin role persisted on user model; `ADMIN_EMAIL` env var bootstraps first admin on login; admins can promote/demote other users
+- **Overview dashboard** -- KPI cards for total users, active users (7d/30d), accounts (linked/manual), transactions, households, recent errors
+- **User management** -- paginated, searchable user list with per-user stats (accounts, transactions, last active); toggle admin, disable/enable (soft-ban), or permanently delete users with full FK cascade
+- **Plaid health** -- aggregated Plaid sync/link errors with recent failure details
+- **Error log** -- paginated, filterable error log (by type, user, date range)
+- **Analytics** -- DAU/WAU/MAU time series, feature adoption rates (budgets, goals, tags, categories, rules, linked accounts), transaction volume over time, storage metrics (row counts per table)
+- **Activity tracking** -- `ActivityLog` model records user actions (login, sync, import, categorize, etc.) for analytics
+- **Disabled user enforcement** -- disabled users receive 403 on all authenticated endpoints
+- **Sidebar integration** -- Admin link appears conditionally for admin users
+
 ### Authentication & Multi-User
 - Google Sign-In with one-tap and popup flows
 - JWT session stored as an HttpOnly cookie
@@ -207,7 +218,9 @@ personal-finance/
 │   ├── crypto.py                   # Fernet encrypt/decrypt for access tokens
 │   ├── categorizer.py              # Rule-based + per-transaction LLM categorization
 │   ├── household.py                # Scope helper (personal/partner/household)
+│   ├── activity.py                 # log_activity() helper for ActivityLog
 │   └── routes/
+│       ├── admin.py                # Admin panel: overview, users CRUD, plaid-health, errors, analytics
 │       ├── auth.py                 # POST /google, GET /me, POST /logout
 │       ├── accounts.py             # CRUD, manual accounts, CSV import, unlink, summary
 │       ├── plaid.py                # POST /link-token, /exchange-token, /sync, GET /items
@@ -232,6 +245,7 @@ personal-finance/
 │   │   ├── recurring/page.tsx      # Recurring transaction analysis
 │   │   ├── onboarding/page.tsx     # Plaid mode selection (managed vs BYOK)
 │   │   ├── connections/page.tsx    # Plaid connections management
+│   │   ├── admin/page.tsx          # Admin panel (overview, users, plaid health, analytics)
 │   │   ├── settings/page.tsx       # User preferences and configuration (incl. admin section)
 │   │   ├── staging-login/page.tsx  # Staging password gate login page
 │   │   ├── api/staging-auth/route.ts # Staging password verification API route
@@ -317,6 +331,7 @@ personal-finance/
 │       ├── link-account.test.tsx   # Token fetch, Plaid link, success message
 │       ├── onboarding.test.tsx    # Managed vs BYOK cards, setPlaidMode, redirect
 │       ├── plaid-mode-aware.test.tsx # PlaidSetupBanner + LinkAccount mode awareness
+│       ├── admin.test.tsx           # Admin panel: tabs, KPI cards, user management, plaid health, analytics
 │       ├── admin-plaid-section.test.tsx # Admin section visibility and household count
 │       ├── auth-gate.test.tsx      # Loading, unauthenticated, authenticated layout
 │       ├── staging-gate.test.ts    # SHA-256 hashing and token verification
@@ -341,7 +356,8 @@ personal-finance/
 │   ├── test_plaid_config.py        # BYO Plaid config CRUD (owner-only, encryption)
 │   ├── test_llm_config.py          # BYO LLM config CRUD (owner-only, encryption)
 │   ├── test_managed_plaid.py       # PlaidMode enum, AppPlaidConfig model, client resolution
-│   └── test_managed_plaid_routes.py # Admin plaid-config + plaid-mode routes, is_admin
+│   ├── test_managed_plaid_routes.py # Admin plaid-config + plaid-mode routes, is_admin
+│   └── test_admin.py               # Admin panel: guard, overview, users CRUD, cascade delete, plaid health, errors, analytics
 ├── docker-compose.yml              # Postgres + Redis + API services
 ├── Dockerfile                      # Python 3.12-slim, uvicorn
 ├── requirements.txt                # Python dependencies
@@ -353,7 +369,7 @@ personal-finance/
 
 | Model | Purpose |
 |-------|---------|
-| `User` | Google OAuth user (google_id, email, name, picture) |
+| `User` | Google OAuth user (google_id, email, name, picture, is_admin, is_disabled, created_at) |
 | `PlaidItem` | Bank connection with encrypted access token |
 | `Account` | Bank/credit/loan/investment account with balances, optional `statement_available_day` (1-31) and `last_statement_reminder_sent` for recurring reminders |
 | `Transaction` | Financial transaction (Plaid-synced or manual) |
@@ -375,10 +391,26 @@ personal-finance/
 | `HouseholdLLMConfig` | Per-household LLM config (household_id FK unique, llm_base_url, encrypted_api_key, llm_model) |
 | `HouseholdSyncConfig` | Per-household sync schedule (sync_enabled, sync_hour, sync_minute, sync_timezone) |
 | `HouseholdInvitation` | Pending email invitation to join a household |
+| `ActivityLog` | Records user actions (login, sync, import, etc.) for DAU/WAU/MAU analytics |
+| `ErrorLog` | Records errors (Plaid sync/link, API 4xx/5xx) for admin monitoring |
 
 ## API Reference
 
 All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
+
+### Admin (`/admin`) -- admin-only
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/overview` | Dashboard stats: total users, active 7d/30d, accounts, transactions, households, errors |
+| GET | `/users` | Paginated user list with per-user stats (search, limit, offset) |
+| PATCH | `/users/:id` | Update user (is_admin, is_disabled) |
+| DELETE | `/users/:id` | Hard-delete user and all associated data (full FK cascade) |
+| GET | `/plaid-health` | Plaid sync/link error aggregations and recent failures |
+| GET | `/errors` | Paginated error log (filterable by user, type, date range) |
+| GET | `/analytics/active-users` | DAU/WAU/MAU time series |
+| GET | `/analytics/feature-adoption` | Users with budgets, goals, tags, rules, categories, linked accounts |
+| GET | `/analytics/transaction-volume` | Transaction count per day over time |
+| GET | `/analytics/storage` | Row counts for all major tables |
 
 ### Auth (`/auth`)
 | Method | Path | Description |
@@ -596,7 +628,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (416 tests across 21 files):**
+**What's tested (449 tests across 22 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -618,6 +650,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_auth` | 8 | Google OAuth login (mocked), session, `/me`, logout, auto-household on signup, no duplicate household on re-login |
 | `test_managed_plaid` | 16 | PlaidMode enum, AppPlaidConfig model, Household.plaid_mode field, plaid client resolution (managed vs BYOK: uses correct credentials, raises when disabled/missing/none) |
 | `test_managed_plaid_routes` | 26 | Plaid mode GET/PUT (managed/byok/none/switch-blocked/validation), admin plaid-config CRUD (admin-only guard, create/update/delete, household count), /auth/me is_admin field |
+| `test_admin` | 33 | Admin guard (403 on all endpoints), overview aggregates, users list (pagination, search, stats), user update (promote/demote/disable/enable), user delete (full FK cascade, self-deletion blocked), disabled user auth, plaid health, error log (pagination, filters), analytics (active users, feature adoption, transaction volume, storage), activity logging |
 | `test_net_worth` | 5 | Snapshots, history |
 | `test_health` | 2 | Liveness and readiness endpoints |
 
@@ -640,7 +673,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (431 tests across 43 files):**
+**What's tested (439 tests across 44 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -684,6 +717,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `link-account` | 4 | Idle button, token fetch on click, success message, pluralization |
 | `onboarding` | 5 | Managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls, dashboard redirect |
 | `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
+| `admin` | 8 | Tab rendering, KPI cards, user list, disable/delete actions with confirmation, tab switching (plaid health, analytics) |
 | `admin-plaid-section` | 3 | AdminSection visibility (admin vs non-admin), managed household count |
 | `staging-gate` | 7 | SHA-256 hashing (deterministic, hex format, uniqueness), token verification (match, mismatch, empty, malformed) |
 | `staging-login` | 6 | Password input and submit button rendering, POST to /api/staging-auth, redirect to / or ?from, error on 401, empty password guard |
@@ -696,7 +730,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 
 ### Latest coverage snapshot
 
-- Backend (`pytest --cov=app --cov-report=term`): **85% total** (`3630` statements, `529` missed)
+- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`3868` statements, `540` missed)
 - Frontend (`npx vitest run --coverage`): **76.28% statements**, **71.95% branches**, **61.95% functions**, **77.19% lines**
 
 ## Environment Variables

@@ -83,6 +83,10 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
         db.flush()
         db.add(HouseholdMember(household_id=household.id, user_id=user.id, role="owner"))
         db.add(HouseholdSyncConfig(household_id=household.id))
+    if settings.admin_email and user.email == settings.admin_email and not user.is_admin:
+        user.is_admin = True
+        db.add(user)
+
     db.commit()
     db.refresh(user)
 
@@ -105,7 +109,9 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
 def me(user: User = Depends(get_current_user)):
     settings = get_settings()
     data = _user_dict(user)
-    data["is_admin"] = bool(settings.admin_email and user.email == settings.admin_email)
+    data["is_admin"] = user.is_admin or bool(
+        settings.admin_email and user.email == settings.admin_email
+    )
     return data
 
 

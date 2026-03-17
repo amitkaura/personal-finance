@@ -19,6 +19,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.database import create_db_and_tables, engine
 from app.routes.accounts import router as accounts_router
+from app.routes.admin import router as admin_router
 from app.routes.auth import router as auth_router
 from app.routes.budgets import router as budgets_router
 from app.routes.categories import router as categories_router
@@ -344,6 +345,7 @@ async def rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+app.include_router(admin_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(household_router, prefix="/api/v1")
 app.include_router(plaid_router, prefix="/api/v1")
