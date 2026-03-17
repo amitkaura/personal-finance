@@ -608,3 +608,199 @@ class TestActivityLogging:
             assert ActivityAction.SYNC in actions
         finally:
             _clear_override()
+
+
+# ── Timestamps ──────────────────────────────────────────────────
+
+
+class TestTimestamps:
+    """All models should have created_at and updated_at fields."""
+
+    def test_created_at_set_on_new_record(self, session):
+        """Models that previously lacked created_at now have it."""
+        user = make_user(session)
+        acct = make_account(session, user)
+        txn = make_transaction(session, user, account=acct)
+        tag = make_tag(session, user)
+        budget = make_budget(session, user)
+
+        assert acct.created_at is not None
+        assert txn.created_at is not None
+        assert tag.created_at is not None
+        assert budget.created_at is not None
+
+    def test_updated_at_none_on_new_record(self, session):
+        """updated_at starts as None for freshly created records."""
+        user = make_user(session)
+        acct = make_account(session, user)
+
+        assert user.updated_at is None
+        assert acct.updated_at is None
+
+    def test_updated_at_set_on_update(self, session):
+        """updated_at is populated by the before_flush listener when a record changes."""
+        user = make_user(session)
+        acct = make_account(session, user)
+        assert acct.updated_at is None
+
+        original_created = acct.created_at
+        acct.name = "Updated Name"
+        session.add(acct)
+        session.commit()
+        session.refresh(acct)
+
+        assert acct.updated_at is not None
+        assert acct.created_at == original_created
+
+    def test_created_at_unchanged_on_update(self, session):
+        """created_at must not change when the record is updated."""
+        user = make_user(session)
+        original_created = user.created_at
+
+        user.name = "New Name"
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
+        assert user.created_at == original_created
+        assert user.updated_at is not None
+
+
+# ── User List Filters ──────────────────────────────────────────
+
+
+class TestUserListFilters:
+
+    def test_filter_active_days(self, client, session):
+        """Filter to users with activity within N days."""
+        admin = _make_admin(session)
+        _set_admin_override(admin)
+        try:
+            active_user = make_user(session, email="active@test.com")
+            inactive_user = make_user(session, email="inactive@test.com")
+            _make_activity(session, active_user, ActivityAction.LOGIN)
+            _make_activity(
+                session, inactive_user, ActivityAction.LOGIN,
+                created_at=datetime.now(timezone.utc) - timedelta(days=30),
+            )
+
+            resp = client.get("/api/v1/admin/users?active_days=7")
+            assert resp.status_code == 200
+            data = resp.json()
+            emails = {u["email"] for u in data["items"]}
+            assert "active@test.com" in emails
+            assert "inactive@test.com" not in emails
+        finally:
+            _clear_override()
+
+    def test_filter_has_linked(self, client, session):
+        """Filter to users who have at least one linked account."""
+        admin = _make_admin(session)
+        _set_admin_override(admin)
+        try:
+            linked_user = make_user(session, email="linked@test.com")
+            manual_user = make_user(session, email="manual@test.com")
+            make_account(session, linked_user, is_linked=True)
+            make_account(session, manual_user, is_linked=False)
+
+            resp = client.get("/api/v1/admin/users?has_linked=true")
+            assert resp.status_code == 200
+            data = resp.json()
+            emails = {u["email"] for u in data["items"]}
+            assert "linked@test.com" in emails
+            assert "manual@test.com" not in emails
+        finally:
+            _clear_override()
+
+    def test_filter_has_manual(self, client, session):
+        """Filter to users who have at least one manual account."""
+        admin = _make_admin(session)
+        _set_admin_override(admin)
+        try:
+            linked_user = make_user(session, email="linked2@test.com")
+            manual_user = make_user(session, email="manual2@test.com")
+            make_account(session, linked_user, is_linked=True)
+            make_account(session, manual_user, is_linked=False)
+
+            resp = client.get("/api/v1/admin/users?has_manual=true")
+            assert resp.status_code == 200
+            data = resp.json()
+            emails = {u["email"] for u in data["items"]}
+            assert "manual2@test.com" in emails
+            assert "linked2@test.com" not in emails
+        finally:
+            _clear_override()
+
+    def test_sort_by_account_count_desc(self, client, session):
+        """Sort users by account count descending."""
+        admin = _make_admin(session)
+        _set_admin_override(admin)
+        try:
+            u1 = make_user(session, email="one@test.com")
+            u2 = make_user(session, email="three@test.com")
+            make_account(session, u1)
+            make_account(session, u2, name="A")
+            make_account(session, u2, name="B")
+            make_account(session, u2, name="C")
+
+            resp = client.get("/api/v1/admin/users?sort=account_count_desc")
+            assert resp.status_code == 200
+            data = resp.json()
+            items = data["items"]
+            counts = [i["account_count"] for i in items]
+            assert counts == sorted(counts, reverse=True)
+        finally:
+            _clear_override()
+
+
+# ── User Detail ──────────────────────────────────────────────────
+
+
+class TestUserDetail:
+
+    def test_returns_user_detail(self, client, session):
+        """User detail endpoint returns accounts, transactions, activity, stats."""
+        admin = _make_admin(session)
+        _set_admin_override(admin)
+        try:
+            u = make_user(session, email="detail@test.com")
+            acct = make_account(session, u, name="Main Checking")
+            make_transaction(session, u, account=acct, merchant="Store A")
+            make_transaction(session, u, account=acct, merchant="Store B")
+            make_category(session, u, name="Test Cat")
+            make_tag(session, u, name="test-tag")
+            _make_activity(session, u, ActivityAction.LOGIN)
+            _make_activity(session, u, ActivityAction.SYNC)
+
+            resp = client.get(f"/api/v1/admin/users/{u.id}/detail")
+            assert resp.status_code == 200
+            data = resp.json()
+
+            assert data["user"]["email"] == "detail@test.com"
+            assert len(data["accounts"]) == 1
+            assert data["accounts"][0]["name"] == "Main Checking"
+            assert len(data["recent_transactions"]) == 2
+            assert len(data["recent_activity"]) == 2
+            assert data["stats"]["total_transactions"] == 2
+            assert data["stats"]["categories_used"] >= 1
+            assert data["stats"]["tags_created"] == 1
+        finally:
+            _clear_override()
+
+    def test_detail_nonexistent_user_404(self, client, session):
+        admin = _make_admin(session)
+        _set_admin_override(admin)
+        try:
+            resp = client.get("/api/v1/admin/users/99999/detail")
+            assert resp.status_code == 404
+        finally:
+            _clear_override()
+
+    def test_detail_requires_admin(self, client, session):
+        user = make_user(session)
+        _set_admin_override(user)
+        try:
+            resp = client.get(f"/api/v1/admin/users/{user.id}/detail")
+            assert resp.status_code == 403
+        finally:
+            _clear_override()

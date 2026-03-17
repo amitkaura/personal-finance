@@ -25,12 +25,22 @@ import ConfirmDialog from "@/components/confirm-dialog";
 import type {
   AdminOverview,
   AdminUser,
+  AdminUserDetail,
   AdminPlaidHealth,
+  ActiveUsersPoint,
+  TransactionVolumePoint,
   FeatureAdoption,
   StorageMetric,
 } from "@/lib/types";
 
 type Tab = "overview" | "users" | "plaid-health" | "analytics";
+
+interface UserFilters {
+  active_days?: number;
+  has_linked?: boolean;
+  has_manual?: boolean;
+  sort?: string;
+}
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -43,6 +53,12 @@ export default function AdminPage() {
   const { user } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [userFilters, setUserFilters] = useState<UserFilters>({});
+
+  const handleKpiClick = (tab: Tab, filters: UserFilters = {}) => {
+    setActiveTab(tab);
+    setUserFilters(filters);
+  };
 
   if (user && !user.is_admin) {
     router.push("/");
@@ -61,7 +77,7 @@ export default function AdminPage() {
             key={tab.id}
             role="tab"
             aria-selected={activeTab === tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => { setActiveTab(tab.id); setUserFilters({}); }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab.id
                 ? "border-accent text-foreground"
@@ -73,8 +89,8 @@ export default function AdminPage() {
         ))}
       </div>
 
-      {activeTab === "overview" && <OverviewTab />}
-      {activeTab === "users" && <UsersTab />}
+      {activeTab === "overview" && <OverviewTab onKpiClick={handleKpiClick} />}
+      {activeTab === "users" && <UsersTab filters={userFilters} onClearFilters={() => setUserFilters({})} />}
       {activeTab === "plaid-health" && <PlaidHealthTab />}
       {activeTab === "analytics" && <AnalyticsTab />}
     </div>
@@ -83,7 +99,7 @@ export default function AdminPage() {
 
 // ── Overview Tab ───────────────────────────────────────────────
 
-function OverviewTab() {
+function OverviewTab({ onKpiClick }: { onKpiClick: (tab: Tab, filters?: UserFilters) => void }) {
   const { data: overview } = useQuery({
     queryKey: ["admin", "overview"],
     queryFn: () => api.getAdminOverview(),
@@ -93,21 +109,26 @@ function OverviewTab() {
     return <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-24 rounded-xl bg-card border border-border animate-pulse" />)}</div>;
   }
 
-  const kpis: { label: string; value: number | string; icon: React.ReactNode }[] = [
-    { label: "Total Users", value: overview.total_users, icon: <Users className="h-5 w-5 text-blue-400" /> },
-    { label: "Active (7d)", value: overview.active_7d, icon: <Activity className="h-5 w-5 text-green-400" /> },
-    { label: "Total Accounts", value: overview.total_accounts, icon: <Landmark className="h-5 w-5 text-purple-400" /> },
-    { label: "Linked Accounts", value: overview.linked_accounts, icon: <Landmark className="h-5 w-5 text-teal-400" /> },
-    { label: "Manual Accounts", value: overview.manual_accounts, icon: <Landmark className="h-5 w-5 text-amber-400" /> },
-    { label: "Total Transactions", value: overview.total_transactions.toLocaleString(), icon: <ArrowLeftRight className="h-5 w-5 text-indigo-400" /> },
-    { label: "Households", value: overview.total_households, icon: <Home className="h-5 w-5 text-rose-400" /> },
-    { label: "Errors (7d)", value: overview.recent_errors, icon: <AlertTriangle className="h-5 w-5 text-red-400" /> },
+  const kpis: { id: string; label: string; value: number | string; icon: React.ReactNode; onClick: () => void }[] = [
+    { id: "kpi-total-users", label: "Total Users", value: overview.total_users, icon: <Users className="h-5 w-5 text-blue-400" />, onClick: () => onKpiClick("users") },
+    { id: "kpi-active-7d", label: "Active (7d)", value: overview.active_7d, icon: <Activity className="h-5 w-5 text-green-400" />, onClick: () => onKpiClick("users", { active_days: 7 }) },
+    { id: "kpi-total-accounts", label: "Total Accounts", value: overview.total_accounts, icon: <Landmark className="h-5 w-5 text-purple-400" />, onClick: () => onKpiClick("users", { sort: "account_count_desc" }) },
+    { id: "kpi-linked-accounts", label: "Linked Accounts", value: overview.linked_accounts, icon: <Landmark className="h-5 w-5 text-teal-400" />, onClick: () => onKpiClick("users", { has_linked: true }) },
+    { id: "kpi-manual-accounts", label: "Manual Accounts", value: overview.manual_accounts, icon: <Landmark className="h-5 w-5 text-amber-400" />, onClick: () => onKpiClick("users", { has_manual: true }) },
+    { id: "kpi-total-transactions", label: "Total Transactions", value: overview.total_transactions.toLocaleString(), icon: <ArrowLeftRight className="h-5 w-5 text-indigo-400" />, onClick: () => onKpiClick("analytics") },
+    { id: "kpi-households", label: "Households", value: overview.total_households, icon: <Home className="h-5 w-5 text-rose-400" />, onClick: () => onKpiClick("users") },
+    { id: "kpi-errors-7d", label: "Errors (7d)", value: overview.recent_errors, icon: <AlertTriangle className="h-5 w-5 text-red-400" />, onClick: () => onKpiClick("plaid-health") },
   ];
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {kpis.map((kpi) => (
-        <div key={kpi.label} className="rounded-xl border border-border bg-card p-4">
+        <div
+          key={kpi.label}
+          data-testid={kpi.id}
+          onClick={kpi.onClick}
+          className="rounded-xl border border-border bg-card p-4 cursor-pointer hover:border-accent transition-colors"
+        >
           <div className="flex items-center gap-3 mb-2">
             {kpi.icon}
             <span className="text-xs text-muted-foreground font-medium">{kpi.label}</span>
@@ -121,16 +142,29 @@ function OverviewTab() {
 
 // ── Users Tab ──────────────────────────────────────────────────
 
-function UsersTab() {
+function UsersTab({ filters, onClearFilters }: { filters: UserFilters; onClearFilters: () => void }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
   const pageSize = 50;
 
+  const hasFilters = filters.active_days != null || filters.has_linked != null || filters.has_manual != null || filters.sort != null;
+
+  const filterLabel = filters.active_days != null
+    ? `Active in last ${filters.active_days}d`
+    : filters.has_linked
+      ? "Has linked accounts"
+      : filters.has_manual
+        ? "Has manual accounts"
+        : filters.sort === "account_count_desc"
+          ? "Sorted by account count"
+          : null;
+
   const { data } = useQuery({
-    queryKey: ["admin", "users", search, page],
-    queryFn: () => api.getAdminUsers({ limit: pageSize, offset: page * pageSize, search: search || undefined }),
+    queryKey: ["admin", "users", search, page, filters],
+    queryFn: () => api.getAdminUsers({ limit: pageSize, offset: page * pageSize, search: search || undefined, ...filters }),
   });
 
   const updateMutation = useMutation({
@@ -150,7 +184,7 @@ function UsersTab() {
 
   return (
     <div>
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -161,6 +195,12 @@ function UsersTab() {
             className="w-full rounded-lg border border-border bg-card pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
           />
         </div>
+        {hasFilters && filterLabel && (
+          <span data-testid="filter-badge" className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-accent/15 text-accent">
+            {filterLabel}
+            <button data-testid="clear-filter" onClick={onClearFilters} className="hover:text-foreground">&times;</button>
+          </span>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -177,82 +217,14 @@ function UsersTab() {
           </thead>
           <tbody>
             {data?.items.map((u) => (
-              <tr key={u.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="h-8 w-8 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold shrink-0">
-                      {u.name?.charAt(0)?.toUpperCase() || "?"}
-                    </div>
-                    <span className="truncate">{u.name}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
-                <td className="px-4 py-3">{u.account_count}</td>
-                <td className="px-4 py-3">{u.transaction_count}</td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-1">
-                    {u.is_admin && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/15 text-blue-400">
-                        <Shield className="h-3 w-3" />Admin
-                      </span>
-                    )}
-                    {u.is_disabled ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/15 text-red-400">
-                        <Ban className="h-3 w-3" />Disabled
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/15 text-green-400">
-                        <CheckCircle2 className="h-3 w-3" />Active
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap items-center justify-end gap-1">
-                    {u.is_disabled ? (
-                      <button
-                        onClick={() => updateMutation.mutate({ userId: u.id, body: { is_disabled: false } })}
-                        className="rounded-lg px-2 py-1 text-xs font-medium text-green-400 hover:bg-green-500/10 transition-colors"
-                        aria-label="Enable"
-                      >
-                        Enable
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => updateMutation.mutate({ userId: u.id, body: { is_disabled: true } })}
-                        className="rounded-lg px-2 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
-                        aria-label="Disable"
-                      >
-                        Disable
-                      </button>
-                    )}
-                    {u.is_admin ? (
-                      <button
-                        onClick={() => updateMutation.mutate({ userId: u.id, body: { is_admin: false } })}
-                        className="rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
-                        aria-label="Revoke admin"
-                      >
-                        <ShieldOff className="h-3.5 w-3.5 inline mr-1" />Revoke
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => updateMutation.mutate({ userId: u.id, body: { is_admin: true } })}
-                        className="rounded-lg px-2 py-1 text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors"
-                        aria-label="Make admin"
-                      >
-                        <Shield className="h-3.5 w-3.5 inline mr-1" />Admin
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setDeleteTarget(u)}
-                      className="rounded-lg px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
-                      aria-label="Delete"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 inline mr-1" />Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
+              <UserRow
+                key={u.id}
+                u={u}
+                expanded={expandedUserId === u.id}
+                onToggle={() => setExpandedUserId(expandedUserId === u.id ? null : u.id)}
+                onUpdate={(body) => updateMutation.mutate({ userId: u.id, body })}
+                onDelete={() => setDeleteTarget(u)}
+              />
             ))}
           </tbody>
         </table>
@@ -278,6 +250,190 @@ function UsersTab() {
         onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
         onCancel={() => setDeleteTarget(null)}
       />
+    </div>
+  );
+}
+
+// ── User Row ──────────────────────────────────────────────────
+
+function UserRow({ u, expanded, onToggle, onUpdate, onDelete }: {
+  u: AdminUser;
+  expanded: boolean;
+  onToggle: () => void;
+  onUpdate: (body: { is_admin?: boolean; is_disabled?: boolean }) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <>
+      <tr
+        data-testid={`user-row-${u.id}`}
+        onClick={onToggle}
+        className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
+      >
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="h-8 w-8 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold shrink-0">
+              {u.name?.charAt(0)?.toUpperCase() || "?"}
+            </div>
+            <span className="truncate">{u.name}</span>
+          </div>
+        </td>
+        <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
+        <td className="px-4 py-3">{u.account_count}</td>
+        <td className="px-4 py-3">{u.transaction_count}</td>
+        <td className="px-4 py-3">
+          <div className="flex flex-wrap items-center gap-1">
+            {u.is_admin && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/15 text-blue-400">
+                <Shield className="h-3 w-3" />Admin
+              </span>
+            )}
+            {u.is_disabled ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/15 text-red-400">
+                <Ban className="h-3 w-3" />Disabled
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/15 text-green-400">
+                <CheckCircle2 className="h-3 w-3" />Active
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex flex-wrap items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+            {u.is_disabled ? (
+              <button
+                onClick={() => onUpdate({ is_disabled: false })}
+                className="rounded-lg px-2 py-1 text-xs font-medium text-green-400 hover:bg-green-500/10 transition-colors"
+                aria-label="Enable"
+              >
+                Enable
+              </button>
+            ) : (
+              <button
+                onClick={() => onUpdate({ is_disabled: true })}
+                className="rounded-lg px-2 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
+                aria-label="Disable"
+              >
+                Disable
+              </button>
+            )}
+            {u.is_admin ? (
+              <button
+                onClick={() => onUpdate({ is_admin: false })}
+                className="rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
+                aria-label="Revoke admin"
+              >
+                <ShieldOff className="h-3.5 w-3.5 inline mr-1" />Revoke
+              </button>
+            ) : (
+              <button
+                onClick={() => onUpdate({ is_admin: true })}
+                className="rounded-lg px-2 py-1 text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors"
+                aria-label="Make admin"
+              >
+                <Shield className="h-3.5 w-3.5 inline mr-1" />Admin
+              </button>
+            )}
+            <button
+              onClick={onDelete}
+              className="rounded-lg px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+              aria-label="Delete"
+            >
+              <Trash2 className="h-3.5 w-3.5 inline mr-1" />Delete
+            </button>
+          </div>
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={6} className="p-0">
+            <UserDetailPanel userId={u.id} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function UserDetailPanel({ userId }: { userId: number }) {
+  const { data: detail, isLoading } = useQuery({
+    queryKey: ["admin", "user-detail", userId],
+    queryFn: () => api.getAdminUserDetail(userId),
+  });
+
+  if (isLoading || !detail) {
+    return (
+      <div data-testid={`user-detail-${userId}`} className="px-6 py-4 bg-muted/20 border-b border-border">
+        <div className="h-32 animate-pulse bg-muted rounded-lg" />
+      </div>
+    );
+  }
+
+  return (
+    <div data-testid={`user-detail-${userId}`} className="px-6 py-4 bg-muted/20 border-b border-border">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <div className="rounded-lg border border-border bg-card p-3">
+          <p className="text-xs text-muted-foreground mb-1">Total Transactions</p>
+          <p className="text-lg font-bold">{detail.stats.total_transactions.toLocaleString()}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <p className="text-xs text-muted-foreground mb-1">Categories Used</p>
+          <p className="text-lg font-bold">{detail.stats.categories_used}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <p className="text-xs text-muted-foreground mb-1">Rules Created</p>
+          <p className="text-lg font-bold">{detail.stats.rules_created}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <p className="text-xs text-muted-foreground mb-1">Tags Created</p>
+          <p className="text-lg font-bold">{detail.stats.tags_created}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <h4 className="px-4 py-2 text-xs font-semibold text-muted-foreground border-b border-border">Accounts ({detail.accounts.length})</h4>
+          <div className="divide-y divide-border max-h-48 overflow-y-auto">
+            {detail.accounts.map((a) => (
+              <div key={a.id} className="px-4 py-2 text-sm flex items-center justify-between">
+                <span>{a.name}</span>
+                <span className="text-muted-foreground text-xs">{a.type} &middot; ${a.current_balance.toLocaleString()}</span>
+              </div>
+            ))}
+            {detail.accounts.length === 0 && <p className="px-4 py-3 text-xs text-muted-foreground">No accounts</p>}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <h4 className="px-4 py-2 text-xs font-semibold text-muted-foreground border-b border-border">Recent Transactions</h4>
+          <div className="divide-y divide-border max-h-48 overflow-y-auto">
+            {detail.recent_transactions.map((t) => (
+              <div key={t.id} className="px-4 py-2 text-sm flex items-center justify-between">
+                <div>
+                  <span>{t.merchant_name || "—"}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{t.category}</span>
+                </div>
+                <span className="font-mono text-xs">${Math.abs(t.amount).toFixed(2)}</span>
+              </div>
+            ))}
+            {detail.recent_transactions.length === 0 && <p className="px-4 py-3 text-xs text-muted-foreground">No transactions</p>}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card overflow-hidden lg:col-span-2">
+          <h4 className="px-4 py-2 text-xs font-semibold text-muted-foreground border-b border-border">Recent Activity</h4>
+          <div className="divide-y divide-border max-h-48 overflow-y-auto">
+            {detail.recent_activity.map((a, i) => (
+              <div key={i} className="px-4 py-2 text-sm flex items-center justify-between">
+                <span className="capitalize">{a.action.replace(/_/g, " ")}</span>
+                <span className="text-xs text-muted-foreground">{a.created_at ? new Date(a.created_at).toLocaleString() : "—"}</span>
+              </div>
+            ))}
+            {detail.recent_activity.length === 0 && <p className="px-4 py-3 text-xs text-muted-foreground">No activity</p>}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -341,8 +497,70 @@ function AnalyticsTab() {
     queryFn: () => api.getAdminStorage(),
   });
 
+  const { data: activeUsers } = useQuery({
+    queryKey: ["admin", "active-users"],
+    queryFn: () => api.getAdminActiveUsers(30),
+  });
+
+  const { data: txnVolume } = useQuery({
+    queryKey: ["admin", "transaction-volume"],
+    queryFn: () => api.getAdminTransactionVolume(30),
+  });
+
   return (
     <div className="space-y-6">
+      {/* Active Users Chart */}
+      <div data-testid="active-users-chart" className="rounded-xl border border-border bg-card p-4">
+        <h3 className="font-semibold mb-4 flex items-center gap-2">
+          <Activity className="h-5 w-5 text-green-400" />
+          Active Users (30 days)
+        </h3>
+        {activeUsers && activeUsers.length > 0 ? (
+          <div className="flex items-end gap-1 h-32">
+            {activeUsers.map((d) => {
+              const maxDau = Math.max(...activeUsers.map((p) => p.dau), 1);
+              const height = (d.dau / maxDau) * 100;
+              return (
+                <div key={d.date} className="flex-1 flex flex-col items-center gap-1 group relative">
+                  <div className="w-full bg-green-400/80 rounded-t" style={{ height: `${height}%` }} />
+                  <div className="hidden group-hover:block absolute -top-8 bg-card border border-border rounded px-2 py-1 text-xs shadow-lg z-10 whitespace-nowrap">
+                    {d.date}: {d.dau} DAU
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No active user data yet</p>
+        )}
+      </div>
+
+      {/* Transaction Volume Chart */}
+      <div data-testid="transaction-volume-chart" className="rounded-xl border border-border bg-card p-4">
+        <h3 className="font-semibold mb-4 flex items-center gap-2">
+          <ArrowLeftRight className="h-5 w-5 text-indigo-400" />
+          Transaction Volume (30 days)
+        </h3>
+        {txnVolume && txnVolume.length > 0 ? (
+          <div className="flex items-end gap-1 h-32">
+            {txnVolume.map((d) => {
+              const maxCount = Math.max(...txnVolume.map((p) => p.count), 1);
+              const height = (d.count / maxCount) * 100;
+              return (
+                <div key={d.date} className="flex-1 flex flex-col items-center gap-1 group relative">
+                  <div className="w-full bg-indigo-400/80 rounded-t" style={{ height: `${height}%` }} />
+                  <div className="hidden group-hover:block absolute -top-8 bg-card border border-border rounded px-2 py-1 text-xs shadow-lg z-10 whitespace-nowrap">
+                    {d.date}: {d.count} txns
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No transaction volume data yet</p>
+        )}
+      </div>
+
       {/* Feature Adoption */}
       <div className="rounded-xl border border-border bg-card p-4">
         <h3 className="font-semibold mb-4 flex items-center gap-2">

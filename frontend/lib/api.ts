@@ -1,5 +1,5 @@
 import type {
-  Account, AccountSummary, AdminPlaidConfig, AdminOverview, AdminUser, AdminUsersResponse,
+  Account, AccountSummary, AdminPlaidConfig, AdminOverview, AdminUser, AdminUserDetail, AdminUsersResponse,
   AdminPlaidHealth, AdminErrorsResponse, ActiveUsersPoint, FeatureAdoption,
   TransactionVolumePoint, StorageMetric,
   Budget, BudgetConflict, BudgetSummary,
@@ -806,11 +806,15 @@ export const api = {
   // Admin
   getAdminOverview: () => fetcher<AdminOverview>("/admin/overview"),
 
-  getAdminUsers: (params?: { limit?: number; offset?: number; search?: string }) => {
+  getAdminUsers: (params?: { limit?: number; offset?: number; search?: string; active_days?: number; has_linked?: boolean; has_manual?: boolean; sort?: string }) => {
     const p = new URLSearchParams();
     if (params?.limit != null) p.set("limit", String(params.limit));
     if (params?.offset != null) p.set("offset", String(params.offset));
     if (params?.search) p.set("search", params.search);
+    if (params?.active_days != null) p.set("active_days", String(params.active_days));
+    if (params?.has_linked != null) p.set("has_linked", String(params.has_linked));
+    if (params?.has_manual != null) p.set("has_manual", String(params.has_manual));
+    if (params?.sort) p.set("sort", params.sort);
     const qs = p.toString();
     return fetcher<AdminUsersResponse>(`/admin/users${qs ? `?${qs}` : ""}`);
   },
@@ -823,6 +827,9 @@ export const api = {
 
   deleteAdminUser: (userId: number) =>
     fetchVoid(`/admin/users/${userId}`, { method: "DELETE" }),
+
+  getAdminUserDetail: (userId: number) =>
+    fetcher<AdminUserDetail>(`/admin/users/${userId}/detail`),
 
   getAdminPlaidHealth: () => fetcher<AdminPlaidHealth>("/admin/plaid-health"),
 

@@ -15,6 +15,7 @@ from app.database import get_session
 from app.models import (
     Account,
     AccountBalanceSnapshot,
+    AccountType,
     ActivityAction,
     ActivityLog,
     Budget,
@@ -41,8 +42,15 @@ from app.models import (
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
+def _is_admin(user: User) -> bool:
+    settings = get_settings()
+    return user.is_admin or bool(
+        settings.admin_email and user.email == settings.admin_email
+    )
+
+
 def _require_admin(user: User) -> None:
-    if not user.is_admin:
+    if not _is_admin(user):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
@@ -114,6 +122,10 @@ def admin_users(
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
     search: Optional[str] = None,
+    active_days: Optional[int] = None,
+    has_linked: Optional[bool] = None,
+    has_manual: Optional[bool] = None,
+    sort: Optional[str] = None,
 ):
     _require_admin(user)
 
@@ -123,6 +135,21 @@ def admin_users(
         query = query.where(
             col(User.email).ilike(pattern) | col(User.name).ilike(pattern)
         )
+
+    if active_days is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=active_days)
+        active_ids = select(ActivityLog.user_id).where(
+            ActivityLog.created_at >= cutoff
+        ).distinct()
+        query = query.where(col(User.id).in_(active_ids))
+
+    if has_linked is True:
+        linked_ids = select(Account.user_id).where(Account.is_linked == True).distinct()  # noqa: E712
+        query = query.where(col(User.id).in_(linked_ids))
+
+    if has_manual is True:
+        manual_ids = select(Account.user_id).where(Account.is_linked == False).distinct()  # noqa: E712
+        query = query.where(col(User.id).in_(manual_ids))
 
     total = session.exec(
         select(func.count()).select_from(query.subquery())
@@ -157,6 +184,9 @@ def admin_users(
             "transaction_count": txn_count,
             "last_active": last_activity.isoformat() if last_activity else None,
         })
+
+    if sort == "account_count_desc":
+        items.sort(key=lambda x: x["account_count"], reverse=True)
 
     return {"items": items, "total": total}
 
@@ -553,3 +583,131 @@ def admin_storage(
         result.append({"table_name": name, "row_count": count})
 
     return result
+
+
+# ── User Detail ──────────────────────────────────────────────────
+
+
+@router.get("/users/{user_id}/detail")
+def admin_user_detail(
+    user_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+
+    target = session.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    acct_count = session.exec(
+        select(func.count(Account.id)).where(Account.user_id == user_id)
+    ).one()
+    txn_count = session.exec(
+        select(func.count(Transaction.id)).where(Transaction.user_id == user_id)
+    ).one()
+    last_activity = session.exec(
+        select(ActivityLog.created_at)
+        .where(ActivityLog.user_id == user_id)
+        .order_by(col(ActivityLog.created_at).desc())
+        .limit(1)
+    ).first()
+
+    user_summary = {
+        "id": target.id,
+        "email": target.email,
+        "name": target.display_name or target.name,
+        "picture": target.avatar_url or target.picture,
+        "is_admin": target.is_admin,
+        "is_disabled": target.is_disabled,
+        "created_at": target.created_at.isoformat() if target.created_at else None,
+        "account_count": acct_count,
+        "transaction_count": txn_count,
+        "last_active": last_activity.isoformat() if last_activity else None,
+    }
+
+    accounts = session.exec(
+        select(Account).where(Account.user_id == user_id)
+    ).all()
+    accounts_out = [
+        {
+            "id": a.id,
+            "name": a.name,
+            "type": a.type.value if isinstance(a.type, AccountType) else a.type,
+            "subtype": a.subtype,
+            "current_balance": float(a.current_balance),
+            "is_linked": a.is_linked,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in accounts
+    ]
+
+    recent_txns = session.exec(
+        select(Transaction)
+        .where(Transaction.user_id == user_id)
+        .order_by(col(Transaction.date).desc())
+        .limit(20)
+    ).all()
+    txns_out = []
+    for t in recent_txns:
+        acct_name = None
+        if t.account_id:
+            acct = session.get(Account, t.account_id)
+            acct_name = acct.name if acct else None
+        txns_out.append({
+            "id": t.id,
+            "date": t.date.isoformat(),
+            "merchant_name": t.merchant_name,
+            "amount": float(t.amount),
+            "category": t.category,
+            "account_name": acct_name,
+        })
+
+    recent_activity = session.exec(
+        select(ActivityLog)
+        .where(ActivityLog.user_id == user_id)
+        .order_by(col(ActivityLog.created_at).desc())
+        .limit(20)
+    ).all()
+    activity_out = [
+        {
+            "action": a.action.value if isinstance(a.action, ActivityAction) else a.action,
+            "detail": a.detail,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in recent_activity
+    ]
+
+    total_transactions = session.exec(
+        select(func.count(Transaction.id)).where(Transaction.user_id == user_id)
+    ).one()
+    first_txn_date = session.exec(
+        select(func.min(Transaction.date)).where(Transaction.user_id == user_id)
+    ).first()
+    categories_used = session.exec(
+        select(func.count(func.distinct(Transaction.category)))
+        .where(Transaction.user_id == user_id)
+        .where(Transaction.category.isnot(None))  # type: ignore[union-attr]
+    ).one()
+    rules_created = session.exec(
+        select(func.count(CategoryRule.id)).where(CategoryRule.user_id == user_id)
+    ).one()
+    tags_created = session.exec(
+        select(func.count(Tag.id)).where(Tag.user_id == user_id)
+    ).one()
+
+    stats = {
+        "total_transactions": total_transactions,
+        "first_transaction_date": first_txn_date.isoformat() if first_txn_date else None,
+        "categories_used": categories_used,
+        "rules_created": rules_created,
+        "tags_created": tags_created,
+    }
+
+    return {
+        "user": user_summary,
+        "accounts": accounts_out,
+        "recent_transactions": txns_out,
+        "recent_activity": activity_out,
+        "stats": stats,
+    }

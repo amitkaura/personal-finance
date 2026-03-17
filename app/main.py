@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
     _validate_startup_settings()
     await _initialize_rate_limiter_backend()
     create_db_and_tables()
+    _migrate_timestamps()
     _migrate_llm_fields_to_household()
     _migrate_sync_fields_to_household()
     _migrate_household_plaid_mode()
@@ -147,6 +148,45 @@ def _migrate_household_plaid_mode() -> None:
         conn.execute(text("UPDATE households SET plaid_mode = 'byok' WHERE plaid_mode IS NULL"))
         conn.commit()
     logger.info("Household plaid_mode migration check complete")
+
+
+def _migrate_timestamps() -> None:
+    """Add created_at/updated_at columns to all tables."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    created_at_tables = [
+        "plaid_items", "accounts", "transactions", "categories",
+        "category_rules", "user_settings", "budgets", "spending_preferences",
+        "goal_account_links", "net_worth_snapshots", "account_balance_snapshots",
+        "tags", "transaction_tags", "household_plaid_configs", "app_plaid_config",
+        "household_llm_configs", "household_sync_configs",
+    ]
+    updated_at_tables = created_at_tables + [
+        "users", "goals", "goal_contributions", "households",
+        "household_invitations", "household_members", "activity_log", "error_log",
+    ]
+
+    with engine.connect() as conn:
+        for t in created_at_tables:
+            try:
+                conn.execute(text(
+                    f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS "
+                    "created_at timestamp without time zone NOT NULL DEFAULT now()"
+                ))
+            except Exception:
+                pass
+        for t in updated_at_tables:
+            try:
+                conn.execute(text(
+                    f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS "
+                    "updated_at timestamp without time zone"
+                ))
+            except Exception:
+                pass
+        conn.commit()
+    logger.info("Timestamp migration check complete")
 
 
 def _validate_startup_settings() -> None:

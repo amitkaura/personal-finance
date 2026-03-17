@@ -22,6 +22,7 @@ const mockApi = vi.hoisted(() => ({
   getAdminFeatureAdoption: vi.fn(),
   getAdminTransactionVolume: vi.fn(),
   getAdminStorage: vi.fn(),
+  getAdminUserDetail: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({ api: mockApi }));
@@ -256,5 +257,147 @@ describe("AdminPage", () => {
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument();
     });
+  });
+
+  // ── KPI Drill-Down Tests ──────────────────────────────────────
+
+  it("clicking Active (7d) KPI switches to users tab with active filter", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("15")).toBeInTheDocument();
+    });
+
+    const kpiCard = screen.getByTestId("kpi-active-7d");
+    await user.click(kpiCard);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /users/i })).toHaveAttribute("aria-selected", "true");
+    });
+
+    expect(mockApi.getAdminUsers).toHaveBeenCalledWith(
+      expect.objectContaining({ active_days: 7 })
+    );
+  });
+
+  it("clicking Linked Accounts KPI switches to users tab with has_linked filter", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("42")).toBeInTheDocument();
+    });
+
+    const kpiCard = screen.getByTestId("kpi-linked-accounts");
+    await user.click(kpiCard);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /users/i })).toHaveAttribute("aria-selected", "true");
+    });
+
+    expect(mockApi.getAdminUsers).toHaveBeenCalledWith(
+      expect.objectContaining({ has_linked: true })
+    );
+  });
+
+  it("clicking Manual Accounts KPI switches to users tab with has_manual filter", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("42")).toBeInTheDocument();
+    });
+
+    const kpiCard = screen.getByTestId("kpi-manual-accounts");
+    await user.click(kpiCard);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /users/i })).toHaveAttribute("aria-selected", "true");
+    });
+
+    expect(mockApi.getAdminUsers).toHaveBeenCalledWith(
+      expect.objectContaining({ has_manual: true })
+    );
+  });
+
+  it("shows filter badge on users tab when filter is active and can clear it", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("kpi-active-7d")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("kpi-active-7d"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-badge")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("clear-filter"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("filter-badge")).not.toBeInTheDocument();
+    });
+  });
+
+  // ── User Detail Expandable Row Tests ──────────────────────────
+
+  it("clicking a user row expands detail panel", async () => {
+    const mockDetail = {
+      user: MOCK_USERS.items[0],
+      accounts: [{ id: 1, name: "Checking", type: "depository", subtype: "checking", current_balance: 5000, is_linked: true, created_at: "2025-01-01T00:00:00" }],
+      recent_transactions: [{ id: 1, date: "2025-03-10", merchant_name: "Amazon", amount: 42.5, category: "Shopping", account_name: "Checking" }],
+      recent_activity: [{ action: "login", detail: null, created_at: "2025-03-10T14:00:00" }],
+      stats: { total_transactions: 150, first_transaction_date: "2025-01-01", categories_used: 8, rules_created: 3, tags_created: 2 },
+    };
+    mockApi.getAdminUserDetail.mockResolvedValue(mockDetail);
+
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /users/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("tab", { name: /users/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("user@example.com")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("user-row-2"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("user-detail-2")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Checking")).toBeInTheDocument();
+    expect(screen.getByText("Amazon")).toBeInTheDocument();
+  });
+
+  // ── Analytics Tab Chart Tests ─────────────────────────────────
+
+  it("analytics tab shows active users and transaction volume sections", async () => {
+    mockApi.getAdminActiveUsers.mockResolvedValue([
+      { date: "2025-03-10", dau: 10, wau: 30, mau: 50 },
+      { date: "2025-03-11", dau: 12, wau: 32, mau: 52 },
+    ]);
+    mockApi.getAdminTransactionVolume.mockResolvedValue([
+      { date: "2025-03-10", count: 100 },
+      { date: "2025-03-11", count: 120 },
+    ]);
+
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /analytics/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("tab", { name: /analytics/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("active-users-chart")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("transaction-volume-chart")).toBeInTheDocument();
   });
 });

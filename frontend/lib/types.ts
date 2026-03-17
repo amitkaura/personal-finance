@@ -424,3 +424,44 @@ export interface StorageMetric {
   table_name: string;
   row_count: number;
 }
+
+export interface AdminUserDetailAccount {
+  id: number;
+  name: string;
+  type: string;
+  subtype: string | null;
+  current_balance: number;
+  is_linked: boolean;
+  created_at: string | null;
+}
+
+export interface AdminUserDetailTransaction {
+  id: number;
+  date: string;
+  merchant_name: string | null;
+  amount: number;
+  category: string | null;
+  account_name: string | null;
+}
+
+export interface AdminUserDetailActivity {
+  action: string;
+  detail: string | null;
+  created_at: string | null;
+}
+
+export interface AdminUserDetailStats {
+  total_transactions: number;
+  first_transaction_date: string | null;
+  categories_used: number;
+  rules_created: number;
+  tags_created: number;
+}
+
+export interface AdminUserDetail {
+  user: AdminUser;
+  accounts: AdminUserDetailAccount[];
+  recent_transactions: AdminUserDetailTransaction[];
+  recent_activity: AdminUserDetailActivity[];
+  stats: AdminUserDetailStats;
+}
