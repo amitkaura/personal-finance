@@ -17,7 +17,7 @@ from redis.asyncio import Redis, from_url
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.database import create_db_and_tables, engine
+from app.database import auto_sync_columns, create_db_and_tables, engine
 from app.routes.accounts import router as accounts_router
 from app.routes.admin import router as admin_router
 from app.routes.auth import router as auth_router
@@ -39,12 +39,10 @@ async def lifespan(app: FastAPI):
     _validate_startup_settings()
     await _initialize_rate_limiter_backend()
     create_db_and_tables()
-    _migrate_user_admin_fields()
-    _migrate_timestamps()
+    auto_sync_columns()
     _migrate_llm_fields_to_household()
     _migrate_sync_fields_to_household()
-    _migrate_household_plaid_mode()
-    _migrate_household_llm_mode()
+    _backfill_plaid_mode()
     _backfill_orphan_households()
     settings = get_settings()
     if settings.run_scheduler:
@@ -137,92 +135,15 @@ def _backfill_orphan_households() -> None:
         logger.info("Backfill complete")
 
 
-def _migrate_user_admin_fields() -> None:
-    """Add is_admin and is_disabled columns to users table."""
+def _backfill_plaid_mode() -> None:
+    """Backfill existing households to 'byok' if plaid_mode is NULL."""
     import logging
 
     logger = logging.getLogger(__name__)
     with engine.connect() as conn:
-        try:
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false"))
-        except Exception:
-            conn.rollback()
-        try:
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_disabled boolean NOT NULL DEFAULT false"))
-        except Exception:
-            conn.rollback()
-        conn.commit()
-    logger.info("User admin fields migration check complete")
-
-
-def _migrate_household_plaid_mode() -> None:
-    """Add plaid_mode column to households and backfill existing rows to 'byok'."""
-    import logging
-
-    logger = logging.getLogger(__name__)
-    with engine.connect() as conn:
-        try:
-            conn.execute(text("ALTER TABLE households ADD COLUMN IF NOT EXISTS plaid_mode varchar"))
-        except Exception:
-            conn.rollback()
         conn.execute(text("UPDATE households SET plaid_mode = 'byok' WHERE plaid_mode IS NULL"))
         conn.commit()
-    logger.info("Household plaid_mode migration check complete")
-
-
-def _migrate_household_llm_mode() -> None:
-    """Add llm_mode column to households (nullable, no backfill needed)."""
-    import logging
-
-    logger = logging.getLogger(__name__)
-    with engine.connect() as conn:
-        try:
-            conn.execute(text("ALTER TABLE households ADD COLUMN IF NOT EXISTS llm_mode varchar"))
-        except Exception:
-            conn.rollback()
-        conn.commit()
-    logger.info("Household llm_mode migration check complete")
-
-
-def _migrate_timestamps() -> None:
-    """Add created_at/updated_at columns to all tables."""
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    created_at_tables = [
-        "users", "plaid_items", "accounts", "transactions", "categories",
-        "category_rules", "user_settings", "budgets", "spending_preferences",
-        "goals", "goal_account_links", "goal_contributions",
-        "net_worth_snapshots", "account_balance_snapshots",
-        "tags", "transaction_tags", "households", "household_plaid_configs",
-        "household_invitations", "app_plaid_config",
-        "household_llm_configs", "app_llm_config", "household_sync_configs",
-        "activity_log", "error_log",
-    ]
-    updated_at_tables = created_at_tables + [
-        "household_members",
-    ]
-
-    with engine.connect() as conn:
-        for t in created_at_tables:
-            try:
-                conn.execute(text(
-                    f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS "
-                    "created_at timestamp without time zone NOT NULL DEFAULT now()"
-                ))
-            except Exception:
-                pass
-        for t in updated_at_tables:
-            try:
-                conn.execute(text(
-                    f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS "
-                    "updated_at timestamp without time zone"
-                ))
-            except Exception:
-                pass
-        conn.commit()
-    logger.info("Timestamp migration check complete")
+    logger.info("Plaid mode backfill check complete")
 
 
 def _validate_startup_settings() -> None:
