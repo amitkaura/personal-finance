@@ -23,6 +23,9 @@ const mockApi = vi.hoisted(() => ({
   getAdminTransactionVolume: vi.fn(),
   getAdminStorage: vi.fn(),
   getAdminUserDetail: vi.fn(),
+  getAdminPlaidConfig: vi.fn(),
+  updateAdminPlaidConfig: vi.fn(),
+  deleteAdminPlaidConfig: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({ api: mockApi }));
@@ -113,6 +116,15 @@ const MOCK_STORAGE = [
   { table_name: "accounts", row_count: 88 },
 ];
 
+const MOCK_ADMIN_PLAID_CONFIG = {
+  configured: true,
+  enabled: true,
+  plaid_env: "sandbox",
+  client_id_last4: "1234",
+  secret_last4: "5678",
+  managed_household_count: 3,
+};
+
 describe("AdminPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -125,9 +137,10 @@ describe("AdminPage", () => {
     mockApi.getAdminFeatureAdoption.mockResolvedValue(MOCK_FEATURE_ADOPTION);
     mockApi.getAdminTransactionVolume.mockResolvedValue([]);
     mockApi.getAdminStorage.mockResolvedValue(MOCK_STORAGE);
+    mockApi.getAdminPlaidConfig.mockResolvedValue(MOCK_ADMIN_PLAID_CONFIG);
   });
 
-  it("renders all four tabs", async () => {
+  it("renders all five tabs", async () => {
     renderWithProviders(<AdminPage />);
 
     await waitFor(() => {
@@ -136,6 +149,7 @@ describe("AdminPage", () => {
     expect(screen.getByRole("tab", { name: /users/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /plaid health/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /analytics/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /plaid config/i })).toBeInTheDocument();
   });
 
   it("shows overview KPI cards with correct data", async () => {
@@ -399,5 +413,41 @@ describe("AdminPage", () => {
       expect(screen.getByTestId("active-users-chart")).toBeInTheDocument();
     });
     expect(screen.getByTestId("transaction-volume-chart")).toBeInTheDocument();
+  });
+
+  // ── Plaid Config Tab Tests ──────────────────────────────────
+
+  it("switches to plaid config tab and shows config status", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /plaid config/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("tab", { name: /plaid config/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/3 household/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/configured/i)).toBeInTheDocument();
+  });
+
+  it("plaid config tab shows save button and environment selector", async () => {
+    const user = userEvent.setup();
+    mockApi.getAdminPlaidConfig.mockResolvedValue({
+      configured: false, enabled: false, plaid_env: null,
+      client_id_last4: null, secret_last4: null, managed_household_count: 0,
+    });
+
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /plaid config/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("tab", { name: /plaid config/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /save/i })).toBeInTheDocument();
+    });
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Users,
@@ -18,6 +18,11 @@ import {
   Home,
   Ban,
   CheckCircle2,
+  Eye,
+  EyeOff,
+  Save,
+  Loader2,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { api } from "@/lib/api";
@@ -26,6 +31,7 @@ import type {
   AdminOverview,
   AdminUser,
   AdminUserDetail,
+  AdminPlaidConfig,
   AdminPlaidHealth,
   ActiveUsersPoint,
   TransactionVolumePoint,
@@ -33,7 +39,7 @@ import type {
   StorageMetric,
 } from "@/lib/types";
 
-type Tab = "overview" | "users" | "plaid-health" | "analytics";
+type Tab = "overview" | "users" | "plaid-health" | "analytics" | "plaid-config";
 
 interface UserFilters {
   active_days?: number;
@@ -47,6 +53,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "users", label: "Users" },
   { id: "plaid-health", label: "Plaid Health" },
   { id: "analytics", label: "Analytics" },
+  { id: "plaid-config", label: "Plaid Config" },
 ];
 
 export default function AdminPage() {
@@ -93,6 +100,7 @@ export default function AdminPage() {
       {activeTab === "users" && <UsersTab filters={userFilters} onClearFilters={() => setUserFilters({})} />}
       {activeTab === "plaid-health" && <PlaidHealthTab />}
       {activeTab === "analytics" && <AnalyticsTab />}
+      {activeTab === "plaid-config" && <PlaidConfigTab />}
     </div>
   );
 }
@@ -613,6 +621,230 @@ function AnalyticsTab() {
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Plaid Config Tab ─────────────────────────────────────────
+
+function PlaidConfigTab() {
+  const queryClient = useQueryClient();
+
+  const { data: adminConfig } = useQuery({
+    queryKey: ["admin-plaid-config"],
+    queryFn: api.getAdminPlaidConfig,
+  });
+
+  const [clientId, setClientId] = useState("");
+  const [secret, setSecret] = useState("");
+  const [plaidEnv, setPlaidEnv] = useState("sandbox");
+  const [enabled, setEnabled] = useState(false);
+  const [showClientId, setShowClientId] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  useEffect(() => {
+    if (adminConfig?.configured) {
+      setPlaidEnv(adminConfig.plaid_env ?? "sandbox");
+      setEnabled(adminConfig.enabled);
+    }
+  }, [adminConfig]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      api.updateAdminPlaidConfig({
+        client_id: clientId,
+        secret,
+        plaid_env: plaidEnv,
+        enabled,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-plaid-config"] });
+      queryClient.invalidateQueries({ queryKey: ["plaid-mode"] });
+      setClientId("");
+      setSecret("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: () =>
+      api.updateAdminPlaidConfig({
+        client_id: clientId || "unchanged",
+        secret: secret || "unchanged",
+        plaid_env: plaidEnv,
+        enabled: !enabled,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-plaid-config"] });
+      queryClient.invalidateQueries({ queryKey: ["plaid-mode"] });
+      setEnabled(!enabled);
+    },
+  });
+
+  async function handleRemove() {
+    setRemoving(true);
+    try {
+      await api.deleteAdminPlaidConfig();
+      queryClient.invalidateQueries({ queryKey: ["admin-plaid-config"] });
+      queryClient.invalidateQueries({ queryKey: ["plaid-mode"] });
+      setConfirmRemove(false);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  if (!adminConfig) {
+    return <div className="h-48 rounded-xl bg-card border border-border animate-pulse" />;
+  }
+
+  const labelClass = "block text-xs font-medium text-muted-foreground mb-1.5";
+  const inputClass = "rounded-md bg-muted px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground";
+  const selectClass = "rounded-md bg-muted px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring cursor-pointer";
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-border bg-card p-6">
+        <div className="flex items-center gap-2">
+          <Settings className="h-5 w-5 text-accent" />
+          <h3 className="text-base font-semibold">Managed Plaid Credentials</h3>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Configure app-level Plaid credentials so users can connect without their own keys.
+        </p>
+
+        {adminConfig.configured && (
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="inline-flex items-center gap-2 rounded-lg bg-green-500/10 border border-green-500/20 px-3 py-2">
+              <div className="h-2 w-2 rounded-full bg-green-400" />
+              <span className="text-xs font-medium text-green-400">
+                Configured ({adminConfig.plaid_env})
+              </span>
+              <span className="text-xs text-muted-foreground">
+                &middot; {adminConfig.managed_household_count} household{adminConfig.managed_household_count !== 1 ? "s" : ""} using managed
+              </span>
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={() => {
+                  if (adminConfig.configured) {
+                    toggleMutation.mutate();
+                  }
+                }}
+                className="h-4 w-4 rounded border-border bg-muted accent-accent"
+              />
+              <span className="text-xs">Allow households to use managed Plaid</span>
+            </label>
+          </div>
+        )}
+
+        <div className="mt-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Client ID</label>
+              <div className="relative">
+                <input
+                  type={showClientId ? "text" : "password"}
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  placeholder={adminConfig.configured ? `••••${adminConfig.client_id_last4}` : "App-level Plaid Client ID"}
+                  className={`${inputClass} w-full pr-10`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowClientId(!showClientId)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showClientId ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>Secret</label>
+              <div className="relative">
+                <input
+                  type={showSecret ? "text" : "password"}
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  placeholder={adminConfig.configured ? `••••${adminConfig.secret_last4}` : "App-level Plaid Secret"}
+                  className={`${inputClass} w-full pr-10`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret(!showSecret)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-xs">
+            <label className={labelClass} htmlFor="plaid-env-select">Environment</label>
+            <select
+              id="plaid-env-select"
+              value={plaidEnv}
+              onChange={(e) => setPlaidEnv(e.target.value)}
+              className={`${selectClass} w-full`}
+            >
+              <option value="sandbox">Sandbox (testing)</option>
+              <option value="production">Production</option>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {saved && <span className="text-xs text-green-400">Admin Plaid config saved</span>}
+              {saveMutation.isError && (
+                <span className="text-xs text-red-400">
+                  {(saveMutation.error as Error).message}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {adminConfig.configured && (
+                <button
+                  onClick={() => setConfirmRemove(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Remove
+                </button>
+              )}
+              <button
+                onClick={() => saveMutation.mutate()}
+                disabled={!clientId.trim() || !secret.trim() || saveMutation.isPending}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+                aria-label="Save"
+              >
+                {saveMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {adminConfig.configured ? "Update" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <ConfirmDialog
+          open={confirmRemove}
+          title="Remove managed Plaid credentials?"
+          description="This will remove the app-level Plaid credentials. Households using managed Plaid will no longer be able to link new accounts."
+          confirmLabel="Remove"
+          destructive
+          loading={removing}
+          onConfirm={handleRemove}
+          onCancel={() => setConfirmRemove(false)}
+        />
       </div>
     </div>
   );

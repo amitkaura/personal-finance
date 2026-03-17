@@ -21,7 +21,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Account Management
 - Connect bank accounts, credit cards, loans, and investment accounts via Plaid Link
 - **Managed or Bring Your Own Plaid** -- hosted instances can offer managed Plaid credentials so users connect instantly; alternatively each household configures its own Plaid API keys in Settings; one-time onboarding choice (managed vs BYOK) with no switching
-- **Admin Plaid config** -- instance admin (identified by `ADMIN_EMAIL` env var) can configure app-level Plaid credentials, toggle managed mode, and see how many households use it
+- **Admin Plaid config** -- instance admin can configure app-level Plaid credentials, toggle managed mode, and see how many households use it (managed via Admin Panel → Plaid Config tab)
 - Supports US and Canadian institutions
 - Automatic balance refresh on every sync
 - Account type and subtype selection during creation, with editable subtypes
@@ -151,6 +151,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Plaid health** -- aggregated Plaid sync/link errors with recent failure details
 - **Error log** -- paginated, filterable error log (by type, user, date range)
 - **Analytics** -- DAU/WAU/MAU time series with bar charts, feature adoption rates (budgets, goals, tags, categories, rules, linked accounts), transaction volume bar chart, storage metrics (row counts per table)
+- **Plaid Config** -- dedicated tab for managing app-level Plaid credentials (client ID, secret, environment), toggling managed mode, and removing config; moved from Settings page
 - **Activity tracking** -- `ActivityLog` model records user actions (login, sync, import, categorize, etc.) for analytics
 - **Disabled user enforcement** -- disabled users receive 403 on all authenticated endpoints
 - **Sidebar integration** -- Admin link appears conditionally for admin users
@@ -247,8 +248,8 @@ personal-finance/
 │   │   ├── recurring/page.tsx      # Recurring transaction analysis
 │   │   ├── onboarding/page.tsx     # Plaid mode selection (managed vs BYOK)
 │   │   ├── connections/page.tsx    # Plaid connections management
-│   │   ├── admin/page.tsx          # Admin panel (overview, users, plaid health, analytics)
-│   │   ├── settings/page.tsx       # User preferences and configuration (incl. admin section)
+│   │   ├── admin/page.tsx          # Admin panel (overview, users, plaid health, analytics, plaid config)
+│   │   ├── settings/page.tsx       # User preferences and configuration
 │   │   ├── staging-login/page.tsx  # Staging password gate login page
 │   │   ├── api/staging-auth/route.ts # Staging password verification API route
 │   │   ├── layout.tsx              # Root layout
@@ -676,7 +677,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (445 tests across 44 files):**
+**What's tested (447 tests across 44 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -720,8 +721,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `link-account` | 4 | Idle button, token fetch on click, success message, pluralization |
 | `onboarding` | 5 | Managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls, dashboard redirect |
 | `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
-| `admin` | 14 | Tab rendering, KPI cards with drill-down click (Active 7d, Linked/Manual accounts → users tab with filters), filter badge and clear, user list, disable/delete actions with confirmation, expandable user detail row (accounts, transactions, activity), tab switching (plaid health, analytics with active-users and transaction-volume charts) |
-| `admin-plaid-section` | 3 | AdminSection visibility (admin vs non-admin), managed household count |
+| `admin` | 16 | Tab rendering (5 tabs including Plaid Config), KPI cards with drill-down click (Active 7d, Linked/Manual accounts → users tab with filters), filter badge and clear, user list, disable/delete actions with confirmation, expandable user detail row (accounts, transactions, activity), tab switching (plaid health, analytics with active-users and transaction-volume charts), Plaid Config tab (config status, environment selector, save button) |
+| `admin-plaid-section` | 3 | Plaid Config tab visibility in admin panel, managed household count, environment selector |
 | `staging-gate` | 7 | SHA-256 hashing (deterministic, hex format, uniqueness), token verification (match, mismatch, empty, malformed) |
 | `staging-login` | 6 | Password input and submit button rendering, POST to /api/staging-auth, redirect to / or ?from, error on 401, empty password guard |
 
@@ -733,7 +734,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 
 ### Latest coverage snapshot
 
-- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`3868` statements, `540` missed)
+- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`3980` statements, `540` missed)
 - Frontend (`npx vitest run --coverage`): **76.28% statements**, **71.95% branches**, **61.95% functions**, **77.19% lines**
 
 ## Environment Variables
