@@ -11,7 +11,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 | **Frontend** | Next.js 16 (App Router), React 19, Tailwind CSS 4 |
 | **Bank Integration** | Plaid (sandbox / production), managed or per-household BYO credentials |
 | **Auth** | Google OAuth 2.0, JWT session cookies |
-| **AI Categorization** | OpenAI-compatible API (GPT, Ollama, Azure, etc.) |
+| **AI Categorization** | Managed LLM or BYOK (OpenAI, Ollama, Azure, any OpenAI-compatible API) |
 | **Charts** | Nivo (bar) |
 | **Scheduling** | APScheduler (per-household cron jobs for transaction sync + statement reminders) |
 | **Infrastructure** | Docker Compose (Postgres + Redis + API) |
@@ -21,7 +21,9 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Account Management
 - Connect bank accounts, credit cards, loans, and investment accounts via Plaid Link
 - **Managed or Bring Your Own Plaid** -- hosted instances can offer managed Plaid credentials so users connect instantly; alternatively each household configures its own Plaid API keys in Settings; one-time onboarding choice (managed vs BYOK) with no switching
+- **Managed or Bring Your Own LLM** -- admin can configure app-level LLM credentials for managed AI categorization; users choose managed, BYOK, or skip during onboarding; switchable in Settings at any time
 - **Admin Plaid config** -- instance admin can configure app-level Plaid credentials, toggle managed mode, and see how many households use it (managed via Admin Panel → Plaid Config tab)
+- **Admin LLM config** -- instance admin can configure app-level LLM credentials (base URL, API key, model), toggle enabled, and see managed household count (Admin Panel → LLM Config tab)
 - Supports US and Canadian institutions
 - Automatic balance refresh on every sync
 - Account type and subtype selection during creation, with editable subtypes
@@ -190,7 +192,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Profile & Account** -- display name, avatar URL, bio (with Google fallback)
 - **General** -- currency (CAD, USD, EUR, GBP, etc.), date format, number locale; "Settings saved" flash on save
 - **Sync Schedule** -- per-household sync config (enable/disable, hour, minute, timezone); owner-only editing; "Schedule saved" flash on save; each household gets its own cron job on its own schedule
-- **AI Categorization** — per-household LLM config (OpenAI, Ollama, Azure, or any OpenAI-compatible API)
+- **AI Categorization** — mode-aware: shows "Using managed AI" badge with switch button when managed, or BYOK config form (base URL, model, API key) with switch-to-managed button when BYOK; switchable between managed/BYOK at any time
 - **Integrations** -- household owner configures Plaid client ID, secret, and environment (sandbox/development/production); credentials encrypted at rest with Fernet; masked last-4 display for verification; auto-scrolls via `?section=integrations` deep link
 - **Data Management** -- CSV export, Bulk Import Accounts & Transactions, Bulk Import Accounts & Balances, bulk delete, factory reset (wipes all financial data while preserving login and household), delete account (permanently removes user and all data with household cleanup)
 - Category rules management is on the dedicated Categories page
@@ -246,9 +248,9 @@ personal-finance/
 │   │   ├── cashflow/page.tsx       # Cash flow with drill-down bar chart
 │   │   ├── reports/page.tsx        # Spending reports and trends
 │   │   ├── recurring/page.tsx      # Recurring transaction analysis
-│   │   ├── onboarding/page.tsx     # Plaid mode selection (managed vs BYOK)
+│   │   ├── onboarding/page.tsx     # Extensible wizard: Step 1 = Plaid mode, Step 2 = LLM mode (skippable)
 │   │   ├── connections/page.tsx    # Plaid connections management
-│   │   ├── admin/page.tsx          # Admin panel (overview, users, plaid health, analytics, plaid config)
+│   │   ├── admin/page.tsx          # Admin panel (overview, users, plaid health, analytics, plaid config, llm config)
 │   │   ├── settings/page.tsx       # User preferences and configuration
 │   │   ├── staging-login/page.tsx  # Staging password gate login page
 │   │   ├── api/staging-auth/route.ts # Staging password verification API route
@@ -266,7 +268,7 @@ personal-finance/
 │   │   ├── add-partner-dialog.tsx  # Invite partner email dialog
 │   │   ├── plaid-setup-banner.tsx  # Dismissible Plaid config prompt (hidden for managed mode)
 │   │   ├── link-account.tsx        # Plaid Link flow (mode-aware: managed skips config redirect)
-│   │   ├── onboarding-redirect.tsx # Dashboard redirect to /onboarding when plaid_mode is null
+│   │   ├── onboarding-redirect.tsx # Dashboard redirect to /onboarding when plaid_mode or llm_mode is null
 │   │   ├── categorization-progress-provider.tsx # Global categorization progress context
 │   │   ├── categorization-drawer.tsx  # Persistent progress drawer (fixed bottom-right)
 │   │   ├── sync-button.tsx         # Trigger sync for all items (uses global context)
@@ -332,9 +334,9 @@ personal-finance/
 │       ├── dashboard-actions.test.tsx # Dashboard action buttons, partner status, navigation
 │       ├── add-partner-dialog.test.tsx # Email input, invite submit, error handling, close
 │       ├── link-account.test.tsx   # Token fetch, Plaid link, success message
-│       ├── onboarding.test.tsx    # Managed vs BYOK cards, setPlaidMode, redirect
+│       ├── onboarding.test.tsx    # Wizard: Plaid mode step, LLM mode step, skip, progression, redirect
 │       ├── plaid-mode-aware.test.tsx # PlaidSetupBanner + LinkAccount mode awareness
-│       ├── admin.test.tsx           # Admin panel: tabs, KPI cards, user management, plaid health, analytics
+│       ├── admin.test.tsx           # Admin panel: tabs, KPI cards, user management, plaid health, analytics, plaid config, llm config
 │       ├── admin-plaid-section.test.tsx # Admin section visibility and household count
 │       ├── auth-gate.test.tsx      # Loading, unauthenticated, authenticated layout
 │       ├── staging-gate.test.ts    # SHA-256 hashing and token verification
@@ -360,6 +362,7 @@ personal-finance/
 │   ├── test_llm_config.py          # BYO LLM config CRUD (owner-only, encryption)
 │   ├── test_managed_plaid.py       # PlaidMode enum, AppPlaidConfig model, client resolution
 │   ├── test_managed_plaid_routes.py # Admin plaid-config + plaid-mode routes, is_admin
+│   ├── test_managed_llm_routes.py  # Admin llm-config + llm-mode routes, categorizer resolution
 │   └── test_admin.py               # Admin panel: guard, overview, users CRUD, cascade delete, plaid health, errors, analytics
 ├── docker-compose.yml              # Postgres + Redis + API services
 ├── Dockerfile                      # Python 3.12-slim, uvicorn
@@ -387,11 +390,12 @@ personal-finance/
 | `AccountBalanceSnapshot` | Per-account per-date historical balance for net worth recomputation |
 | `Tag` | User-defined label with color |
 | `TransactionTag` | Many-to-many link between transactions and tags |
-| `Household` | Shared household between two partners; `plaid_mode` field (managed / byok / null) |
+| `Household` | Shared household between two partners; `plaid_mode` field (managed / byok / null); `llm_mode` field (managed / byok / none / null) |
 | `HouseholdMember` | User membership in a household with role |
 | `HouseholdPlaidConfig` | Per-household encrypted Plaid credentials (client_id, secret, env) |
 | `AppPlaidConfig` | App-level managed Plaid credentials (singleton; encrypted client_id, secret, env, enabled toggle) |
 | `HouseholdLLMConfig` | Per-household LLM config (household_id FK unique, llm_base_url, encrypted_api_key, llm_model) |
+| `AppLLMConfig` | App-level managed LLM credentials (singleton; llm_base_url, encrypted_api_key, llm_model, enabled toggle) |
 | `HouseholdSyncConfig` | Per-household sync schedule (sync_enabled, sync_hour, sync_minute, sync_timezone) |
 | `HouseholdInvitation` | Pending email invitation to join a household |
 | `ActivityLog` | Records user actions (login, sync, import, etc.) for DAU/WAU/MAU analytics |
@@ -492,9 +496,14 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | GET | `/admin/plaid-config` | Get app-level Plaid config status (admin-only) |
 | PUT | `/admin/plaid-config` | Create/update managed Plaid credentials (admin-only) |
 | DELETE | `/admin/plaid-config` | Remove managed Plaid credentials (admin-only) |
-| GET | `/llm-config` | Get LLM config: configured, llm_base_url, llm_model, api_key_last4 |
-| PUT | `/llm-config` | Create or update LLM config (owner-only; body: llm_base_url, llm_api_key, llm_model) |
-| DELETE | `/llm-config` | Remove LLM config (owner-only) |
+| GET | `/llm-mode` | Get household's LLM mode (managed/byok/none/null) and managed availability |
+| PUT | `/llm-mode` | Set LLM mode (switchable, unlike Plaid) |
+| GET | `/admin/llm-config` | Get app-level LLM config status (admin-only) |
+| PUT | `/admin/llm-config` | Create/update managed LLM credentials (admin-only) |
+| DELETE | `/admin/llm-config` | Remove managed LLM credentials (admin-only) |
+| GET | `/llm-config` | Get per-household BYOK LLM config: configured, llm_base_url, llm_model, api_key_last4 |
+| PUT | `/llm-config` | Create or update BYOK LLM config (owner-only; body: llm_base_url, llm_api_key, llm_model) |
+| DELETE | `/llm-config` | Remove BYOK LLM config (owner-only) |
 | GET | `/sync-config` | Get household sync schedule config |
 | PUT | `/sync-config` | Create or update sync schedule (owner-only; body: sync_enabled, sync_hour, sync_minute, sync_timezone) |
 | DELETE | `/sync-config` | Remove sync config (owner-only) |
@@ -569,7 +578,7 @@ Edit `.env` and fill in:
 - `GOOGLE_CLIENT_ID` from Google Cloud Console
 - `JWT_SECRET` -- generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`
 
-Plaid and LLM credentials are configured per-household in the app's Settings (Integrations and AI Categorization sections; not via environment variables).
+Plaid credentials are configured per-household in Settings (Integrations) or via admin-managed mode. LLM credentials are either admin-managed or per-household BYOK in Settings (AI Categorization).
 
 ### 2. Start dependencies
 
@@ -632,7 +641,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (460 tests across 22 files):**
+**What's tested (492 tests across 23 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -654,6 +663,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_auth` | 8 | Google OAuth login (mocked), session, `/me`, logout, auto-household on signup, no duplicate household on re-login |
 | `test_managed_plaid` | 16 | PlaidMode enum, AppPlaidConfig model, Household.plaid_mode field, plaid client resolution (managed vs BYOK: uses correct credentials, raises when disabled/missing/none) |
 | `test_managed_plaid_routes` | 26 | Plaid mode GET/PUT (managed/byok/none/switch-blocked/validation), admin plaid-config CRUD (admin-only guard, create/update/delete, household count), /auth/me is_admin field |
+| `test_managed_llm_routes` | 32 | LLM mode GET/PUT (managed/byok/none/switchable/validation), admin llm-config CRUD (admin-only guard, create/update/delete, unchanged sentinel, SSRF validation, household count), categorizer resolution (managed uses AppLLMConfig, BYOK uses HouseholdLLMConfig, none/null returns empty, disabled returns empty) |
 | `test_admin` | 44 | Admin guard (403 on all endpoints), overview aggregates, users list (pagination, search, stats, filters: active_days/has_linked/has_manual/sort), user detail (accounts, transactions, activity, stats, 404, auth guard), user update (promote/demote/disable/enable), user delete (full FK cascade, self-deletion blocked), disabled user auth, plaid health, error log (pagination, filters), analytics (active users, feature adoption, transaction volume, storage), activity logging, timestamps (created_at on insert, updated_at on flush, created_at unchanged on update) |
 | `test_net_worth` | 5 | Snapshots, history |
 | `test_health` | 2 | Liveness and readiness endpoints |
@@ -677,13 +687,13 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (447 tests across 44 files):**
+**What's tested (463 tests across 44 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
 | `rule-utils` | 11 | Keyword option generation: full name, cleaned name, progressive word combos, dedup, edge cases |
-| `settings-page` | 24 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + clearSession), explicit invalid invite email feedback |
+| `settings-page` | 29 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + clearSession), explicit invalid invite email feedback, AI section mode-aware (managed badge, switch to BYOK button, BYOK form, switch to managed button, hidden switch when managed unavailable) |
 | `balance-import-dialog` | 5 | Upload step rendering, column mapping, error handling, account matching, API call on submit |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `transactions-page` | 28 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion), explicit add-amount validation for `0`, create mutation error rendering |
@@ -719,9 +729,9 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `dashboard-actions` | 6 | Add Account/Link Account/Add Partner buttons, partner status message, navigation to /accounts?add=true, partner dialog open |
 | `add-partner-dialog` | 6 | Email input and submit, invitePartner API call, onClose on success, error display, close button, hidden when closed |
 | `link-account` | 4 | Idle button, token fetch on click, success message, pluralization |
-| `onboarding` | 5 | Managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls, dashboard redirect |
+| `onboarding` | 12 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls; wizard step 2 (LLM mode): managed AI + BYOK cards, skip button, setLLMMode calls; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete |
 | `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
-| `admin` | 16 | Tab rendering (5 tabs including Plaid Config), KPI cards with drill-down click (Active 7d, Linked/Manual accounts → users tab with filters), filter badge and clear, user list, disable/delete actions with confirmation, expandable user detail row (accounts, transactions, activity), tab switching (plaid health, analytics with active-users and transaction-volume charts), Plaid Config tab (config status, environment selector, save button) |
+| `admin` | 20 | Tab rendering (6 tabs including Plaid Config and LLM Config), KPI cards with drill-down click (Active 7d, Linked/Manual accounts → users tab with filters), filter badge and clear, user list, disable/delete actions with confirmation, expandable user detail row (accounts, transactions, activity), tab switching (plaid health, analytics with active-users and transaction-volume charts), Plaid Config tab (config status, environment selector, save button), LLM Config tab (config status, model/base URL display, save button, enabled toggle) |
 | `admin-plaid-section` | 3 | Plaid Config tab visibility in admin panel, managed household count, environment selector |
 | `staging-gate` | 7 | SHA-256 hashing (deterministic, hex format, uniqueness), token verification (match, mismatch, empty, malformed) |
 | `staging-login` | 6 | Password input and submit button rendering, POST to /api/staging-auth, redirect to / or ?from, error on 401, empty password guard |
@@ -764,7 +774,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `APP_URL` | No | Public-facing frontend URL for email CTAs (default: `http://localhost:3000`) |
 | `STAGING_PASSWORD` | No | Frontend-only. When set, all routes require a shared password before the app is visible. Used to protect staging environments from public access. Unset in production. |
 
-LLM credentials (base URL, API key, model) are configured per-household in Settings > AI Categorization, not via environment variables.
+LLM credentials are either managed by the instance admin (Admin Panel → LLM Config) or configured per-household in Settings > AI Categorization (BYOK mode). Households choose their LLM mode during onboarding and can switch in Settings.
 
 ## Security
 

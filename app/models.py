@@ -48,6 +48,14 @@ class PlaidMode(str, Enum):
     BYOK = "byok"
 
 
+class LLMMode(str, Enum):
+    """Whether a household uses managed AI categorization or brings their own LLM API key."""
+
+    MANAGED = "managed"
+    BYOK = "byok"
+    NONE = "none"
+
+
 class AccountType(str, Enum):
     """Account type as defined by Plaid."""
 
@@ -335,6 +343,7 @@ class Household(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = "Our Household"
     plaid_mode: Optional[str] = Field(default=None)
+    llm_mode: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default=None)
 
@@ -394,6 +403,20 @@ class HouseholdLLMConfig(SQLModel, table=True):
     llm_base_url: str = Field(default="https://api.openai.com/v1")
     encrypted_api_key: str
     llm_model: str = Field(default="gpt-4o-mini")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
+
+
+class AppLLMConfig(SQLModel, table=True):
+    """App-level LLM credentials for managed AI categorization (singleton)."""
+
+    __tablename__ = "app_llm_config"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    llm_base_url: str = Field(default="https://api.openai.com/v1")
+    encrypted_api_key: str
+    llm_model: str = Field(default="gpt-4o-mini")
+    enabled: bool = Field(default=False)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default=None)
 

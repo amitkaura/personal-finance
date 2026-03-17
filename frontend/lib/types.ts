@@ -333,6 +333,22 @@ export interface AdminPlaidConfig {
 
 export const PLAID_MODES = { MANAGED: "managed", BYOK: "byok" } as const;
 
+export interface AdminLLMConfig {
+  configured: boolean;
+  enabled: boolean;
+  llm_base_url: string | null;
+  llm_model: string | null;
+  api_key_last4: string | null;
+  managed_household_count: number;
+}
+
+export interface LLMModeResponse {
+  mode: "managed" | "byok" | "none" | null;
+  managed_available: boolean;
+}
+
+export const LLM_MODES = { MANAGED: "managed", BYOK: "byok", NONE: "none" } as const;
+
 export interface Category {
   id: number;
   name: string;

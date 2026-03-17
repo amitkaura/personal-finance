@@ -24,13 +24,15 @@ import {
   UserX,
   Link2,
   AlertTriangle,
+  Brain,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import type { UserSettings, UserProfile, CategoryRule, PlaidConfig, LLMConfig } from "@/lib/types";
-import { PLAID_MODES } from "@/lib/types";
+import { PLAID_MODES, LLM_MODES } from "@/lib/types";
 import ConfirmDialog from "@/components/confirm-dialog";
 import BulkCsvImportDialog from "@/components/bulk-csv-import-dialog";
 import BalanceImportDialog from "@/components/balance-import-dialog";
@@ -1341,13 +1343,20 @@ function AiSection() {
     queryFn: api.getLLMConfig,
   });
 
-  const isOwner = household?.members?.some(
-    (m) => m.role === "owner" && m.user_id === household.members.find((x) => x.role === "owner")?.user_id,
-  );
-  const currentUserId = household?.members?.find((m) => m.role === "owner")?.user_id;
-  const isCurrentUserOwner = household?.members?.some(
-    (m) => m.role === "owner",
-  ) && household?.members?.length === 1;
+  const { data: llmMode } = useQuery({
+    queryKey: ["llm-mode"],
+    queryFn: api.getLLMMode,
+  });
+
+  const switchModeMutation = useMutation({
+    mutationFn: (mode: string) => api.setLLMMode(mode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["llm-mode"] });
+    },
+  });
+
+  const isManaged = llmMode?.mode === LLM_MODES.MANAGED;
+  const managedAvailable = llmMode?.managed_available ?? false;
 
   const ownerMember = household?.members?.find((m) => m.role === "owner");
 
@@ -1368,10 +1377,6 @@ function AiSection() {
     baseUrl !== (llmConfig?.llm_base_url ?? "") ||
     model !== (llmConfig?.llm_model ?? "") ||
     apiKey.length > 0;
-
-  const canEdit = !household || ownerMember?.user_id === household.members.find(
-    (m) => m.role === "owner",
-  )?.user_id;
 
   const saveMutation = useMutation({
     mutationFn: api.updateLLMConfig,
@@ -1405,6 +1410,33 @@ function AiSection() {
     (m) => m.role === "owner",
   );
 
+  if (isManaged) {
+    return (
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-center gap-3">
+          <h2 className="text-base font-semibold">AI Categorization</h2>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent">
+            <Brain className="h-3 w-3" />
+            Using managed AI
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Your household is using the managed AI service for transaction categorization. No configuration needed.
+        </p>
+        <div className="mt-4">
+          <button
+            onClick={() => switchModeMutation.mutate(LLM_MODES.BYOK)}
+            disabled={switchModeMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-muted disabled:opacity-50"
+          >
+            <ArrowLeftRight className="h-3.5 w-3.5" />
+            Switch to your own API key
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
       <div className="flex items-center gap-3">
@@ -1423,6 +1455,19 @@ function AiSection() {
         Configure the LLM provider used as a fallback when no keyword rules
         match. Works with OpenAI, Ollama, Azure, and any OpenAI-compatible API.
       </p>
+
+      {managedAvailable && (
+        <div className="mt-3">
+          <button
+            onClick={() => switchModeMutation.mutate(LLM_MODES.MANAGED)}
+            disabled={switchModeMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-muted disabled:opacity-50"
+          >
+            <ArrowLeftRight className="h-3.5 w-3.5" />
+            Switch to managed AI
+          </button>
+        </div>
+      )}
 
       {readOnly ? (
         <p className="mt-4 text-xs text-muted-foreground">

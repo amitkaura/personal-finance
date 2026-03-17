@@ -1,11 +1,11 @@
 import type {
-  Account, AccountSummary, AdminPlaidConfig, AdminOverview, AdminUser, AdminUserDetail, AdminUsersResponse,
+  Account, AccountSummary, AdminLLMConfig, AdminPlaidConfig, AdminOverview, AdminUser, AdminUserDetail, AdminUsersResponse,
   AdminPlaidHealth, AdminErrorsResponse, ActiveUsersPoint, FeatureAdoption,
   TransactionVolumePoint, StorageMetric,
   Budget, BudgetConflict, BudgetSummary,
   CategoryRule, Goal, GoalContribution, GoalsResponse,
   Household, HouseholdInvitation, MonthlyTrend, NetWorthSnapshot,
-  LLMConfig, PlaidConfig, PlaidConnection, PlaidModeResponse, RecurringTransaction, SpendingByCategory, SyncConfig,
+  LLMConfig, LLMModeResponse, PlaidConfig, PlaidConnection, PlaidModeResponse, RecurringTransaction, SpendingByCategory, SyncConfig,
   SpendingPreference, Tag, TopMerchant, Transaction, User, UserProfile,
   UserSettings, ViewScope,
 } from "./types";
@@ -531,7 +531,33 @@ export const api = {
   deleteAdminPlaidConfig: () =>
     fetchVoid("/settings/admin/plaid-config", { method: "DELETE" }),
 
-  // LLM config
+  // Admin LLM config (app-level)
+  getAdminLLMConfig: () => fetcher<AdminLLMConfig>("/settings/admin/llm-config"),
+
+  updateAdminLLMConfig: (body: {
+    llm_base_url: string;
+    llm_api_key: string;
+    llm_model: string;
+    enabled: boolean;
+  }) =>
+    fetcher<AdminLLMConfig>("/settings/admin/llm-config", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  deleteAdminLLMConfig: () =>
+    fetchVoid("/settings/admin/llm-config", { method: "DELETE" }),
+
+  // LLM mode (managed vs BYOK)
+  getLLMMode: () => fetcher<LLMModeResponse>("/settings/llm-mode"),
+
+  setLLMMode: (mode: string) =>
+    fetcher<LLMModeResponse>("/settings/llm-mode", {
+      method: "PUT",
+      body: JSON.stringify({ mode }),
+    }),
+
+  // LLM config (per-household BYOK)
   getLLMConfig: () => fetcher<LLMConfig>("/settings/llm-config"),
 
   updateLLMConfig: (body: { llm_base_url: string; llm_api_key: string; llm_model: string }) =>

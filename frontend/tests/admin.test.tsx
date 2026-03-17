@@ -26,6 +26,9 @@ const mockApi = vi.hoisted(() => ({
   getAdminPlaidConfig: vi.fn(),
   updateAdminPlaidConfig: vi.fn(),
   deleteAdminPlaidConfig: vi.fn(),
+  getAdminLLMConfig: vi.fn(),
+  updateAdminLLMConfig: vi.fn(),
+  deleteAdminLLMConfig: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({ api: mockApi }));
@@ -125,6 +128,15 @@ const MOCK_ADMIN_PLAID_CONFIG = {
   managed_household_count: 3,
 };
 
+const MOCK_ADMIN_LLM_CONFIG = {
+  configured: true,
+  enabled: true,
+  llm_base_url: "https://api.openai.com/v1",
+  llm_model: "gpt-4o",
+  api_key_last4: "5678",
+  managed_household_count: 2,
+};
+
 describe("AdminPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -138,9 +150,10 @@ describe("AdminPage", () => {
     mockApi.getAdminTransactionVolume.mockResolvedValue([]);
     mockApi.getAdminStorage.mockResolvedValue(MOCK_STORAGE);
     mockApi.getAdminPlaidConfig.mockResolvedValue(MOCK_ADMIN_PLAID_CONFIG);
+    mockApi.getAdminLLMConfig.mockResolvedValue(MOCK_ADMIN_LLM_CONFIG);
   });
 
-  it("renders all five tabs", async () => {
+  it("renders all six tabs", async () => {
     renderWithProviders(<AdminPage />);
 
     await waitFor(() => {
@@ -150,6 +163,7 @@ describe("AdminPage", () => {
     expect(screen.getByRole("tab", { name: /plaid health/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /analytics/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /plaid config/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /llm config/i })).toBeInTheDocument();
   });
 
   it("shows overview KPI cards with correct data", async () => {
@@ -448,6 +462,71 @@ describe("AdminPage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /save/i })).toBeInTheDocument();
+    });
+  });
+
+  // ── LLM Config Tab Tests ─────────────────────────────────────
+
+  it("switches to LLM Config tab and shows config status", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /llm config/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("tab", { name: /llm config/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 household/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/configured/i)).toBeInTheDocument();
+  });
+
+  it("LLM Config tab shows model and base URL", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /llm config/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("tab", { name: /llm config/i }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("gpt-4o")).toBeInTheDocument();
+    });
+    expect(screen.getByDisplayValue("https://api.openai.com/v1")).toBeInTheDocument();
+  });
+
+  it("LLM Config tab shows save button", async () => {
+    const user = userEvent.setup();
+    mockApi.getAdminLLMConfig.mockResolvedValue({
+      configured: false, enabled: false, llm_base_url: null,
+      llm_model: null, api_key_last4: null, managed_household_count: 0,
+    });
+
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /llm config/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("tab", { name: /llm config/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /save/i })).toBeInTheDocument();
+    });
+  });
+
+  it("LLM Config tab shows enabled toggle", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /llm config/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("tab", { name: /llm config/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("llm-enabled-toggle")).toBeInTheDocument();
     });
   });
 });

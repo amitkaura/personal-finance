@@ -16,7 +16,16 @@ from sqlmodel import Session, or_, select
 
 from app.crypto import decrypt_token
 from app.database import engine
-from app.models import Account, CategoryRule, HouseholdLLMConfig, HouseholdMember, Transaction
+from app.models import (
+    Account,
+    AppLLMConfig,
+    CategoryRule,
+    Household,
+    HouseholdLLMConfig,
+    HouseholdMember,
+    LLMMode,
+    Transaction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +94,7 @@ def categorize_by_llm(transaction: Transaction, user_id: int) -> str | None:
 
 
 def _get_llm_config(user_id: int) -> tuple[str, str, str]:
-    """Return (base_url, api_key, model) from household LLM config."""
+    """Return (base_url, api_key, model) based on household's llm_mode."""
     try:
         with Session(engine) as session:
             member = session.exec(
@@ -93,14 +102,28 @@ def _get_llm_config(user_id: int) -> tuple[str, str, str]:
             ).first()
             if not member:
                 return ("", "", "")
-            config = session.exec(
-                select(HouseholdLLMConfig).where(
-                    HouseholdLLMConfig.household_id == member.household_id
-                )
-            ).first()
-            if not config or not config.encrypted_api_key:
+
+            household = session.get(Household, member.household_id)
+            if not household:
                 return ("", "", "")
-            return (config.llm_base_url, decrypt_token(config.encrypted_api_key), config.llm_model)
+
+            if household.llm_mode == LLMMode.MANAGED:
+                app_config = session.exec(select(AppLLMConfig)).first()
+                if not app_config or not app_config.enabled or not app_config.encrypted_api_key:
+                    return ("", "", "")
+                return (app_config.llm_base_url, decrypt_token(app_config.encrypted_api_key), app_config.llm_model)
+
+            if household.llm_mode == LLMMode.BYOK:
+                config = session.exec(
+                    select(HouseholdLLMConfig).where(
+                        HouseholdLLMConfig.household_id == member.household_id
+                    )
+                ).first()
+                if not config or not config.encrypted_api_key:
+                    return ("", "", "")
+                return (config.llm_base_url, decrypt_token(config.encrypted_api_key), config.llm_model)
+
+            return ("", "", "")
     except Exception:
         return ("", "", "")
 

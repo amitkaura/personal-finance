@@ -14,11 +14,20 @@ export default function OnboardingRedirect() {
     staleTime: 60_000,
   });
 
+  const { data: llmMode } = useQuery({
+    queryKey: ["llm-mode"],
+    queryFn: api.getLLMMode,
+    staleTime: 60_000,
+  });
+
   useEffect(() => {
-    if (plaidMode && plaidMode.mode === null) {
+    const needsPlaid = plaidMode && plaidMode.mode === null;
+    const needsLLM = llmMode && llmMode.mode === null;
+
+    if (needsPlaid || needsLLM) {
       router.push("/onboarding");
     }
-  }, [plaidMode, router]);
+  }, [plaidMode, llmMode, router]);
 
   return null;
 }

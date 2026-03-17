@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI):
     _migrate_llm_fields_to_household()
     _migrate_sync_fields_to_household()
     _migrate_household_plaid_mode()
+    _migrate_household_llm_mode()
     _backfill_orphan_households()
     settings = get_settings()
     if settings.run_scheduler:
@@ -150,6 +151,20 @@ def _migrate_household_plaid_mode() -> None:
     logger.info("Household plaid_mode migration check complete")
 
 
+def _migrate_household_llm_mode() -> None:
+    """Add llm_mode column to households (nullable, no backfill needed)."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE households ADD COLUMN IF NOT EXISTS llm_mode varchar"))
+        except Exception:
+            conn.rollback()
+        conn.commit()
+    logger.info("Household llm_mode migration check complete")
+
+
 def _migrate_timestamps() -> None:
     """Add created_at/updated_at columns to all tables."""
     import logging
@@ -161,7 +176,7 @@ def _migrate_timestamps() -> None:
         "category_rules", "user_settings", "budgets", "spending_preferences",
         "goal_account_links", "net_worth_snapshots", "account_balance_snapshots",
         "tags", "transaction_tags", "household_plaid_configs", "app_plaid_config",
-        "household_llm_configs", "household_sync_configs",
+        "household_llm_configs", "app_llm_config", "household_sync_configs",
     ]
     updated_at_tables = created_at_tables + [
         "users", "goals", "goal_contributions", "households",

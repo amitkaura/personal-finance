@@ -23,6 +23,7 @@ import {
   Save,
   Loader2,
   Settings,
+  Brain,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { api } from "@/lib/api";
@@ -31,6 +32,7 @@ import type {
   AdminOverview,
   AdminUser,
   AdminUserDetail,
+  AdminLLMConfig,
   AdminPlaidConfig,
   AdminPlaidHealth,
   ActiveUsersPoint,
@@ -39,7 +41,7 @@ import type {
   StorageMetric,
 } from "@/lib/types";
 
-type Tab = "overview" | "users" | "plaid-health" | "analytics" | "plaid-config";
+type Tab = "overview" | "users" | "plaid-health" | "analytics" | "plaid-config" | "llm-config";
 
 interface UserFilters {
   active_days?: number;
@@ -54,6 +56,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "plaid-health", label: "Plaid Health" },
   { id: "analytics", label: "Analytics" },
   { id: "plaid-config", label: "Plaid Config" },
+  { id: "llm-config", label: "LLM Config" },
 ];
 
 export default function AdminPage() {
@@ -101,6 +104,7 @@ export default function AdminPage() {
       {activeTab === "plaid-health" && <PlaidHealthTab />}
       {activeTab === "analytics" && <AnalyticsTab />}
       {activeTab === "plaid-config" && <PlaidConfigTab />}
+      {activeTab === "llm-config" && <LLMConfigTab />}
     </div>
   );
 }
@@ -839,6 +843,230 @@ function PlaidConfigTab() {
           open={confirmRemove}
           title="Remove managed Plaid credentials?"
           description="This will remove the app-level Plaid credentials. Households using managed Plaid will no longer be able to link new accounts."
+          confirmLabel="Remove"
+          destructive
+          loading={removing}
+          onConfirm={handleRemove}
+          onCancel={() => setConfirmRemove(false)}
+        />
+      </div>
+    </div>
+  );
+}
+
+
+// ── LLM Config Tab ──────────────────────────────────────────
+
+function LLMConfigTab() {
+  const queryClient = useQueryClient();
+
+  const { data: adminConfig } = useQuery({
+    queryKey: ["admin-llm-config"],
+    queryFn: api.getAdminLLMConfig,
+  });
+
+  const [baseUrl, setBaseUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState("");
+  const [enabled, setEnabled] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  useEffect(() => {
+    if (adminConfig?.configured) {
+      setBaseUrl(adminConfig.llm_base_url ?? "");
+      setModel(adminConfig.llm_model ?? "");
+      setEnabled(adminConfig.enabled);
+    }
+  }, [adminConfig]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      api.updateAdminLLMConfig({
+        llm_base_url: baseUrl,
+        llm_api_key: apiKey || "unchanged",
+        llm_model: model,
+        enabled,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-llm-config"] });
+      queryClient.invalidateQueries({ queryKey: ["llm-mode"] });
+      setApiKey("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: () =>
+      api.updateAdminLLMConfig({
+        llm_base_url: baseUrl || adminConfig?.llm_base_url || "",
+        llm_api_key: "unchanged",
+        llm_model: model || adminConfig?.llm_model || "",
+        enabled: !enabled,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-llm-config"] });
+      queryClient.invalidateQueries({ queryKey: ["llm-mode"] });
+      setEnabled(!enabled);
+    },
+  });
+
+  async function handleRemove() {
+    setRemoving(true);
+    try {
+      await api.deleteAdminLLMConfig();
+      queryClient.invalidateQueries({ queryKey: ["admin-llm-config"] });
+      queryClient.invalidateQueries({ queryKey: ["llm-mode"] });
+      setConfirmRemove(false);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  if (!adminConfig) {
+    return <div className="h-48 rounded-xl bg-card border border-border animate-pulse" />;
+  }
+
+  const labelClass = "block text-xs font-medium text-muted-foreground mb-1.5";
+  const inputClass = "rounded-md bg-muted px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground";
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-border bg-card p-6">
+        <div className="flex items-center gap-2">
+          <Brain className="h-5 w-5 text-accent" />
+          <h3 className="text-base font-semibold">Managed LLM Credentials</h3>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Configure app-level LLM credentials so users can use AI categorization without their own API key.
+        </p>
+
+        {adminConfig.configured && (
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="inline-flex items-center gap-2 rounded-lg bg-green-500/10 border border-green-500/20 px-3 py-2">
+              <div className="h-2 w-2 rounded-full bg-green-400" />
+              <span className="text-xs font-medium text-green-400">
+                Configured ({adminConfig.llm_model})
+              </span>
+              <span className="text-xs text-muted-foreground">
+                &middot; {adminConfig.managed_household_count} household{adminConfig.managed_household_count !== 1 ? "s" : ""} using managed
+              </span>
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 text-sm" data-testid="llm-enabled-toggle">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={() => {
+                  if (adminConfig.configured) {
+                    toggleMutation.mutate();
+                  }
+                }}
+                className="h-4 w-4 rounded border-border bg-muted accent-accent"
+              />
+              <span className="text-xs">Allow households to use managed AI</span>
+            </label>
+          </div>
+        )}
+
+        <div className="mt-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Base URL</label>
+              <input
+                type="text"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder={adminConfig.configured ? adminConfig.llm_base_url ?? "" : "https://api.openai.com/v1"}
+                className={`${inputClass} w-full`}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>API Key</label>
+              <div className="relative">
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={adminConfig.configured ? `••••${adminConfig.api_key_last4}` : "LLM API Key"}
+                  className={`${inputClass} w-full pr-10`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-xs">
+            <label className={labelClass}>Model</label>
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder={adminConfig.configured ? adminConfig.llm_model ?? "" : "gpt-4o-mini"}
+              className={`${inputClass} w-full`}
+            />
+          </div>
+
+          {!adminConfig.configured && (
+            <label className="flex cursor-pointer items-center gap-2 text-sm" data-testid="llm-enabled-toggle">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={() => setEnabled(!enabled)}
+                className="h-4 w-4 rounded border-border bg-muted accent-accent"
+              />
+              <span className="text-xs">Enable managed AI for households</span>
+            </label>
+          )}
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {saved && <span className="text-xs text-green-400">Admin LLM config saved</span>}
+              {saveMutation.isError && (
+                <span className="text-xs text-red-400">
+                  {(saveMutation.error as Error).message}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {adminConfig.configured && (
+                <button
+                  onClick={() => setConfirmRemove(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Remove
+                </button>
+              )}
+              <button
+                onClick={() => saveMutation.mutate()}
+                disabled={(!adminConfig.configured && !apiKey.trim()) || !baseUrl.trim() || !model.trim() || saveMutation.isPending}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
+                aria-label="Save"
+              >
+                {saveMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {adminConfig.configured ? "Update" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <ConfirmDialog
+          open={confirmRemove}
+          title="Remove managed LLM credentials?"
+          description="This will remove the app-level LLM credentials. Households using managed AI will fall back to their own API keys or lose AI categorization."
           confirmLabel="Remove"
           destructive
           loading={removing}

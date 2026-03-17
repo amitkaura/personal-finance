@@ -35,6 +35,7 @@ from app.models import (
     Account,
     AccountBalanceSnapshot,
     AccountType,
+    AppLLMConfig,
     AppPlaidConfig,
     Budget,
     Category,
@@ -48,6 +49,7 @@ from app.models import (
     HouseholdLLMConfig,
     HouseholdPlaidConfig,
     HouseholdSyncConfig,
+    LLMMode,
     NetWorthSnapshot,
     PlaidItem,
     PlaidMode,
@@ -387,6 +389,27 @@ def make_plaid_config(
         encrypted_client_id=encrypt_token(client_id),
         encrypted_secret=encrypt_token(secret),
         plaid_env=plaid_env,
+    )
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return config
+
+
+def make_app_llm_config(
+    session: Session,
+    base_url: str = "https://api.openai.com/v1",
+    api_key: str = "app_llm_key_1234",
+    model: str = "gpt-4o-mini",
+    enabled: bool = True,
+) -> AppLLMConfig:
+    from app.crypto import encrypt_token
+
+    config = AppLLMConfig(
+        llm_base_url=base_url,
+        encrypted_api_key=encrypt_token(api_key),
+        llm_model=model,
+        enabled=enabled,
     )
     session.add(config)
     session.commit()
