@@ -6,9 +6,8 @@ export async function proxy(request: NextRequest) {
   if (!password) return NextResponse.next();
 
   const token = request.cookies.get(COOKIE_NAME)?.value;
-  if (token) {
-    const valid = verifyToken(token, password);
-    if (valid) return NextResponse.next();
+  if (token && verifyToken(token, password)) {
+    return NextResponse.next();
   }
 
   const loginUrl = new URL("/staging-login", request.url);
@@ -18,6 +17,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!staging-login|api/staging-auth|_next/static|_next/image|favicon\\.ico).*)",
+    "/((?!staging-login|api/|_next/static|_next/image|favicon\\.ico).*)",
   ],
 };
