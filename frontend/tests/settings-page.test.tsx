@@ -33,6 +33,13 @@ const mockApi = vi.hoisted(() => ({
   exportTransactions: vi.fn(),
   factoryReset: vi.fn(),
   deleteUserAccount: vi.fn(),
+  getLLMConfig: vi.fn(),
+  getLLMMode: vi.fn(),
+  setLLMMode: vi.fn(),
+  getPlaidConfig: vi.fn(),
+  getPlaidMode: vi.fn(),
+  updatePlaidConfig: vi.fn(),
+  deletePlaidConfig: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -89,6 +96,10 @@ describe("SettingsPage", () => {
     mockApi.getMe.mockResolvedValue(TEST_USER);
     mockApi.getHousehold.mockResolvedValue(TEST_HOUSEHOLD);
     mockApi.getRules.mockResolvedValue([]);
+    mockApi.getLLMConfig.mockResolvedValue({ configured: false, llm_base_url: null, llm_model: null, api_key_last4: null });
+    mockApi.getLLMMode.mockResolvedValue({ mode: null, managed_available: false });
+    mockApi.getPlaidConfig.mockResolvedValue({ configured: false });
+    mockApi.getPlaidMode.mockResolvedValue({ mode: "byok" });
     mockApi.updateProfile.mockResolvedValue(TEST_USER);
     mockApi.invitePartner.mockResolvedValue({
       id: 1,
@@ -104,10 +115,27 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.getByText("Profile & Account")).toBeInTheDocument();
     expect(screen.getByText("Household")).toBeInTheDocument();
+    expect(screen.getByTestId("integrations-group")).toBeInTheDocument();
+    expect(screen.getByText("Integrations")).toBeInTheDocument();
+    expect(screen.getByText("AI Categorization")).toBeInTheDocument();
     expect(screen.getByText("General")).toBeInTheDocument();
     expect(screen.getByText("Sync Schedule")).toBeInTheDocument();
-    expect(screen.getByText("AI Categorization")).toBeInTheDocument();
     expect(screen.getByText("Data Management")).toBeInTheDocument();
+  });
+
+  it("shows 'Bank Connections' sub-heading inside Integrations when household exists", async () => {
+    mockHouseholdState.value.household = TEST_HOUSEHOLD;
+    mockApi.getPlaidConfig.mockResolvedValue({ configured: false });
+    mockApi.getPlaidMode = vi.fn().mockResolvedValue({ mode: "byok" });
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Bank Connections")).toBeInTheDocument();
+    });
+    const group = screen.getByTestId("integrations-group");
+    expect(group).toContainElement(screen.getByText("Bank Connections"));
+    expect(group).toContainElement(screen.getByText("AI Categorization"));
   });
 
   describe("Responsive layout", () => {
@@ -418,6 +446,68 @@ describe("SettingsPage", () => {
       await waitFor(() => {
         expect(mockApi.deleteUserAccount).toHaveBeenCalled();
       });
+    });
+  });
+
+  // ── AI Section Mode-Aware Tests ────────────────────────────────
+
+  describe("AI Section mode-aware", () => {
+    it("shows managed AI badge when llm_mode is managed", async () => {
+      mockApi.getLLMMode.mockResolvedValue({ mode: "managed", managed_available: true });
+
+      renderWithProviders(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/using managed ai/i)).toBeInTheDocument();
+      });
+    });
+
+    it("shows switch to BYOK button when in managed mode", async () => {
+      mockApi.getLLMMode.mockResolvedValue({ mode: "managed", managed_available: true });
+
+      renderWithProviders(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /switch to.*own/i })).toBeInTheDocument();
+      });
+    });
+
+    it("shows BYOK config form when llm_mode is byok", async () => {
+      mockApi.getLLMMode.mockResolvedValue({ mode: "byok", managed_available: true });
+      mockApi.getLLMConfig.mockResolvedValue({
+        configured: true,
+        llm_base_url: "https://api.openai.com/v1",
+        llm_model: "gpt-4o",
+        api_key_last4: "1234",
+      });
+
+      renderWithProviders(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("AI Categorization")).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/using managed ai/i)).not.toBeInTheDocument();
+    });
+
+    it("shows switch to managed button when in BYOK mode and managed is available", async () => {
+      mockApi.getLLMMode.mockResolvedValue({ mode: "byok", managed_available: true });
+
+      renderWithProviders(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /switch to managed/i })).toBeInTheDocument();
+      });
+    });
+
+    it("does not show switch to managed button when managed is not available", async () => {
+      mockApi.getLLMMode.mockResolvedValue({ mode: "byok", managed_available: false });
+
+      renderWithProviders(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("AI Categorization")).toBeInTheDocument();
+      });
+      expect(screen.queryByRole("button", { name: /switch to managed/i })).not.toBeInTheDocument();
     });
   });
 });

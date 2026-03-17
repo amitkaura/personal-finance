@@ -17,8 +17,9 @@ from redis.asyncio import Redis, from_url
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.database import create_db_and_tables, engine
+from app.database import auto_sync_columns, create_db_and_tables, engine
 from app.routes.accounts import router as accounts_router
+from app.routes.admin import router as admin_router
 from app.routes.auth import router as auth_router
 from app.routes.budgets import router as budgets_router
 from app.routes.categories import router as categories_router
@@ -38,9 +39,10 @@ async def lifespan(app: FastAPI):
     _validate_startup_settings()
     await _initialize_rate_limiter_backend()
     create_db_and_tables()
+    auto_sync_columns()
     _migrate_llm_fields_to_household()
     _migrate_sync_fields_to_household()
-    _migrate_household_plaid_mode()
+    _backfill_plaid_mode()
     _backfill_orphan_households()
     settings = get_settings()
     if settings.run_scheduler:
@@ -133,19 +135,15 @@ def _backfill_orphan_households() -> None:
         logger.info("Backfill complete")
 
 
-def _migrate_household_plaid_mode() -> None:
-    """Add plaid_mode column to households and backfill existing rows to 'byok'."""
+def _backfill_plaid_mode() -> None:
+    """Backfill existing households to 'byok' if plaid_mode is NULL."""
     import logging
 
     logger = logging.getLogger(__name__)
     with engine.connect() as conn:
-        try:
-            conn.execute(text("ALTER TABLE households ADD COLUMN IF NOT EXISTS plaid_mode varchar"))
-        except Exception:
-            conn.rollback()
         conn.execute(text("UPDATE households SET plaid_mode = 'byok' WHERE plaid_mode IS NULL"))
         conn.commit()
-    logger.info("Household plaid_mode migration check complete")
+    logger.info("Plaid mode backfill check complete")
 
 
 def _validate_startup_settings() -> None:
@@ -344,6 +342,7 @@ async def rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+app.include_router(admin_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(household_router, prefix="/api/v1")
 app.include_router(plaid_router, prefix="/api/v1")

@@ -24,13 +24,16 @@ import {
   UserX,
   Link2,
   AlertTriangle,
+  Brain,
+  ArrowLeftRight,
+  Shield,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
-import type { UserSettings, UserProfile, CategoryRule, PlaidConfig, LLMConfig, AdminPlaidConfig } from "@/lib/types";
-import { PLAID_MODES } from "@/lib/types";
+import type { UserSettings, UserProfile, CategoryRule, PlaidConfig, LLMConfig } from "@/lib/types";
+import { PLAID_MODES, LLM_MODES } from "@/lib/types";
 import ConfirmDialog from "@/components/confirm-dialog";
 import BulkCsvImportDialog from "@/components/bulk-csv-import-dialog";
 import BalanceImportDialog from "@/components/balance-import-dialog";
@@ -94,14 +97,11 @@ const labelClass = "block text-xs font-medium text-muted-foreground mb-1.5";
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const integrationsRef = useRef<HTMLDivElement>(null);
-  const aiRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const section = searchParams.get("section");
-    if (section === "integrations" && integrationsRef.current) {
+    if ((section === "integrations" || section === "ai") && integrationsRef.current) {
       integrationsRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    } else if (section === "ai" && aiRef.current) {
-      aiRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }, [searchParams]);
 
@@ -114,16 +114,14 @@ export default function SettingsPage() {
       <div className="mt-8 space-y-6">
         <ProfileSection />
         <HouseholdSection />
-        <div ref={integrationsRef}>
+        <div ref={integrationsRef} data-testid="integrations-group" className="space-y-4">
+          <h2 className="text-base font-semibold">Integrations</h2>
           <IntegrationsSection />
+          <AiSection />
         </div>
         <GeneralSection />
         <SyncSection />
-        <div ref={aiRef}>
-          <AiSection />
-        </div>
         <DataSection />
-        <AdminSection />
       </div>
     </>
   );
@@ -708,7 +706,7 @@ function IntegrationsSection() {
       <div className="rounded-2xl border border-border bg-card p-6">
         <div className="flex items-center gap-2">
           <Link2 className="h-4 w-4 text-accent" />
-          <h2 className="text-base font-semibold">Integrations</h2>
+          <h2 className="text-base font-semibold">Bank Connections</h2>
         </div>
         <p className="mt-3 text-sm text-muted-foreground">
           You&apos;re using managed Plaid — no configuration needed. Your bank
@@ -722,7 +720,7 @@ function IntegrationsSection() {
     <div className="rounded-2xl border border-border bg-card p-6">
       <div className="flex items-center gap-2">
         <Link2 className="h-4 w-4 text-accent" />
-        <h2 className="text-base font-semibold">Integrations</h2>
+        <h2 className="text-base font-semibold">Bank Connections</h2>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
         Connect your bank accounts via Plaid. Credentials are encrypted and stored
@@ -1342,13 +1340,20 @@ function AiSection() {
     queryFn: api.getLLMConfig,
   });
 
-  const isOwner = household?.members?.some(
-    (m) => m.role === "owner" && m.user_id === household.members.find((x) => x.role === "owner")?.user_id,
-  );
-  const currentUserId = household?.members?.find((m) => m.role === "owner")?.user_id;
-  const isCurrentUserOwner = household?.members?.some(
-    (m) => m.role === "owner",
-  ) && household?.members?.length === 1;
+  const { data: llmMode } = useQuery({
+    queryKey: ["llm-mode"],
+    queryFn: api.getLLMMode,
+  });
+
+  const switchModeMutation = useMutation({
+    mutationFn: (mode: string) => api.setLLMMode(mode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["llm-mode"] });
+    },
+  });
+
+  const isManaged = llmMode?.mode === LLM_MODES.MANAGED;
+  const managedAvailable = llmMode?.managed_available ?? false;
 
   const ownerMember = household?.members?.find((m) => m.role === "owner");
 
@@ -1369,10 +1374,6 @@ function AiSection() {
     baseUrl !== (llmConfig?.llm_base_url ?? "") ||
     model !== (llmConfig?.llm_model ?? "") ||
     apiKey.length > 0;
-
-  const canEdit = !household || ownerMember?.user_id === household.members.find(
-    (m) => m.role === "owner",
-  )?.user_id;
 
   const saveMutation = useMutation({
     mutationFn: api.updateLLMConfig,
@@ -1406,6 +1407,33 @@ function AiSection() {
     (m) => m.role === "owner",
   );
 
+  if (isManaged) {
+    return (
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-center gap-3">
+          <h2 className="text-base font-semibold">AI Categorization</h2>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent">
+            <Brain className="h-3 w-3" />
+            Using managed AI
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Your household is using the managed AI service for transaction categorization. No configuration needed.
+        </p>
+        <div className="mt-4">
+          <button
+            onClick={() => switchModeMutation.mutate(LLM_MODES.BYOK)}
+            disabled={switchModeMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-muted disabled:opacity-50"
+          >
+            <ArrowLeftRight className="h-3.5 w-3.5" />
+            Switch to your own API key
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
       <div className="flex items-center gap-3">
@@ -1424,6 +1452,19 @@ function AiSection() {
         Configure the LLM provider used as a fallback when no keyword rules
         match. Works with OpenAI, Ollama, Azure, and any OpenAI-compatible API.
       </p>
+
+      {managedAvailable && (
+        <div className="mt-3">
+          <button
+            onClick={() => switchModeMutation.mutate(LLM_MODES.MANAGED)}
+            disabled={switchModeMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-muted disabled:opacity-50"
+          >
+            <ArrowLeftRight className="h-3.5 w-3.5" />
+            Switch to managed AI
+          </button>
+        </div>
+      )}
 
       {readOnly ? (
         <p className="mt-4 text-xs text-muted-foreground">
@@ -1520,7 +1561,7 @@ function AiSection() {
 function DataSection() {
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { clearSession } = useAuth();
+  const { user, clearSession } = useAuth();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
@@ -1674,18 +1715,30 @@ function DataSection() {
               Delete all financial data. Your login and household membership will be preserved.
             </span>
           </button>
-          <button
-            onClick={() => setConfirmDeleteOpen(true)}
-            className="flex flex-col items-start gap-1 rounded-lg bg-red-600 px-4 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-red-700"
-          >
-            <span className="inline-flex items-center gap-2">
-              <UserX className="h-4 w-4" />
-              Delete Account
-            </span>
-            <span className="text-xs font-normal text-red-200">
-              Permanently delete your account and all data. You will be logged out.
-            </span>
-          </button>
+          {user?.is_protected ? (
+            <div className="flex flex-col items-start gap-1 rounded-lg bg-muted px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+              <span className="inline-flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Delete Account
+              </span>
+              <span className="text-xs font-normal">
+                Protected admin account cannot be deleted.
+              </span>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDeleteOpen(true)}
+              className="flex flex-col items-start gap-1 rounded-lg bg-red-600 px-4 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-red-700"
+            >
+              <span className="inline-flex items-center gap-2">
+                <UserX className="h-4 w-4" />
+                Delete Account
+              </span>
+              <span className="text-xs font-normal text-red-200">
+                Permanently delete your account and all data. You will be logged out.
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1751,225 +1804,3 @@ function SaveButton({
 }
 
 
-// ── Admin (managed Plaid config) ─────────────────────────────
-
-function AdminSection() {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  const { data: me } = useQuery({
-    queryKey: ["me"],
-    queryFn: api.getMe,
-  });
-
-  const isAdmin = me?.is_admin ?? false;
-
-  const { data: adminConfig } = useQuery({
-    queryKey: ["admin-plaid-config"],
-    queryFn: api.getAdminPlaidConfig,
-    enabled: isAdmin,
-  });
-
-  const [clientId, setClientId] = useState("");
-  const [secret, setSecret] = useState("");
-  const [plaidEnv, setPlaidEnv] = useState("sandbox");
-  const [enabled, setEnabled] = useState(false);
-  const [showClientId, setShowClientId] = useState(false);
-  const [showSecret, setShowSecret] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const [removing, setRemoving] = useState(false);
-
-  useEffect(() => {
-    if (adminConfig?.configured) {
-      setPlaidEnv(adminConfig.plaid_env ?? "sandbox");
-      setEnabled(adminConfig.enabled);
-    }
-  }, [adminConfig]);
-
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      api.updateAdminPlaidConfig({
-        client_id: clientId,
-        secret,
-        plaid_env: plaidEnv,
-        enabled,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-plaid-config"] });
-      queryClient.invalidateQueries({ queryKey: ["plaid-mode"] });
-      setClientId("");
-      setSecret("");
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    },
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: () =>
-      api.updateAdminPlaidConfig({
-        client_id: clientId || "unchanged",
-        secret: secret || "unchanged",
-        plaid_env: plaidEnv,
-        enabled: !enabled,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-plaid-config"] });
-      queryClient.invalidateQueries({ queryKey: ["plaid-mode"] });
-      setEnabled(!enabled);
-    },
-  });
-
-  async function handleRemove() {
-    setRemoving(true);
-    try {
-      await api.deleteAdminPlaidConfig();
-      queryClient.invalidateQueries({ queryKey: ["admin-plaid-config"] });
-      queryClient.invalidateQueries({ queryKey: ["plaid-mode"] });
-      setConfirmRemove(false);
-    } finally {
-      setRemoving(false);
-    }
-  }
-
-  if (!isAdmin) return null;
-
-  return (
-    <div className="rounded-2xl border border-border bg-card p-6">
-      <div className="flex items-center gap-2">
-        <Users className="h-4 w-4 text-accent" />
-        <h2 className="text-base font-semibold">Admin — Managed Plaid</h2>
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Configure app-level Plaid credentials so users can connect without their own keys.
-      </p>
-
-      {adminConfig?.configured && (
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="inline-flex items-center gap-2 rounded-lg bg-green-500/10 border border-green-500/20 px-3 py-2">
-            <div className="h-2 w-2 rounded-full bg-green-400" />
-            <span className="text-xs font-medium text-green-400">
-              Configured ({adminConfig.plaid_env})
-            </span>
-            <span className="text-xs text-muted-foreground">
-              &middot; {adminConfig.managed_household_count} household{adminConfig.managed_household_count !== 1 ? "s" : ""} using managed
-            </span>
-          </div>
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={() => {
-                if (adminConfig?.configured) {
-                  toggleMutation.mutate();
-                }
-              }}
-              className="h-4 w-4 rounded border-border bg-muted accent-accent"
-            />
-            <span className="text-xs">Allow households to use managed Plaid</span>
-          </label>
-        </div>
-      )}
-
-      <div className="mt-5 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass}>Client ID</label>
-            <div className="relative">
-              <input
-                type={showClientId ? "text" : "password"}
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder={adminConfig?.configured ? `••••${adminConfig.client_id_last4}` : "App-level Plaid Client ID"}
-                className={`${inputClass} w-full pr-10`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowClientId(!showClientId)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                {showClientId ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className={labelClass}>Secret</label>
-            <div className="relative">
-              <input
-                type={showSecret ? "text" : "password"}
-                value={secret}
-                onChange={(e) => setSecret(e.target.value)}
-                placeholder={adminConfig?.configured ? `••••${adminConfig.secret_last4}` : "App-level Plaid Secret"}
-                className={`${inputClass} w-full pr-10`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowSecret(!showSecret)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="max-w-xs">
-          <label className={labelClass}>Environment</label>
-          <select
-            value={plaidEnv}
-            onChange={(e) => setPlaidEnv(e.target.value)}
-            className={`${selectClass} w-full`}
-          >
-            <option value="sandbox">Sandbox (testing)</option>
-            <option value="production">Production</option>
-          </select>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {saved && <span className="text-xs text-green-400">Admin Plaid config saved</span>}
-            {saveMutation.isError && (
-              <span className="text-xs text-red-400">
-                {(saveMutation.error as Error).message}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {adminConfig?.configured && (
-              <button
-                onClick={() => setConfirmRemove(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
-              >
-                <Trash2 className="h-4 w-4" />
-                Remove
-              </button>
-            )}
-            <button
-              onClick={() => saveMutation.mutate()}
-              disabled={!clientId.trim() || !secret.trim() || saveMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:opacity-50"
-            >
-              {saveMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              {adminConfig?.configured ? "Update" : "Save"}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <ConfirmDialog
-        open={confirmRemove}
-        title="Remove managed Plaid credentials?"
-        description="This will remove the app-level Plaid credentials. Households using managed Plaid will no longer be able to link new accounts."
-        confirmLabel="Remove"
-        destructive
-        loading={removing}
-        onConfirm={handleRemove}
-        onCancel={() => setConfirmRemove(false)}
-      />
-    </div>
-  );
-}

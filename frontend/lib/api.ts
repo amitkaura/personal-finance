@@ -1,8 +1,11 @@
 import type {
-  Account, AccountSummary, AdminPlaidConfig, Budget, BudgetConflict, BudgetSummary,
+  Account, AccountSummary, AdminLLMConfig, AdminPlaidConfig, AdminOverview, AdminUser, AdminUserDetail, AdminUsersResponse,
+  AdminPlaidHealth, AdminErrorsResponse, ActiveUsersPoint, FeatureAdoption,
+  TransactionVolumePoint, StorageMetric,
+  Budget, BudgetConflict, BudgetSummary,
   CategoryRule, Goal, GoalContribution, GoalsResponse,
   Household, HouseholdInvitation, MonthlyTrend, NetWorthSnapshot,
-  LLMConfig, PlaidConfig, PlaidConnection, PlaidModeResponse, RecurringTransaction, SpendingByCategory, SyncConfig,
+  LLMConfig, LLMModeResponse, PlaidConfig, PlaidConnection, PlaidModeResponse, RecurringTransaction, SpendingByCategory, SyncConfig,
   SpendingPreference, Tag, TopMerchant, Transaction, User, UserProfile,
   UserSettings, ViewScope,
 } from "./types";
@@ -528,7 +531,33 @@ export const api = {
   deleteAdminPlaidConfig: () =>
     fetchVoid("/settings/admin/plaid-config", { method: "DELETE" }),
 
-  // LLM config
+  // Admin LLM config (app-level)
+  getAdminLLMConfig: () => fetcher<AdminLLMConfig>("/settings/admin/llm-config"),
+
+  updateAdminLLMConfig: (body: {
+    llm_base_url: string;
+    llm_api_key: string;
+    llm_model: string;
+    enabled: boolean;
+  }) =>
+    fetcher<AdminLLMConfig>("/settings/admin/llm-config", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  deleteAdminLLMConfig: () =>
+    fetchVoid("/settings/admin/llm-config", { method: "DELETE" }),
+
+  // LLM mode (managed vs BYOK)
+  getLLMMode: () => fetcher<LLMModeResponse>("/settings/llm-mode"),
+
+  setLLMMode: (mode: string) =>
+    fetcher<LLMModeResponse>("/settings/llm-mode", {
+      method: "PUT",
+      body: JSON.stringify({ mode }),
+    }),
+
+  // LLM config (per-household BYOK)
   getLLMConfig: () => fetcher<LLMConfig>("/settings/llm-config"),
 
   updateLLMConfig: (body: { llm_base_url: string; llm_api_key: string; llm_model: string }) =>
@@ -799,4 +828,55 @@ export const api = {
       "/settings/import-balances",
       { method: "POST", body: JSON.stringify(payload) },
     ),
+
+  // Admin
+  getAdminOverview: () => fetcher<AdminOverview>("/admin/overview"),
+
+  getAdminUsers: (params?: { limit?: number; offset?: number; search?: string; active_days?: number; has_linked?: boolean; has_manual?: boolean; sort?: string }) => {
+    const p = new URLSearchParams();
+    if (params?.limit != null) p.set("limit", String(params.limit));
+    if (params?.offset != null) p.set("offset", String(params.offset));
+    if (params?.search) p.set("search", params.search);
+    if (params?.active_days != null) p.set("active_days", String(params.active_days));
+    if (params?.has_linked != null) p.set("has_linked", String(params.has_linked));
+    if (params?.has_manual != null) p.set("has_manual", String(params.has_manual));
+    if (params?.sort) p.set("sort", params.sort);
+    const qs = p.toString();
+    return fetcher<AdminUsersResponse>(`/admin/users${qs ? `?${qs}` : ""}`);
+  },
+
+  updateAdminUser: (userId: number, body: { is_admin?: boolean; is_disabled?: boolean }) =>
+    fetcher<AdminUser>(`/admin/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  deleteAdminUser: (userId: number) =>
+    fetchVoid(`/admin/users/${userId}`, { method: "DELETE" }),
+
+  getAdminUserDetail: (userId: number) =>
+    fetcher<AdminUserDetail>(`/admin/users/${userId}/detail`),
+
+  getAdminPlaidHealth: () => fetcher<AdminPlaidHealth>("/admin/plaid-health"),
+
+  getAdminErrors: (params?: { limit?: number; offset?: number; error_type?: string }) => {
+    const p = new URLSearchParams();
+    if (params?.limit != null) p.set("limit", String(params.limit));
+    if (params?.offset != null) p.set("offset", String(params.offset));
+    if (params?.error_type) p.set("error_type", params.error_type);
+    const qs = p.toString();
+    return fetcher<AdminErrorsResponse>(`/admin/errors${qs ? `?${qs}` : ""}`);
+  },
+
+  getAdminActiveUsers: (days?: number) =>
+    fetcher<ActiveUsersPoint[]>(`/admin/analytics/active-users${days ? `?days=${days}` : ""}`),
+
+  getAdminFeatureAdoption: () =>
+    fetcher<FeatureAdoption[]>("/admin/analytics/feature-adoption"),
+
+  getAdminTransactionVolume: (days?: number) =>
+    fetcher<TransactionVolumePoint[]>(`/admin/analytics/transaction-volume${days ? `?days=${days}` : ""}`),
+
+  getAdminStorage: () =>
+    fetcher<StorageMetric[]>("/admin/analytics/storage"),
 };

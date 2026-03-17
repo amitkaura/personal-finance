@@ -1,0 +1,37 @@
+---
+description: Before finalizing any plan, read and audit against every cursor rule in .cursor/rules/
+alwaysApply: true
+---
+
+# Plan Audit Checklist
+
+Before presenting or finalizing any plan (via `CreatePlan` or otherwise), you MUST:
+
+## Step 1 — Read every rule
+
+Read all `.mdc` files in `.cursor/rules/` using a Glob + batch Read.
+
+## Step 2 — Audit the plan
+
+For each rule, determine:
+
+- **Applies?** Does this plan touch files/behavior covered by the rule?
+- **Satisfied?** Does the plan explicitly address the rule's requirements?
+
+If a rule applies but the plan doesn't address it, fix the plan before presenting it.
+
+## Step 3 — Include a "Cursor Rules Applied" section
+
+Add a section at the top of the plan body listing every applicable rule and how the plan satisfies it. Rules that don't apply (e.g., `cascade-deletes` for a frontend-only change) can be omitted.
+
+```markdown
+## Cursor Rules Applied
+
+- **test-driven-development**: Tests written first (red), implementation second (green). Coverage + README at end.
+- **feature-branch-workflow**: Branch `feat/my-feature` off `staging`, PR into `staging`.
+- **responsive-design**: New grid uses `grid-cols-1 sm:grid-cols-2`.
+```
+
+## Why This Exists
+
+Without this checklist, rules are silently skipped during planning — causing rework when the user catches violations after the fact.

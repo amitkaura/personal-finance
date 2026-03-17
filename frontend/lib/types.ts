@@ -264,6 +264,7 @@ export interface User {
   google_name: string;
   google_picture: string | null;
   is_admin?: boolean;
+  is_protected?: boolean;
 }
 
 export interface UserProfile {
@@ -333,8 +334,152 @@ export interface AdminPlaidConfig {
 
 export const PLAID_MODES = { MANAGED: "managed", BYOK: "byok" } as const;
 
+export interface AdminLLMConfig {
+  configured: boolean;
+  enabled: boolean;
+  llm_base_url: string | null;
+  llm_model: string | null;
+  api_key_last4: string | null;
+  managed_household_count: number;
+}
+
+export interface LLMModeResponse {
+  mode: "managed" | "byok" | "none" | null;
+  managed_available: boolean;
+}
+
+export const LLM_MODES = { MANAGED: "managed", BYOK: "byok", NONE: "none" } as const;
+
 export interface Category {
   id: number;
   name: string;
   user_id: number;
+}
+
+
+// ── Admin Types ────────────────────────────────────────────────
+
+export interface AdminOverview {
+  total_users: number;
+  active_7d: number;
+  active_30d: number;
+  total_accounts: number;
+  linked_accounts: number;
+  manual_accounts: number;
+  total_transactions: number;
+  total_households: number;
+  recent_errors: number;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  name: string;
+  picture: string | null;
+  is_admin: boolean;
+  is_protected: boolean;
+  is_disabled: boolean;
+  created_at: string | null;
+  account_count: number;
+  transaction_count: number;
+  last_active: string | null;
+}
+
+export interface AdminUsersResponse {
+  items: AdminUser[];
+  total: number;
+}
+
+export interface AdminPlaidError {
+  id: number;
+  user_id: number | null;
+  error_type: string;
+  endpoint: string;
+  status_code: number | null;
+  detail: string;
+  created_at: string;
+}
+
+export interface AdminPlaidHealth {
+  total_plaid_errors: number;
+  recent_errors: AdminPlaidError[];
+}
+
+export interface AdminErrorEntry {
+  id: number;
+  user_id: number | null;
+  error_type: string;
+  endpoint: string;
+  status_code: number | null;
+  detail: string;
+  created_at: string;
+}
+
+export interface AdminErrorsResponse {
+  items: AdminErrorEntry[];
+  total: number;
+}
+
+export interface ActiveUsersPoint {
+  date: string;
+  dau: number;
+  wau: number;
+  mau: number;
+}
+
+export interface FeatureAdoption {
+  feature: string;
+  user_count: number;
+  percentage: number;
+}
+
+export interface TransactionVolumePoint {
+  date: string;
+  count: number;
+}
+
+export interface StorageMetric {
+  table_name: string;
+  row_count: number;
+}
+
+export interface AdminUserDetailAccount {
+  id: number;
+  name: string;
+  type: string;
+  subtype: string | null;
+  current_balance: number;
+  is_linked: boolean;
+  created_at: string | null;
+}
+
+export interface AdminUserDetailTransaction {
+  id: number;
+  date: string;
+  merchant_name: string | null;
+  amount: number;
+  category: string | null;
+  account_name: string | null;
+}
+
+export interface AdminUserDetailActivity {
+  action: string;
+  detail: string | null;
+  created_at: string | null;
+}
+
+export interface AdminUserDetailStats {
+  total_transactions: number;
+  first_transaction_date: string | null;
+  categories_used: number;
+  rules_created: number;
+  tags_created: number;
+}
+
+export interface AdminUserDetail {
+  user: AdminUser;
+  accounts: AdminUserDetailAccount[];
+  recent_transactions: AdminUserDetailTransaction[];
+  recent_activity: AdminUserDetailActivity[];
+  stats: AdminUserDetailStats;
 }

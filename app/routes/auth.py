@@ -36,6 +36,7 @@ def _user_dict(u: User) -> dict:
         "bio": u.bio,
         "google_name": u.google_name or u.name,
         "google_picture": u.google_picture or u.picture,
+        "is_admin": u.is_admin,
     }
 
 
@@ -83,12 +84,20 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
         db.flush()
         db.add(HouseholdMember(household_id=household.id, user_id=user.id, role="owner"))
         db.add(HouseholdSyncConfig(household_id=household.id))
+    if settings.admin_email and user.email == settings.admin_email and not user.is_admin:
+        user.is_admin = True
+        db.add(user)
+
     db.commit()
     db.refresh(user)
 
     token = create_jwt(user.id)
     secure_cookie = settings.secure_cookies and not settings.debug
-    resp = JSONResponse(content=_user_dict(user))
+    content = _user_dict(user)
+    content["is_protected"] = bool(
+        settings.admin_email and user.email == settings.admin_email
+    )
+    resp = JSONResponse(content=content)
     resp.set_cookie(
         key=_COOKIE_NAME,
         value=token,
@@ -105,7 +114,12 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
 def me(user: User = Depends(get_current_user)):
     settings = get_settings()
     data = _user_dict(user)
-    data["is_admin"] = bool(settings.admin_email and user.email == settings.admin_email)
+    data["is_admin"] = user.is_admin or bool(
+        settings.admin_email and user.email == settings.admin_email
+    )
+    data["is_protected"] = bool(
+        settings.admin_email and user.email == settings.admin_email
+    )
     return data
 
 

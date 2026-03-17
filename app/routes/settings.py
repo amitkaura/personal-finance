@@ -26,6 +26,7 @@ from app.models import (
     Account,
     AccountBalanceSnapshot,
     AccountType,
+    AppLLMConfig,
     AppPlaidConfig,
     Budget,
     Category,
@@ -39,6 +40,7 @@ from app.models import (
     HouseholdLLMConfig,
     HouseholdPlaidConfig,
     HouseholdSyncConfig,
+    LLMMode,
     NetWorthSnapshot,
     PlaidItem,
     PlaidMode,
@@ -962,6 +964,9 @@ def delete_account(
     user: User = Depends(get_current_user),
 ):
     """Permanently delete the user account and all associated data."""
+    settings = get_app_settings()
+    if settings.admin_email and user.email == settings.admin_email:
+        raise HTTPException(status_code=400, detail="Cannot delete the seeded admin account")
     _delete_all_user_data(session, user)
 
     # Clean up contributions to other users' goals (e.g. shared household goals)
@@ -1719,3 +1724,163 @@ def import_balances(
         "accounts_created": accounts_created,
         "snapshots_updated": snapshots_updated,
     }
+
+
+# ── LLM Mode (managed vs BYOK) ────────────────────────────────
+
+
+class LLMModeUpdate(BaseModel):
+    mode: LLMMode
+
+
+@router.get("/llm-mode")
+def get_llm_mode(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+
+    mode = None
+    if member:
+        household = session.get(Household, member.household_id)
+        if household:
+            mode = household.llm_mode
+
+    app_config = session.exec(select(AppLLMConfig)).first()
+    managed_available = bool(app_config and app_config.enabled)
+
+    return {"mode": mode, "managed_available": managed_available}
+
+
+@router.put("/llm-mode")
+def set_llm_mode(
+    body: LLMModeUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    member = session.exec(
+        select(HouseholdMember).where(HouseholdMember.user_id == user.id)
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="No household found")
+
+    household = session.get(Household, member.household_id)
+    if not household:
+        raise HTTPException(status_code=404, detail="No household found")
+
+    if body.mode == LLMMode.MANAGED:
+        app_config = session.exec(select(AppLLMConfig)).first()
+        if not app_config or not app_config.enabled:
+            raise HTTPException(status_code=400, detail="Managed LLM is not available")
+
+    household.llm_mode = body.mode
+    session.add(household)
+    session.commit()
+
+    app_config = session.exec(select(AppLLMConfig)).first()
+    managed_available = bool(app_config and app_config.enabled)
+    return {"mode": household.llm_mode, "managed_available": managed_available}
+
+
+# ── Admin LLM Config (app-level managed credentials) ──────────
+
+
+class AdminLLMConfigUpdate(BaseModel):
+    llm_base_url: str
+    llm_api_key: str
+    llm_model: str
+    enabled: bool
+
+
+@router.get("/admin/llm-config")
+def get_admin_llm_config(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+
+    config = session.exec(select(AppLLMConfig)).first()
+    managed_count = session.exec(
+        select(sa.func.count()).select_from(Household).where(
+            Household.llm_mode == LLMMode.MANAGED
+        )
+    ).one()
+
+    if not config:
+        return {
+            "configured": False,
+            "enabled": False,
+            "llm_base_url": None,
+            "llm_model": None,
+            "api_key_last4": None,
+            "managed_household_count": managed_count,
+        }
+
+    api_key = decrypt_token(config.encrypted_api_key)
+    return {
+        "configured": True,
+        "enabled": config.enabled,
+        "llm_base_url": config.llm_base_url,
+        "llm_model": config.llm_model,
+        "api_key_last4": api_key[-4:] if len(api_key) >= 4 else api_key,
+        "managed_household_count": managed_count,
+    }
+
+
+@router.put("/admin/llm-config")
+def update_admin_llm_config(
+    body: AdminLLMConfigUpdate,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+    _validate_llm_base_url(body.llm_base_url)
+
+    _SENTINEL = "unchanged"
+
+    config = session.exec(select(AppLLMConfig)).first()
+    if config:
+        if body.llm_api_key != _SENTINEL:
+            config.encrypted_api_key = encrypt_token(body.llm_api_key)
+        config.llm_base_url = body.llm_base_url
+        config.llm_model = body.llm_model
+        config.enabled = body.enabled
+    else:
+        if body.llm_api_key == _SENTINEL:
+            raise HTTPException(status_code=400, detail="API key is required for initial setup")
+        config = AppLLMConfig(
+            llm_base_url=body.llm_base_url,
+            encrypted_api_key=encrypt_token(body.llm_api_key),
+            llm_model=body.llm_model,
+            enabled=body.enabled,
+        )
+
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+
+    api_key = decrypt_token(config.encrypted_api_key)
+    return {
+        "configured": True,
+        "enabled": config.enabled,
+        "llm_base_url": config.llm_base_url,
+        "llm_model": config.llm_model,
+        "api_key_last4": api_key[-4:] if len(api_key) >= 4 else api_key,
+    }
+
+
+@router.delete("/admin/llm-config", status_code=204)
+def delete_admin_llm_config(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+
+    config = session.exec(select(AppLLMConfig)).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="App LLM config not found")
+
+    session.delete(config)
+    session.commit()
