@@ -97,14 +97,11 @@ const labelClass = "block text-xs font-medium text-muted-foreground mb-1.5";
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const integrationsRef = useRef<HTMLDivElement>(null);
-  const aiRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const section = searchParams.get("section");
-    if (section === "integrations" && integrationsRef.current) {
+    if ((section === "integrations" || section === "ai") && integrationsRef.current) {
       integrationsRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    } else if (section === "ai" && aiRef.current) {
-      aiRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }, [searchParams]);
 
@@ -117,14 +114,13 @@ export default function SettingsPage() {
       <div className="mt-8 space-y-6">
         <ProfileSection />
         <HouseholdSection />
-        <div ref={integrationsRef}>
+        <div ref={integrationsRef} data-testid="integrations-group" className="space-y-4">
+          <h2 className="text-base font-semibold">Integrations</h2>
           <IntegrationsSection />
+          <AiSection />
         </div>
         <GeneralSection />
         <SyncSection />
-        <div ref={aiRef}>
-          <AiSection />
-        </div>
         <DataSection />
       </div>
     </>
@@ -710,7 +706,7 @@ function IntegrationsSection() {
       <div className="rounded-2xl border border-border bg-card p-6">
         <div className="flex items-center gap-2">
           <Link2 className="h-4 w-4 text-accent" />
-          <h2 className="text-base font-semibold">Integrations</h2>
+          <h2 className="text-base font-semibold">Bank Connections</h2>
         </div>
         <p className="mt-3 text-sm text-muted-foreground">
           You&apos;re using managed Plaid — no configuration needed. Your bank
@@ -724,7 +720,7 @@ function IntegrationsSection() {
     <div className="rounded-2xl border border-border bg-card p-6">
       <div className="flex items-center gap-2">
         <Link2 className="h-4 w-4 text-accent" />
-        <h2 className="text-base font-semibold">Integrations</h2>
+        <h2 className="text-base font-semibold">Bank Connections</h2>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
         Connect your bank accounts via Plaid. Credentials are encrypted and stored

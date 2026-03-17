@@ -36,6 +36,10 @@ const mockApi = vi.hoisted(() => ({
   getLLMConfig: vi.fn(),
   getLLMMode: vi.fn(),
   setLLMMode: vi.fn(),
+  getPlaidConfig: vi.fn(),
+  getPlaidMode: vi.fn(),
+  updatePlaidConfig: vi.fn(),
+  deletePlaidConfig: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -94,6 +98,8 @@ describe("SettingsPage", () => {
     mockApi.getRules.mockResolvedValue([]);
     mockApi.getLLMConfig.mockResolvedValue({ configured: false, llm_base_url: null, llm_model: null, api_key_last4: null });
     mockApi.getLLMMode.mockResolvedValue({ mode: null, managed_available: false });
+    mockApi.getPlaidConfig.mockResolvedValue({ configured: false });
+    mockApi.getPlaidMode.mockResolvedValue({ mode: "byok" });
     mockApi.updateProfile.mockResolvedValue(TEST_USER);
     mockApi.invitePartner.mockResolvedValue({
       id: 1,
@@ -109,10 +115,27 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.getByText("Profile & Account")).toBeInTheDocument();
     expect(screen.getByText("Household")).toBeInTheDocument();
+    expect(screen.getByTestId("integrations-group")).toBeInTheDocument();
+    expect(screen.getByText("Integrations")).toBeInTheDocument();
+    expect(screen.getByText("AI Categorization")).toBeInTheDocument();
     expect(screen.getByText("General")).toBeInTheDocument();
     expect(screen.getByText("Sync Schedule")).toBeInTheDocument();
-    expect(screen.getByText("AI Categorization")).toBeInTheDocument();
     expect(screen.getByText("Data Management")).toBeInTheDocument();
+  });
+
+  it("shows 'Bank Connections' sub-heading inside Integrations when household exists", async () => {
+    mockHouseholdState.value.household = TEST_HOUSEHOLD;
+    mockApi.getPlaidConfig.mockResolvedValue({ configured: false });
+    mockApi.getPlaidMode = vi.fn().mockResolvedValue({ mode: "byok" });
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Bank Connections")).toBeInTheDocument();
+    });
+    const group = screen.getByTestId("integrations-group");
+    expect(group).toContainElement(screen.getByText("Bank Connections"));
+    expect(group).toContainElement(screen.getByText("AI Categorization"));
   });
 
   describe("Responsive layout", () => {
