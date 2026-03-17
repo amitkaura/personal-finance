@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import Sidebar from "@/components/sidebar";
 import InvitationBanner from "@/components/invitation-banner";
@@ -9,9 +10,16 @@ import CategorizationDrawer from "@/components/categorization-drawer";
 import LoginPage from "@/app/login/page";
 import { Loader2, Menu } from "lucide-react";
 
+const AUTH_BYPASS_PATHS = ["/staging-login"];
+
 export default function AuthGate({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname = usePathname();
+
+  if (AUTH_BYPASS_PATHS.includes(pathname)) {
+    return <>{children}</>;
+  }
 
   if (isLoading) {
     return (

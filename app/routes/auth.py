@@ -103,7 +103,10 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
 
 @router.get("/me")
 def me(user: User = Depends(get_current_user)):
-    return _user_dict(user)
+    settings = get_settings()
+    data = _user_dict(user)
+    data["is_admin"] = bool(settings.admin_email and user.email == settings.admin_email)
+    return data
 
 
 @router.post("/logout")

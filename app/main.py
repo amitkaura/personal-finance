@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
     create_db_and_tables()
     _migrate_llm_fields_to_household()
     _migrate_sync_fields_to_household()
+    _migrate_household_plaid_mode()
     _backfill_orphan_households()
     settings = get_settings()
     if settings.run_scheduler:
@@ -130,6 +131,21 @@ def _backfill_orphan_households() -> None:
             session.add(HouseholdMember(household_id=hh.id, user_id=user.id, role="owner"))
         session.commit()
         logger.info("Backfill complete")
+
+
+def _migrate_household_plaid_mode() -> None:
+    """Add plaid_mode column to households and backfill existing rows to 'byok'."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE households ADD COLUMN IF NOT EXISTS plaid_mode varchar"))
+        except Exception:
+            conn.rollback()
+        conn.execute(text("UPDATE households SET plaid_mode = 'byok' WHERE plaid_mode IS NULL"))
+        conn.commit()
+    logger.info("Household plaid_mode migration check complete")
 
 
 def _validate_startup_settings() -> None:

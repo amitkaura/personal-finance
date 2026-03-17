@@ -35,6 +35,13 @@ class User(SQLModel, table=True):
     bio: Optional[str] = None
 
 
+class PlaidMode(str, Enum):
+    """Whether a household uses the app's managed Plaid or brings their own keys."""
+
+    MANAGED = "managed"
+    BYOK = "byok"
+
+
 class AccountType(str, Enum):
     """Account type as defined by Plaid."""
 
@@ -293,6 +300,7 @@ class Household(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = "Our Household"
+    plaid_mode: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     members: list["HouseholdMember"] = Relationship(back_populates="household")
@@ -322,6 +330,18 @@ class HouseholdPlaidConfig(SQLModel, table=True):
     encrypted_client_id: str
     encrypted_secret: str
     plaid_env: str = Field(default="sandbox")
+
+
+class AppPlaidConfig(SQLModel, table=True):
+    """App-level Plaid API credentials for the managed integration (singleton)."""
+
+    __tablename__ = "app_plaid_config"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    encrypted_client_id: str
+    encrypted_secret: str
+    plaid_env: str = Field(default="sandbox")
+    enabled: bool = Field(default=False)
 
 
 class HouseholdLLMConfig(SQLModel, table=True):

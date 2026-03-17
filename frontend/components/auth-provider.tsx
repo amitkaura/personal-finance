@@ -18,6 +18,7 @@ interface AuthContextValue {
   login: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  clearSession: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -26,6 +27,7 @@ const AuthContext = createContext<AuthContextValue>({
   login: async () => {},
   logout: async () => {},
   refreshUser: async () => {},
+  clearSession: () => {},
 });
 
 export function useAuth() {
@@ -57,6 +59,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, [queryClient]);
 
+  const clearSession = useCallback(() => {
+    queryClient.clear();
+    setUser(null);
+  }, [queryClient]);
+
   const refreshUser = useCallback(async () => {
     try {
       const u = await api.getMe();
@@ -67,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, refreshUser, clearSession }}>
       {children}
     </AuthContext.Provider>
   );
