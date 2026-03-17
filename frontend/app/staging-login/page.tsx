@@ -1,10 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock } from "lucide-react";
 
 export default function StagingLoginPage() {
+  return (
+    <Suspense>
+      <StagingLoginForm />
+    </Suspense>
+  );
+}
+
+function StagingLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const from = searchParams.get("from") || "/";
