@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
     _validate_startup_settings()
     await _initialize_rate_limiter_backend()
     create_db_and_tables()
+    _migrate_user_admin_fields()
     _migrate_timestamps()
     _migrate_llm_fields_to_household()
     _migrate_sync_fields_to_household()
@@ -134,6 +135,24 @@ def _backfill_orphan_households() -> None:
             session.add(HouseholdMember(household_id=hh.id, user_id=user.id, role="owner"))
         session.commit()
         logger.info("Backfill complete")
+
+
+def _migrate_user_admin_fields() -> None:
+    """Add is_admin and is_disabled columns to users table."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false"))
+        except Exception:
+            conn.rollback()
+        try:
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_disabled boolean NOT NULL DEFAULT false"))
+        except Exception:
+            conn.rollback()
+        conn.commit()
+    logger.info("User admin fields migration check complete")
 
 
 def _migrate_household_plaid_mode() -> None:
