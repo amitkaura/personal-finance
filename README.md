@@ -744,3 +744,5 @@ LLM credentials (base URL, API key, model) are configured per-household in Setti
 - **Cross-user data visible after account switch**: caused by stale React Query cache reused across sessions.
 - **Mitigation in codebase**: `frontend/components/auth-provider.tsx` clears query cache on login, logout, and authenticated user-id changes.
 - **Verification**: login as user A, view data, logout, login as user B, then refresh target pages and confirm only user B data is shown.
+
+
