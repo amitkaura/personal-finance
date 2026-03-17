@@ -687,13 +687,13 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (463 tests across 44 files):**
+**What's tested (464 tests across 44 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
 | `rule-utils` | 11 | Keyword option generation: full name, cleaned name, progressive word combos, dedup, edge cases |
-| `settings-page` | 29 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + clearSession), explicit invalid invite email feedback, AI section mode-aware (managed badge, switch to BYOK button, BYOK form, switch to managed button, hidden switch when managed unavailable) |
+| `settings-page` | 31 | All sections: profile, household, Integrations group with Bank Connections + AI sub-cards, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + clearSession), explicit invalid invite email feedback, AI section mode-aware (managed badge, switch to BYOK button, BYOK form, switch to managed button, hidden switch when managed unavailable) |
 | `balance-import-dialog` | 5 | Upload step rendering, column mapping, error handling, account matching, API call on submit |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `transactions-page` | 28 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion), explicit add-amount validation for `0`, create mutation error rendering |
@@ -744,7 +744,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 
 ### Latest coverage snapshot
 
-- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`3980` statements, `540` missed)
+- Backend (`pytest --cov=app --cov-report=term`): **87% total** (`4119` statements, `552` missed)
 - Frontend (`npx vitest run --coverage`): **76.28% statements**, **71.95% branches**, **61.95% functions**, **77.19% lines**
 
 ## Environment Variables
