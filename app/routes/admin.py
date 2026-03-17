@@ -157,6 +157,7 @@ def admin_users(
 
     users = session.exec(query.offset(offset).limit(limit)).all()
 
+    settings = get_settings()
     items = []
     for u in users:
         acct_count = session.exec(
@@ -179,6 +180,7 @@ def admin_users(
             "picture": u.avatar_url or u.picture,
             "is_admin": u.is_admin,
             "is_disabled": u.is_disabled,
+            "is_protected": bool(settings.admin_email and u.email == settings.admin_email),
             "created_at": u.created_at.isoformat() if u.created_at else None,
             "account_count": acct_count,
             "transaction_count": txn_count,
@@ -203,6 +205,13 @@ def admin_update_user(
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+
+    settings = get_settings()
+    if settings.admin_email and target.email == settings.admin_email:
+        if body.is_admin is False:
+            raise HTTPException(status_code=400, detail="Cannot demote the seeded admin")
+        if body.is_disabled is True:
+            raise HTTPException(status_code=400, detail="Cannot disable the seeded admin")
 
     if body.is_admin is not None:
         target.is_admin = body.is_admin
@@ -236,6 +245,10 @@ def admin_delete_user(
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+
+    settings = get_settings()
+    if settings.admin_email and target.email == settings.admin_email:
+        raise HTTPException(status_code=400, detail="Cannot delete the seeded admin")
 
     # Walk the FK dependency chain from deepest to shallowest
     # 1. Activity + error logs

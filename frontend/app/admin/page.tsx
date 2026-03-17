@@ -70,8 +70,13 @@ export default function AdminPage() {
     setUserFilters(filters);
   };
 
+  useEffect(() => {
+    if (user && !user.is_admin) {
+      router.push("/");
+    }
+  }, [user, router]);
+
   if (user && !user.is_admin) {
-    router.push("/");
     return null;
   }
 
@@ -313,47 +318,53 @@ function UserRow({ u, expanded, onToggle, onUpdate, onDelete }: {
         </td>
         <td className="px-4 py-3">
           <div className="flex flex-wrap items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-            {u.is_disabled ? (
-              <button
-                onClick={() => onUpdate({ is_disabled: false })}
-                className="rounded-lg px-2 py-1 text-xs font-medium text-green-400 hover:bg-green-500/10 transition-colors"
-                aria-label="Enable"
-              >
-                Enable
-              </button>
+            {u.is_protected ? (
+              <span className="text-xs text-muted-foreground italic">Protected</span>
             ) : (
-              <button
-                onClick={() => onUpdate({ is_disabled: true })}
-                className="rounded-lg px-2 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
-                aria-label="Disable"
-              >
-                Disable
-              </button>
+              <>
+                {u.is_disabled ? (
+                  <button
+                    onClick={() => onUpdate({ is_disabled: false })}
+                    className="rounded-lg px-2 py-1 text-xs font-medium text-green-400 hover:bg-green-500/10 transition-colors"
+                    aria-label="Enable"
+                  >
+                    Enable
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onUpdate({ is_disabled: true })}
+                    className="rounded-lg px-2 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
+                    aria-label="Disable"
+                  >
+                    Disable
+                  </button>
+                )}
+                {u.is_admin ? (
+                  <button
+                    onClick={() => onUpdate({ is_admin: false })}
+                    className="rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
+                    aria-label="Revoke admin"
+                  >
+                    <ShieldOff className="h-3.5 w-3.5 inline mr-1" />Revoke
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onUpdate({ is_admin: true })}
+                    className="rounded-lg px-2 py-1 text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors"
+                    aria-label="Make admin"
+                  >
+                    <Shield className="h-3.5 w-3.5 inline mr-1" />Admin
+                  </button>
+                )}
+                <button
+                  onClick={onDelete}
+                  className="rounded-lg px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                  aria-label="Delete"
+                >
+                  <Trash2 className="h-3.5 w-3.5 inline mr-1" />Delete
+                </button>
+              </>
             )}
-            {u.is_admin ? (
-              <button
-                onClick={() => onUpdate({ is_admin: false })}
-                className="rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
-                aria-label="Revoke admin"
-              >
-                <ShieldOff className="h-3.5 w-3.5 inline mr-1" />Revoke
-              </button>
-            ) : (
-              <button
-                onClick={() => onUpdate({ is_admin: true })}
-                className="rounded-lg px-2 py-1 text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors"
-                aria-label="Make admin"
-              >
-                <Shield className="h-3.5 w-3.5 inline mr-1" />Admin
-              </button>
-            )}
-            <button
-              onClick={onDelete}
-              className="rounded-lg px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
-              aria-label="Delete"
-            >
-              <Trash2 className="h-3.5 w-3.5 inline mr-1" />Delete
-            </button>
           </div>
         </td>
       </tr>

@@ -264,6 +264,7 @@ export interface User {
   google_name: string;
   google_picture: string | null;
   is_admin?: boolean;
+  is_protected?: boolean;
 }
 
 export interface UserProfile {
@@ -376,6 +377,7 @@ export interface AdminUser {
   name: string;
   picture: string | null;
   is_admin: boolean;
+  is_protected: boolean;
   is_disabled: boolean;
   created_at: string | null;
   account_count: number;

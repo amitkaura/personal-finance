@@ -36,6 +36,7 @@ def _user_dict(u: User) -> dict:
         "bio": u.bio,
         "google_name": u.google_name or u.name,
         "google_picture": u.google_picture or u.picture,
+        "is_admin": u.is_admin,
     }
 
 
@@ -92,7 +93,11 @@ def google_login(body: GoogleLoginBody, db: Session = Depends(get_session)):
 
     token = create_jwt(user.id)
     secure_cookie = settings.secure_cookies and not settings.debug
-    resp = JSONResponse(content=_user_dict(user))
+    content = _user_dict(user)
+    content["is_protected"] = bool(
+        settings.admin_email and user.email == settings.admin_email
+    )
+    resp = JSONResponse(content=content)
     resp.set_cookie(
         key=_COOKIE_NAME,
         value=token,
@@ -110,6 +115,9 @@ def me(user: User = Depends(get_current_user)):
     settings = get_settings()
     data = _user_dict(user)
     data["is_admin"] = user.is_admin or bool(
+        settings.admin_email and user.email == settings.admin_email
+    )
+    data["is_protected"] = bool(
         settings.admin_email and user.email == settings.admin_email
     )
     return data

@@ -964,6 +964,9 @@ def delete_account(
     user: User = Depends(get_current_user),
 ):
     """Permanently delete the user account and all associated data."""
+    settings = get_app_settings()
+    if settings.admin_email and user.email == settings.admin_email:
+        raise HTTPException(status_code=400, detail="Cannot delete the seeded admin account")
     _delete_all_user_data(session, user)
 
     # Clean up contributions to other users' goals (e.g. shared household goals)

@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   Brain,
   ArrowLeftRight,
+  Shield,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
@@ -1564,7 +1565,7 @@ function AiSection() {
 function DataSection() {
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { clearSession } = useAuth();
+  const { user, clearSession } = useAuth();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
@@ -1718,18 +1719,30 @@ function DataSection() {
               Delete all financial data. Your login and household membership will be preserved.
             </span>
           </button>
-          <button
-            onClick={() => setConfirmDeleteOpen(true)}
-            className="flex flex-col items-start gap-1 rounded-lg bg-red-600 px-4 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-red-700"
-          >
-            <span className="inline-flex items-center gap-2">
-              <UserX className="h-4 w-4" />
-              Delete Account
-            </span>
-            <span className="text-xs font-normal text-red-200">
-              Permanently delete your account and all data. You will be logged out.
-            </span>
-          </button>
+          {user?.is_protected ? (
+            <div className="flex flex-col items-start gap-1 rounded-lg bg-muted px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+              <span className="inline-flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Delete Account
+              </span>
+              <span className="text-xs font-normal">
+                Protected admin account cannot be deleted.
+              </span>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDeleteOpen(true)}
+              className="flex flex-col items-start gap-1 rounded-lg bg-red-600 px-4 py-3 text-left text-sm font-medium text-white transition-colors hover:bg-red-700"
+            >
+              <span className="inline-flex items-center gap-2">
+                <UserX className="h-4 w-4" />
+                Delete Account
+              </span>
+              <span className="text-xs font-normal text-red-200">
+                Permanently delete your account and all data. You will be logged out.
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
