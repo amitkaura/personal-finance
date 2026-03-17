@@ -34,12 +34,26 @@ class User(SQLModel, table=True):
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
 
+    # Admin & status
+    is_admin: bool = Field(default=False)
+    is_disabled: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
+
 
 class PlaidMode(str, Enum):
     """Whether a household uses the app's managed Plaid or brings their own keys."""
 
     MANAGED = "managed"
     BYOK = "byok"
+
+
+class LLMMode(str, Enum):
+    """Whether a household uses managed AI categorization or brings their own LLM API key."""
+
+    MANAGED = "managed"
+    BYOK = "byok"
+    NONE = "none"
 
 
 class AccountType(str, Enum):
@@ -62,6 +76,8 @@ class PlaidItem(SQLModel, table=True):
     encrypted_access_token: str = Field(index=True)
     item_id: str = Field(unique=True, index=True)
     institution_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
     accounts: list["Account"] = Relationship(back_populates="plaid_item")
 
@@ -86,6 +102,8 @@ class Account(SQLModel, table=True):
     is_linked: bool = Field(default=True)
     statement_available_day: Optional[int] = Field(default=None, ge=1, le=31)
     last_statement_reminder_sent: Optional[date] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
     plaid_item: Optional[PlaidItem] = Relationship(back_populates="accounts")
     transactions: list["Transaction"] = Relationship(back_populates="account")
@@ -113,6 +131,8 @@ class Transaction(SQLModel, table=True):
     is_manual: bool = Field(default=False)
     notes: Optional[str] = None
     user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
     account: Optional[Account] = Relationship(back_populates="transactions")
     tag_links: list["TransactionTag"] = Relationship(back_populates="transaction")
@@ -127,6 +147,8 @@ class Category(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)
     name: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 class CategoryRule(SQLModel, table=True):
@@ -139,6 +161,8 @@ class CategoryRule(SQLModel, table=True):
     keyword: str = Field(index=True)
     category: str
     case_sensitive: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 class UserSettings(SQLModel, table=True):
@@ -153,6 +177,8 @@ class UserSettings(SQLModel, table=True):
     currency: str = "CAD"
     date_format: str = "YYYY-MM-DD"
     locale: str = "en-CA"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 
@@ -171,6 +197,8 @@ class Budget(SQLModel, table=True):
     month: str = Field(index=True)  # "YYYY-MM"
     rollover: bool = Field(default=False)
     household_id: Optional[int] = Field(default=None, foreign_key="households.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 class SpendingPreference(SQLModel, table=True):
@@ -183,6 +211,8 @@ class SpendingPreference(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id", index=True)
     category: str
     target: str = Field(default="personal")  # "personal" | "shared"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 # ── Financial Goals ────────────────────────────────────────────
@@ -203,6 +233,7 @@ class Goal(SQLModel, table=True):
     color: str = Field(default="#6d28d9")
     is_completed: bool = Field(default=False)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
     household_id: Optional[int] = Field(default=None, foreign_key="households.id", index=True)
 
 
@@ -215,6 +246,8 @@ class GoalAccountLink(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     goal_id: int = Field(foreign_key="goals.id", index=True)
     account_id: int = Field(foreign_key="accounts.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 class GoalContribution(SQLModel, table=True):
@@ -228,6 +261,7 @@ class GoalContribution(SQLModel, table=True):
     amount: Decimal = Field(max_digits=15, decimal_places=2)
     note: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 # ── Net Worth History ──────────────────────────────────────────
@@ -245,6 +279,8 @@ class NetWorthSnapshot(SQLModel, table=True):
     assets: Decimal = Field(max_digits=15, decimal_places=2)
     liabilities: Decimal = Field(max_digits=15, decimal_places=2)
     net_worth: Decimal = Field(max_digits=15, decimal_places=2)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 # ── Account Balance History ────────────────────────────────────
@@ -260,6 +296,8 @@ class AccountBalanceSnapshot(SQLModel, table=True):
     account_id: int = Field(foreign_key="accounts.id", index=True)
     date: date
     balance: Decimal = Field(max_digits=15, decimal_places=2)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 # ── Tags ───────────────────────────────────────────────────────
@@ -275,6 +313,8 @@ class Tag(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id", index=True)
     name: str
     color: str = Field(default="#6d28d9")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
     transaction_links: list["TransactionTag"] = Relationship(back_populates="tag")
 
@@ -288,6 +328,8 @@ class TransactionTag(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     transaction_id: int = Field(foreign_key="transactions.id", index=True)
     tag_id: int = Field(foreign_key="tags.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
     transaction: Optional[Transaction] = Relationship(back_populates="tag_links")
     tag: Optional[Tag] = Relationship(back_populates="transaction_links")
@@ -301,7 +343,9 @@ class Household(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = "Our Household"
     plaid_mode: Optional[str] = Field(default=None)
+    llm_mode: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
     members: list["HouseholdMember"] = Relationship(back_populates="household")
 
@@ -316,6 +360,7 @@ class HouseholdMember(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id", unique=True, index=True)
     role: str = Field(default="member")
     joined_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
     household: Optional[Household] = Relationship(back_populates="members")
 
@@ -330,6 +375,8 @@ class HouseholdPlaidConfig(SQLModel, table=True):
     encrypted_client_id: str
     encrypted_secret: str
     plaid_env: str = Field(default="sandbox")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 class AppPlaidConfig(SQLModel, table=True):
@@ -342,6 +389,8 @@ class AppPlaidConfig(SQLModel, table=True):
     encrypted_secret: str
     plaid_env: str = Field(default="sandbox")
     enabled: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 class HouseholdLLMConfig(SQLModel, table=True):
@@ -354,6 +403,22 @@ class HouseholdLLMConfig(SQLModel, table=True):
     llm_base_url: str = Field(default="https://api.openai.com/v1")
     encrypted_api_key: str
     llm_model: str = Field(default="gpt-4o-mini")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
+
+
+class AppLLMConfig(SQLModel, table=True):
+    """App-level LLM credentials for managed AI categorization (singleton)."""
+
+    __tablename__ = "app_llm_config"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    llm_base_url: str = Field(default="https://api.openai.com/v1")
+    encrypted_api_key: str
+    llm_model: str = Field(default="gpt-4o-mini")
+    enabled: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 class HouseholdSyncConfig(SQLModel, table=True):
@@ -367,6 +432,8 @@ class HouseholdSyncConfig(SQLModel, table=True):
     sync_hour: int = 0
     sync_minute: int = 0
     sync_timezone: str = "America/Toronto"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
 
 
 class HouseholdInvitation(SQLModel, table=True):
@@ -381,3 +448,61 @@ class HouseholdInvitation(SQLModel, table=True):
     token: str = Field(default_factory=lambda: uuid4().hex, unique=True, index=True)
     status: str = Field(default="pending")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = Field(default=None)
+
+
+# ── Admin / Analytics ─────────────────────────────────────────
+
+
+class ActivityAction(str, Enum):
+    """Tracked user actions for analytics."""
+
+    LOGIN = "login"
+    SYNC = "sync"
+    IMPORT = "import"
+    CREATE_TRANSACTION = "create_transaction"
+    UPDATE_TRANSACTION = "update_transaction"
+    CATEGORIZE = "categorize"
+    CREATE_BUDGET = "create_budget"
+    CREATE_GOAL = "create_goal"
+
+
+class ErrorType(str, Enum):
+    """Tracked error categories."""
+
+    PLAID_SYNC = "plaid_sync"
+    PLAID_LINK = "plaid_link"
+    API_4XX = "api_4xx"
+    API_5XX = "api_5xx"
+
+
+class ActivityLog(SQLModel, table=True):
+    """Records user actions for DAU/WAU/MAU analytics."""
+
+    __tablename__ = "activity_log"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    action: ActivityAction = Field(sa_type=sa.String(30), index=True)
+    detail: Optional[str] = None
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), index=True
+    )
+    updated_at: Optional[datetime] = Field(default=None)
+
+
+class ErrorLog(SQLModel, table=True):
+    """Records errors for admin monitoring."""
+
+    __tablename__ = "error_log"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    error_type: ErrorType = Field(sa_type=sa.String(20), index=True)
+    endpoint: str
+    status_code: Optional[int] = None
+    detail: str
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), index=True
+    )
+    updated_at: Optional[datetime] = Field(default=None)

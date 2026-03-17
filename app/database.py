@@ -1,5 +1,8 @@
 """Database connection and session management."""
 
+from datetime import datetime, timezone
+
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.config import get_settings
@@ -25,6 +28,13 @@ engine = create_engine(_db_url, **_engine_kwargs)
 def create_db_and_tables() -> None:
     """Create all database tables."""
     SQLModel.metadata.create_all(engine)
+
+
+@event.listens_for(Session, "before_flush")
+def _set_updated_at(session, flush_context, instances):
+    for obj in session.dirty:
+        if hasattr(obj, "updated_at"):
+            obj.updated_at = datetime.now(timezone.utc)
 
 
 def get_session():

@@ -19,6 +19,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.database import create_db_and_tables, engine
 from app.routes.accounts import router as accounts_router
+from app.routes.admin import router as admin_router
 from app.routes.auth import router as auth_router
 from app.routes.budgets import router as budgets_router
 from app.routes.categories import router as categories_router
@@ -38,9 +39,11 @@ async def lifespan(app: FastAPI):
     _validate_startup_settings()
     await _initialize_rate_limiter_backend()
     create_db_and_tables()
+    _migrate_timestamps()
     _migrate_llm_fields_to_household()
     _migrate_sync_fields_to_household()
     _migrate_household_plaid_mode()
+    _migrate_household_llm_mode()
     _backfill_orphan_households()
     settings = get_settings()
     if settings.run_scheduler:
@@ -146,6 +149,59 @@ def _migrate_household_plaid_mode() -> None:
         conn.execute(text("UPDATE households SET plaid_mode = 'byok' WHERE plaid_mode IS NULL"))
         conn.commit()
     logger.info("Household plaid_mode migration check complete")
+
+
+def _migrate_household_llm_mode() -> None:
+    """Add llm_mode column to households (nullable, no backfill needed)."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE households ADD COLUMN IF NOT EXISTS llm_mode varchar"))
+        except Exception:
+            conn.rollback()
+        conn.commit()
+    logger.info("Household llm_mode migration check complete")
+
+
+def _migrate_timestamps() -> None:
+    """Add created_at/updated_at columns to all tables."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    created_at_tables = [
+        "plaid_items", "accounts", "transactions", "categories",
+        "category_rules", "user_settings", "budgets", "spending_preferences",
+        "goal_account_links", "net_worth_snapshots", "account_balance_snapshots",
+        "tags", "transaction_tags", "household_plaid_configs", "app_plaid_config",
+        "household_llm_configs", "app_llm_config", "household_sync_configs",
+    ]
+    updated_at_tables = created_at_tables + [
+        "users", "goals", "goal_contributions", "households",
+        "household_invitations", "household_members", "activity_log", "error_log",
+    ]
+
+    with engine.connect() as conn:
+        for t in created_at_tables:
+            try:
+                conn.execute(text(
+                    f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS "
+                    "created_at timestamp without time zone NOT NULL DEFAULT now()"
+                ))
+            except Exception:
+                pass
+        for t in updated_at_tables:
+            try:
+                conn.execute(text(
+                    f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS "
+                    "updated_at timestamp without time zone"
+                ))
+            except Exception:
+                pass
+        conn.commit()
+    logger.info("Timestamp migration check complete")
 
 
 def _validate_startup_settings() -> None:
@@ -344,6 +400,7 @@ async def rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+app.include_router(admin_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(household_router, prefix="/api/v1")
 app.include_router(plaid_router, prefix="/api/v1")
