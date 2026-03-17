@@ -191,15 +191,17 @@ def _migrate_timestamps() -> None:
     logger = logging.getLogger(__name__)
 
     created_at_tables = [
-        "plaid_items", "accounts", "transactions", "categories",
+        "users", "plaid_items", "accounts", "transactions", "categories",
         "category_rules", "user_settings", "budgets", "spending_preferences",
-        "goal_account_links", "net_worth_snapshots", "account_balance_snapshots",
-        "tags", "transaction_tags", "household_plaid_configs", "app_plaid_config",
+        "goals", "goal_account_links", "goal_contributions",
+        "net_worth_snapshots", "account_balance_snapshots",
+        "tags", "transaction_tags", "households", "household_plaid_configs",
+        "household_invitations", "app_plaid_config",
         "household_llm_configs", "app_llm_config", "household_sync_configs",
+        "activity_log", "error_log",
     ]
     updated_at_tables = created_at_tables + [
-        "users", "goals", "goal_contributions", "households",
-        "household_invitations", "household_members", "activity_log", "error_log",
+        "household_members",
     ]
 
     with engine.connect() as conn:
