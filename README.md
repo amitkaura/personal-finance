@@ -233,6 +233,8 @@ personal-finance/
 │   │   ├── onboarding/page.tsx     # Plaid mode selection (managed vs BYOK)
 │   │   ├── connections/page.tsx    # Plaid connections management
 │   │   ├── settings/page.tsx       # User preferences and configuration (incl. admin section)
+│   │   ├── staging-login/page.tsx  # Staging password gate login page
+│   │   ├── api/staging-auth/route.ts # Staging password verification API route
 │   │   ├── layout.tsx              # Root layout
 │   │   └── providers.tsx           # React Query, Google OAuth, Auth, Household, CategorizationProgress
 │   ├── components/
@@ -265,11 +267,13 @@ personal-finance/
 │   │   ├── bulk-csv-import-dialog.tsx # Bulk Import Accounts & Transactions
 │   │   ├── balance-import-dialog.tsx # Bulk Import Accounts & Balances
 │   │   └── confirm-dialog.tsx      # Reusable confirmation modal
+│   ├── middleware.ts                # Staging password gate (active when STAGING_PASSWORD is set)
 │   ├── lib/
 │   │   ├── api.ts                  # API client (fetch with credentials)
 │   │   ├── types.ts                # TypeScript interfaces
 │   │   ├── csv-utils.ts            # CSV parsing, column role detection, date normalization
 │   │   ├── rule-utils.ts           # Keyword option generation for category rule suggestions
+│   │   ├── staging-auth.ts         # SHA-256 hashing and cookie verification for staging gate
 │   │   └── hooks.ts                # useSettings, useFormatCurrency, useScope
 │   └── tests/                      # Frontend test suite (Vitest + RTL)
 │       ├── setup.tsx               # Global mocks (next/image, next/link, next/navigation)
@@ -314,7 +318,9 @@ personal-finance/
 │       ├── onboarding.test.tsx    # Managed vs BYOK cards, setPlaidMode, redirect
 │       ├── plaid-mode-aware.test.tsx # PlaidSetupBanner + LinkAccount mode awareness
 │       ├── admin-plaid-section.test.tsx # Admin section visibility and household count
-│       └── auth-gate.test.tsx      # Loading, unauthenticated, authenticated layout
+│       ├── auth-gate.test.tsx      # Loading, unauthenticated, authenticated layout
+│       ├── staging-gate.test.ts    # SHA-256 hashing and token verification
+│       └── staging-login.test.tsx  # Staging login page rendering, submit, error, redirect
 ├── tests/                          # Backend test suite (pytest)
 │   ├── conftest.py                 # Fixtures, in-memory SQLite, auth mocks
 │   ├── test_health.py              # Health/readiness endpoints
@@ -634,13 +640,13 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (418 tests across 41 files):**
+**What's tested (431 tests across 43 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
 | `rule-utils` | 11 | Keyword option generation: full name, cleaned name, progressive word combos, dedup, edge cases |
-| `settings-page` | 20 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + logout), explicit invalid invite email feedback |
+| `settings-page` | 24 | All sections: profile, household, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + clearSession), explicit invalid invite email feedback |
 | `balance-import-dialog` | 5 | Upload step rendering, column mapping, error handling, account matching, API call on submit |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `transactions-page` | 28 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion), explicit add-amount validation for `0`, create mutation error rendering |
@@ -679,6 +685,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `onboarding` | 5 | Managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls, dashboard redirect |
 | `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
 | `admin-plaid-section` | 3 | AdminSection visibility (admin vs non-admin), managed household count |
+| `staging-gate` | 7 | SHA-256 hashing (deterministic, hex format, uniqueness), token verification (match, mismatch, empty, malformed) |
+| `staging-login` | 6 | Password input and submit button rendering, POST to /api/staging-auth, redirect to / or ?from, error on 401, empty password guard |
 
 **Test infrastructure:**
 - jsdom environment with global mocks for `next/image`, `next/link`, `next/navigation`
@@ -688,8 +696,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 
 ### Latest coverage snapshot
 
-- Backend (`pytest --cov=app --cov-report=term`): **85% total** (`3512` statements, `538` missed)
-- Frontend (`npx vitest run --coverage`): **76.66% statements**, **71.65% branches**, **62.78% functions**, **77.56% lines**
+- Backend (`pytest --cov=app --cov-report=term`): **85% total** (`3630` statements, `529` missed)
+- Frontend (`npx vitest run --coverage`): **76.28% statements**, **71.95% branches**, **61.95% functions**, **77.19% lines**
 
 ## Environment Variables
 
@@ -716,6 +724,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `EMAIL_FROM_ADDRESS` | No | Sender email address |
 | `EMAIL_FROM_NAME` | No | Sender display name (default: `FinanceApp`) |
 | `APP_URL` | No | Public-facing frontend URL for email CTAs (default: `http://localhost:3000`) |
+| `STAGING_PASSWORD` | No | Frontend-only. When set, all routes require a shared password before the app is visible. Used to protect staging environments from public access. Unset in production. |
 
 LLM credentials (base URL, API key, model) are configured per-household in Settings > AI Categorization, not via environment variables.
 

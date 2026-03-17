@@ -72,6 +72,7 @@ describe("SettingsPage", () => {
       login: vi.fn(),
       logout: vi.fn(),
       refreshUser: vi.fn().mockResolvedValue(undefined),
+      clearSession: vi.fn(),
     };
     mockHouseholdState.value = {
       household: null,
