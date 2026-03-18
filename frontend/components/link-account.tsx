@@ -84,6 +84,7 @@ export default function LinkAccount() {
   });
 
   const isManaged = plaidMode?.mode === PLAID_MODES.MANAGED;
+  const isSandbox = plaidConfig?.plaid_env === "sandbox";
 
   const handleClick = () => {
     setLinkError(null);
@@ -164,7 +165,7 @@ export default function LinkAccount() {
         ) : (
           <Plus className="h-4 w-4" />
         )}
-        Link Account
+        {isSandbox ? "Link Demo Account" : "Link Account"}
       </button>
       {linkError && (
         <span className="text-xs text-destructive">{linkError}</span>

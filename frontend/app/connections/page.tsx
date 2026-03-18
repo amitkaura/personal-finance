@@ -22,6 +22,7 @@ import { api } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 import type { PlaidConnection, PlaidConnectionAccount } from "@/lib/types";
 import LinkAccount from "@/components/link-account";
+import SandboxBanner from "@/components/sandbox-banner";
 import ConfirmDialog from "@/components/confirm-dialog";
 
 const TYPE_ICONS: Record<string, typeof Landmark> = {
@@ -66,6 +67,8 @@ export default function ConnectionsPage() {
         </div>
         <LinkAccount />
       </div>
+
+      {plaidConfig?.plaid_env === "sandbox" && <SandboxBanner />}
 
       {isError ? (
         <div className="mt-12 text-center">
