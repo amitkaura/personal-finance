@@ -688,6 +688,14 @@ function IntegrationsSection() {
     },
   });
 
+  const switchPlaidMutation = useMutation({
+    mutationFn: (mode: string) => api.setPlaidMode(mode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["plaid-mode"] });
+      queryClient.invalidateQueries({ queryKey: ["plaid-config"] });
+    },
+  });
+
   async function handleRemove() {
     setRemoving(true);
     try {
@@ -700,14 +708,6 @@ function IntegrationsSection() {
   }
 
   if (!household) return null;
-
-  const switchPlaidMutation = useMutation({
-    mutationFn: (mode: string) => api.setPlaidMode(mode),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["plaid-mode"] });
-      queryClient.invalidateQueries({ queryKey: ["plaid-config"] });
-    },
-  });
 
   const hasLinkedAccounts = plaidMode?.has_linked_accounts ?? false;
 
