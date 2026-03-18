@@ -93,8 +93,12 @@ def categorize_by_llm(transaction: Transaction, user_id: int) -> str | None:
     return results.get(transaction.id)
 
 
+_last_llm_error: str | None = None
+
+
 def _get_llm_config(user_id: int) -> tuple[str, str, str]:
     """Return (base_url, api_key, model) based on household's llm_mode."""
+    global _last_llm_error
     try:
         with Session(engine) as session:
             member = session.exec(
@@ -124,7 +128,9 @@ def _get_llm_config(user_id: int) -> tuple[str, str, str]:
                 return (config.llm_base_url, decrypt_token(config.encrypted_api_key), config.llm_model)
 
             return ("", "", "")
-    except Exception:
+    except Exception as exc:
+        _last_llm_error = f"Config lookup failed: {type(exc).__name__}: {exc}"
+        logger.exception("_get_llm_config failed for user %s", user_id)
         return ("", "", "")
 
 
@@ -160,7 +166,7 @@ def _categorize_chunk_llm(
         f"{base_url}/chat/completions",
         headers=headers,
         json=payload,
-        timeout=15.0,
+        timeout=120.0,
     )
     resp.raise_for_status()
     content = resp.json()["choices"][0]["message"]["content"]
@@ -220,8 +226,10 @@ def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[
 
 def categorize_single_llm(transaction: Transaction, user_id: int) -> str | None:
     """Categorize one transaction via LLM. Returns category or None on failure."""
+    global _last_llm_error
     base_url, api_key, model = _get_llm_config(user_id)
     if not api_key:
+        _last_llm_error = "LLM API key not configured"
         return None
 
     txn_dict = {
@@ -234,9 +242,11 @@ def categorize_single_llm(transaction: Transaction, user_id: int) -> str | None:
         results = _categorize_chunk_llm([txn_dict], base_url, api_key, model)
         return results.get(transaction.id)
     except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        _last_llm_error = f"LLM unreachable at {base_url}: {type(exc).__name__}: {exc}"
         logger.warning("LLM unreachable for txn %s: %s", transaction.id, exc)
         return None
-    except Exception:
+    except Exception as exc:
+        _last_llm_error = f"LLM error: {type(exc).__name__}: {exc}"
         logger.exception("LLM categorization failed for txn %s", transaction.id)
         return None
 
@@ -250,8 +260,11 @@ def categorize_transaction(transaction: Transaction, session: Session, user_id: 
     return categorize_single_llm(transaction, user_id)
 
 
-def auto_categorize_pending(session: Session, user_id: int) -> dict[str, int]:
+def auto_categorize_pending(session: Session, user_id: int) -> dict:
     """Categorize all uncategorized transactions for a given user. Returns counts."""
+    global _last_llm_error
+    _last_llm_error = None
+
     user_account_ids = session.exec(
         select(Account.id).where(Account.user_id == user_id)
     ).all()
@@ -280,8 +293,11 @@ def auto_categorize_pending(session: Session, user_id: int) -> dict[str, int]:
 
     session.commit()
 
-    return {
+    result: dict = {
         "total": len(txns),
         "categorized": categorized,
         "skipped": len(txns) - categorized,
     }
+    if _last_llm_error and result["skipped"] > 0:
+        result["llm_error"] = _last_llm_error
+    return result

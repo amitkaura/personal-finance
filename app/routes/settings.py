@@ -1884,3 +1884,40 @@ def delete_admin_llm_config(
 
     session.delete(config)
     session.commit()
+
+
+class OllamaPullRequest(BaseModel):
+    base_url: str
+    model: str
+
+
+@router.post("/admin/ollama-pull")
+def admin_ollama_pull(
+    body: OllamaPullRequest,
+    user: User = Depends(get_current_user),
+):
+    """Trigger an Ollama model pull on the configured LLM server."""
+    _require_admin(user)
+    _validate_llm_base_url(body.base_url)
+
+    import httpx
+
+    pull_url = body.base_url.rstrip("/")
+    if pull_url.endswith("/v1"):
+        pull_url = pull_url[:-3]
+    pull_url += "/api/pull"
+
+    try:
+        resp = httpx.post(
+            pull_url,
+            json={"name": body.model},
+            timeout=300.0,
+        )
+        resp.raise_for_status()
+        return {"status": "success", "model": body.model}
+    except httpx.TimeoutException:
+        return {"status": "pulling", "model": body.model, "message": "Pull started but timed out waiting — model may still be downloading"}
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail=f"Ollama returned {exc.response.status_code}: {exc.response.text}")
+    except httpx.ConnectError as exc:
+        raise HTTPException(status_code=502, detail=f"Cannot reach Ollama at {pull_url}: {exc}")
