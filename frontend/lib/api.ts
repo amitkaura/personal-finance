@@ -53,10 +53,6 @@ function formatApiError(status: number, rawBody: string): string {
 }
 
 async function fetcher<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
-  // #region agent log
-  const _m = init?.method || "GET";
-  if (_m === "DELETE") fetch('http://127.0.0.1:7835/ingest/7684971a-46ee-42b0-83b5-6fa872a92200',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3a38'},body:JSON.stringify({sessionId:'ff3a38',location:'api.ts:fetcher',message:'delete_request_start',data:{path,retried},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       headers: { "Content-Type": "application/json" },
@@ -65,23 +61,14 @@ async function fetcher<T>(path: string, init?: RequestInit, retried = false): Pr
       ...init,
     });
     if (!res.ok) {
-      // #region agent log
-      if (_m === "DELETE") fetch('http://127.0.0.1:7835/ingest/7684971a-46ee-42b0-83b5-6fa872a92200',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3a38'},body:JSON.stringify({sessionId:'ff3a38',location:'api.ts:fetcher',message:'delete_not_ok',data:{path,status:res.status,retried,willRetry:res.status>=500&&!retried},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (res.status >= 500 && !retried) {
         await new Promise((r) => setTimeout(r, 1000));
         return fetcher<T>(path, init, true);
       }
       throw new Error(formatApiError(res.status, await res.text()));
     }
-    // #region agent log
-    if (_m === "DELETE") fetch('http://127.0.0.1:7835/ingest/7684971a-46ee-42b0-83b5-6fa872a92200',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3a38'},body:JSON.stringify({sessionId:'ff3a38',location:'api.ts:fetcher',message:'delete_success',data:{path,status:res.status,retried},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     return res.json();
   } catch (err) {
-    // #region agent log
-    if (_m === "DELETE") fetch('http://127.0.0.1:7835/ingest/7684971a-46ee-42b0-83b5-6fa872a92200',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3a38'},body:JSON.stringify({sessionId:'ff3a38',location:'api.ts:fetcher',message:'delete_catch',data:{path,retried,errType:err instanceof TypeError?'TypeError':'other',errMsg:String(err)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (!retried && err instanceof TypeError) {
       await new Promise((r) => setTimeout(r, 1000));
       return fetcher<T>(path, init, true);
