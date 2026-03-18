@@ -4,10 +4,24 @@ import userEvent from "@testing-library/user-event";
 import LinkAccount from "@/components/link-account";
 import { renderWithProviders } from "./helpers";
 
-const mockOpen = vi.fn();
+const mockStartSync = vi.fn();
+
+let capturedOnSuccess: ((token: string, meta: unknown) => void) | null = null;
+const mockOpen = vi.fn(() => {
+  if (capturedOnSuccess) {
+    capturedOnSuccess("public-sandbox-xyz", { institution: { name: "Test Bank" } });
+  }
+});
 
 vi.mock("react-plaid-link", () => ({
-  usePlaidLink: () => ({ open: mockOpen, ready: true }),
+  usePlaidLink: (config: { onSuccess?: (token: string, meta: unknown) => void }) => {
+    capturedOnSuccess = config.onSuccess ?? null;
+    return { open: mockOpen, ready: true };
+  },
+}));
+
+vi.mock("@/components/categorization-progress-provider", () => ({
+  useCategorizationProgress: () => ({ startSync: mockStartSync }),
 }));
 
 const mockApi = vi.hoisted(() => ({
@@ -97,6 +111,28 @@ describe("LinkAccount", () => {
     renderWithProviders(<LinkAccount />);
     await waitFor(() => {
       expect(screen.getByText("Link Account")).toBeInTheDocument();
+    });
+  });
+
+  // --- First sync triggers progress drawer ---
+
+  it("calls startSync after exchangeToken succeeds", async () => {
+    const user = userEvent.setup();
+    mockApi.createLinkToken.mockResolvedValue({ link_token: "link-tok" });
+    mockApi.exchangeToken.mockResolvedValue({ item_id: "item-1", accounts_synced: 1 });
+
+    renderWithProviders(<LinkAccount />);
+    await user.click(screen.getByText("Link Account"));
+
+    await waitFor(() => {
+      expect(mockApi.createLinkToken).toHaveBeenCalled();
+    });
+
+    // Simulate Plaid onSuccess callback triggering exchangeToken
+    // Since usePlaidLink is mocked, we need to verify startSync is eventually called
+    // after exchangeToken resolves (the component calls startSync in onSuccess)
+    await waitFor(() => {
+      expect(mockStartSync).toHaveBeenCalled();
     });
   });
 });
