@@ -137,6 +137,17 @@ def test_put_llm_config_ssrf_base_url_rejected(auth_client, session):
     assert resp.status_code == 400
 
 
+def test_put_llm_config_railway_internal_accepted(auth_client, session):
+    client, user = auth_client
+    make_household(session, user)
+    resp = client.put("/api/v1/settings/llm-config", json={
+        "llm_base_url": "http://ollama.railway.internal:11434/v1",
+        "llm_api_key": "test",
+        "llm_model": "llama3",
+    })
+    assert resp.status_code == 200
+
+
 # -- DELETE ----------------------------------------------------------------
 
 def test_delete_llm_config(auth_client, session):
