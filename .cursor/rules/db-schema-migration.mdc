@@ -12,6 +12,11 @@ creates **new** tables but does **not** alter existing ones. When you add a
 column to an existing model, the Python code works but the database column
 doesn't exist, causing runtime `UndefinedColumn` errors.
 
+## When this rule does NOT apply
+
+- Adding a brand-new model/table — `create_db_and_tables()` handles that automatically
+- Changes to Pydantic-only models (request/response schemas) that have no `table=True`
+
 ## After Modifying an Existing Model
 
 Whenever you add, remove, or rename a field on a model whose table already

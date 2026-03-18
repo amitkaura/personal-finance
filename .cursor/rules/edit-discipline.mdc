@@ -3,7 +3,7 @@ description: Protect existing features from accidental removal. Make minimal, su
 alwaysApply: true
 ---
 
-# Surgical Edits — Protect Existing Features
+# Edit Discipline — Protect Existing Features
 
 Each chat session has NO memory of prior sessions. Features built in previous
 chats WILL be silently destroyed if you rewrite files carelessly. Treat every
@@ -16,23 +16,24 @@ existing line as intentional.
    exactly as-is.
 
 2. **Never rewrite an entire file or function.** Use the smallest possible
-   replacement. Replace specific lines, not whole blocks.
+   replacement (`StrReplace`), not `Write` to replace the entire file.
 
 3. **Never remove code you didn't add.** If you see code whose purpose is
    unclear, leave it alone. It was likely added in a prior session.
 
 4. **Read before editing.** Always read the full file (or the relevant section
-   of large files) before making any edit. Understand what's there first.
+   of large files) before making any edit. Identify imports, dependencies, and
+   utility usage so you don't replace a tested library function with a naive
+   inline reimplementation.
 
-## Before Committing
+## When a Full Rewrite Seems Necessary
 
-1. Run `git diff` and scan for any **red (removed) lines** you did not
-   intend to remove. Unintended deletions are the #1 cause of lost features.
+If the file truly needs to be rewritten (rare), before proceeding:
 
-2. If you see unexpected removals, restore them before committing.
-
-3. Call out to the user: "I noticed these existing lines would be removed —
-   should I keep them?" when in doubt.
+1. List every piece of functionality the current version provides.
+2. List every import/utility it uses from the codebase.
+3. Confirm with the user that removing any of these is intentional.
+4. Ensure the new version imports and uses the same utility libraries.
 
 ## High-Risk Patterns to Avoid
 
@@ -42,6 +43,19 @@ existing line as intentional.
 - Rewriting a function body when only one branch needs updating.
 - Removing imports "because they look unused" — they may be used in code
   you haven't read yet.
+
+## Before Committing
+
+1. Run `git diff` and scan for any **red (removed) lines** you did not
+   intend to remove. Unintended deletions are the #1 cause of lost features.
+
+2. Run `git diff --stat` and verify no file has more than ~50% of its lines
+   changed. If it does, review whether a rewrite was truly necessary.
+
+3. If you see unexpected removals, restore them before committing.
+
+4. Call out to the user: "I noticed these existing lines would be removed —
+   should I keep them?" when in doubt.
 
 ## Commit Hygiene
 

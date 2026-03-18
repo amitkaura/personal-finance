@@ -38,6 +38,14 @@ Never commit directly to `main` or `staging`.
 feature branch → PR into staging → test on staging → PR into main → production
 ```
 
+## Verification
+
+Before opening a PR, confirm the branch is based on `staging` and review what will be merged:
+
+```bash
+git log --oneline staging..HEAD
+```
+
 ## Quick reference
 
 ```bash

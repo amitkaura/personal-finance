@@ -29,6 +29,14 @@ if account.type in ["depository", "investment", "real_estate"]:
 if account.type in (AccountType.DEPOSITORY, AccountType.INVESTMENT, AccountType.REAL_ESTATE):
 ```
 
+## Verification
+
+After editing, spot-check for newly introduced literals that match known constants:
+
+```bash
+rg '"Checking"|"Savings"|"depository"|"investment"' frontend/
+```
+
 ## Rule of thumb
 
 If you're typing a string that also exists in a constant, import, or enum elsewhere in the codebase -- reference that symbol instead.

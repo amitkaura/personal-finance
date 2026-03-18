@@ -105,6 +105,17 @@ Add tests for new fields, constraints, and relationships BEFORE modifying models
 - Use `@testing-library/user-event` for interactions.
 - Use `@testing-library/jest-dom` matchers.
 
+## Troubleshooting
+
+### Coverage report shows 0%
+Ensure `pytest-cov` is measuring the correct module: use `--cov=app`, not `--cov=.`. For frontend, make sure `vitest.config.ts` lists the correct `include` paths.
+
+### Frontend test hangs indefinitely
+Usually an unresolved promise or a missing `await waitFor()`. Check that all async assertions are wrapped in `waitFor` and that mocked API calls resolve.
+
+### Tests pass locally but fail in CI
+Check for test isolation issues: shared global state, missing mocks for environment-specific values, or reliance on filesystem paths that differ between environments.
+
 ## Checklist (verify before ending turn)
 
 - [ ] Tests written BEFORE implementation
