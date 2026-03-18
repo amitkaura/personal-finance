@@ -339,12 +339,18 @@ def _auto_categorize_stream(session: Session, user: User):
             txn_by_id = {t.id: t for t in llm_pending}
 
             for i in range(0, len(txn_dicts), batch_size):
+                # #region agent log
+                print(f"[DEBUG ff3a38] stream: batch_start i={i}, batch_size={batch_size}", flush=True)
+                # #endregion
                 chunk = txn_dicts[i : i + batch_size]
                 chunk_txns = llm_pending[i : i + batch_size]
                 try:
                     results = _categorize_chunk_llm(chunk, base_url, api_key, model)
                 except (_httpx.TimeoutException, _httpx.ConnectError) as exc:
                     _logger.warning("LLM unreachable (batch %d–%d): %s", i, i + len(chunk), exc)
+                    # #region agent log
+                    print(f"[DEBUG ff3a38] stream: batch i={i} connect_error: {exc}", flush=True)
+                    # #endregion
                     for txn in chunk_txns:
                         progress_idx += 1
                         yield json.dumps({
@@ -355,10 +361,16 @@ def _auto_categorize_stream(session: Session, user: User):
                             "category": None,
                         }) + "\n"
                     break
-                except Exception:
+                except Exception as _exc:
                     _logger.exception("LLM categorization failed (batch %d–%d)", i, i + len(chunk))
+                    # #region agent log
+                    print(f"[DEBUG ff3a38] stream: batch i={i} exception: {type(_exc).__name__}: {_exc}", flush=True)
+                    # #endregion
                     results = {}
 
+                # #region agent log
+                print(f"[DEBUG ff3a38] stream: batch i={i} yielding {len(chunk_txns)} results, results_keys={list(results.keys())[:5]}", flush=True)
+                # #endregion
                 for txn in chunk_txns:
                     cat = results.get(txn.id)
                     progress_idx += 1
@@ -374,6 +386,9 @@ def _auto_categorize_stream(session: Session, user: User):
                             "category": cat,
                         }) + "\n"
                     else:
+                        # #region agent log
+                        print(f"[DEBUG ff3a38] stream: txn {txn.id} skipped, id_type={type(txn.id).__name__}, results_key_types={[type(k).__name__ for k in list(results.keys())[:3]]}", flush=True)
+                        # #endregion
                         yield json.dumps({
                             "status": "skipped",
                             "current": progress_idx,
@@ -381,7 +396,13 @@ def _auto_categorize_stream(session: Session, user: User):
                             "merchant_name": txn.merchant_name,
                             "category": None,
                         }) + "\n"
+                # #region agent log
+                print(f"[DEBUG ff3a38] stream: batch i={i} done, moving to next", flush=True)
+                # #endregion
         else:
+            # #region agent log
+            print(f"[DEBUG ff3a38] stream: no api_key, skipping all", flush=True)
+            # #endregion
             for txn in llm_pending:
                 progress_idx += 1
                 yield json.dumps({
@@ -392,6 +413,9 @@ def _auto_categorize_stream(session: Session, user: User):
                     "category": None,
                 }) + "\n"
 
+    # #region agent log
+    print(f"[DEBUG ff3a38] stream: committing session, categorized={categorized}", flush=True)
+    # #endregion
     session.commit()
     yield json.dumps({
         "status": "complete",
@@ -399,6 +423,9 @@ def _auto_categorize_stream(session: Session, user: User):
         "categorized": categorized,
         "skipped": total - categorized,
     }) + "\n"
+    # #region agent log
+    print(f"[DEBUG ff3a38] stream: COMPLETE yielded", flush=True)
+    # #endregion
 
 
 @router.get("/recurring")
