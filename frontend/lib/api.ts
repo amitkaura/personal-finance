@@ -11,6 +11,7 @@ import type {
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
+const STREAM_BASE = process.env.NEXT_PUBLIC_STREAM_URL || API_BASE;
 
 type ValidationErrorItem = {
   field?: string;
@@ -165,7 +166,7 @@ async function streamNdjson<T>(
   body: unknown,
   onProgress: (event: ImportProgressEvent) => void,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${STREAM_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -225,7 +226,7 @@ async function streamAutoCategorize(
   path: string,
   onProgress?: (event: AutoCatProgressEvent) => void,
 ): Promise<AutoCatCompleteEvent> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${STREAM_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -284,7 +285,7 @@ async function streamSyncAll(
   path: string,
   onEvent?: (event: SyncProgressEvent | AutoCatProgressEvent) => void,
 ): Promise<SyncCompleteEvent> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${STREAM_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
