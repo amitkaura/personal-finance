@@ -93,42 +93,26 @@ def categorize_by_llm(transaction: Transaction, user_id: int) -> str | None:
     return results.get(transaction.id)
 
 
+_last_llm_error: str | None = None
+
+
 def _get_llm_config(user_id: int) -> tuple[str, str, str]:
     """Return (base_url, api_key, model) based on household's llm_mode."""
-    # #region agent log
-    import json as _dj, time as _dt
-    _dl = "/Users/fds45740/dev/personal-finance/.cursor/debug-ff3a38.log"
-    def _dlog(msg, data, hyp=""):
-        with open(_dl, "a") as _f:
-            _f.write(_dj.dumps({"sessionId":"ff3a38","location":"categorizer.py:_get_llm_config","message":msg,"data":data,"hypothesisId":hyp,"timestamp":int(_dt.time()*1000)})+"\n")
-    # #endregion
+    global _last_llm_error
     try:
         with Session(engine) as session:
             member = session.exec(
                 select(HouseholdMember).where(HouseholdMember.user_id == user_id)
             ).first()
             if not member:
-                # #region agent log
-                _dlog("no member found", {"user_id": user_id}, "H1")
-                # #endregion
                 return ("", "", "")
 
             household = session.get(Household, member.household_id)
             if not household:
-                # #region agent log
-                _dlog("no household found", {"household_id": member.household_id}, "H1")
-                # #endregion
                 return ("", "", "")
-
-            # #region agent log
-            _dlog("household resolved", {"llm_mode": household.llm_mode, "household_id": household.id}, "H1")
-            # #endregion
 
             if household.llm_mode == LLMMode.MANAGED:
                 app_config = session.exec(select(AppLLMConfig)).first()
-                # #region agent log
-                _dlog("managed mode - app_config", {"exists": app_config is not None, "enabled": getattr(app_config, "enabled", None), "has_key": bool(getattr(app_config, "encrypted_api_key", None)), "base_url": getattr(app_config, "llm_base_url", None), "model": getattr(app_config, "llm_model", None)}, "H2")
-                # #endregion
                 if not app_config or not app_config.enabled or not app_config.encrypted_api_key:
                     return ("", "", "")
                 return (app_config.llm_base_url, decrypt_token(app_config.encrypted_api_key), app_config.llm_model)
@@ -143,14 +127,10 @@ def _get_llm_config(user_id: int) -> tuple[str, str, str]:
                     return ("", "", "")
                 return (config.llm_base_url, decrypt_token(config.encrypted_api_key), config.llm_model)
 
-            # #region agent log
-            _dlog("llm_mode not managed or byok, returning empty", {"llm_mode": household.llm_mode}, "H1")
-            # #endregion
             return ("", "", "")
     except Exception as exc:
-        # #region agent log
-        _dlog("exception in _get_llm_config", {"error": str(exc)}, "H1")
-        # #endregion
+        _last_llm_error = f"Config lookup failed: {type(exc).__name__}: {exc}"
+        logger.exception("_get_llm_config failed for user %s", user_id)
         return ("", "", "")
 
 
@@ -212,12 +192,6 @@ def _categorize_chunk_llm(
 def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[int, str]:
     """Send transactions to the LLM in chunks of _LLM_BATCH_SIZE and return {id: category}."""
     base_url, api_key, model = _get_llm_config(user_id)
-    # #region agent log
-    import json as _dj2, time as _dt2
-    _dl2 = "/Users/fds45740/dev/personal-finance/.cursor/debug-ff3a38.log"
-    with open(_dl2, "a") as _f2:
-        _f2.write(_dj2.dumps({"sessionId":"ff3a38","location":"categorizer.py:categorize_batch_llm","message":"config resolved","data":{"base_url":base_url,"model":model,"has_api_key":bool(api_key),"txn_count":len(transactions)},"hypothesisId":"H2","timestamp":int(_dt2.time()*1000)})+"\n")
-    # #endregion
     if not api_key:
         logger.warning("LLM API key not configured — skipping LLM categorization")
         return {}
@@ -240,29 +214,14 @@ def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[
         chunk = txn_list[i : i + _LLM_BATCH_SIZE]
         try:
             chunk_results = _categorize_chunk_llm(chunk, base_url, api_key, model)
-            # #region agent log
-            with open(_dl2, "a") as _f2:
-                _f2.write(_dj2.dumps({"sessionId":"ff3a38","location":"categorizer.py:batch_chunk","message":"chunk success","data":{"chunk_start":i,"chunk_size":len(chunk),"results_count":len(chunk_results)},"hypothesisId":"H4","timestamp":int(_dt2.time()*1000)})+"\n")
-            # #endregion
             all_results.update(chunk_results)
         except (httpx.TimeoutException, httpx.ConnectError) as exc:
-            # #region agent log
-            with open(_dl2, "a") as _f2:
-                _f2.write(_dj2.dumps({"sessionId":"ff3a38","location":"categorizer.py:batch_chunk","message":"LLM unreachable","data":{"chunk_start":i,"error":str(exc),"error_type":type(exc).__name__},"hypothesisId":"H4","timestamp":int(_dt2.time()*1000)})+"\n")
-            # #endregion
             logger.warning("LLM unreachable (chunk %d–%d): %s — skipping remaining chunks", i, i + len(chunk), exc)
             break
-        except Exception as exc:
-            # #region agent log
-            with open(_dl2, "a") as _f2:
-                _f2.write(_dj2.dumps({"sessionId":"ff3a38","location":"categorizer.py:batch_chunk","message":"chunk exception","data":{"chunk_start":i,"error":str(exc),"error_type":type(exc).__name__},"hypothesisId":"H5","timestamp":int(_dt2.time()*1000)})+"\n")
-            # #endregion
+        except Exception:
             logger.exception("LLM categorization failed for chunk %d–%d", i, i + len(chunk))
 
     return all_results
-
-
-_last_llm_error: str | None = None
 
 
 def categorize_single_llm(transaction: Transaction, user_id: int) -> str | None:
