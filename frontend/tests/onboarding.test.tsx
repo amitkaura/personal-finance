@@ -29,25 +29,19 @@ describe("OnboardingPage", () => {
     mockApi.getLLMMode.mockResolvedValue({ mode: null, managed_available: false });
   });
 
-  // ── Step 1: Plaid mode (preserved existing behavior) ─────────
+  // ── Step 1: Plaid mode ───────────────────────────────────────
 
-  it("auto-selects managed and shows confirmation when managed is available", async () => {
+  it("shows both managed and BYOK cards when managed is available", async () => {
     mockApi.getPlaidMode.mockResolvedValue({
       mode: null, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
-    });
-    mockApi.setPlaidMode.mockResolvedValue({
-      mode: PLAID_MODES.MANAGED, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
     });
 
     renderWithProviders(<OnboardingPage />);
 
     await waitFor(() => {
-      expect(mockApi.setPlaidMode).toHaveBeenCalledWith(PLAID_MODES.MANAGED);
+      expect(screen.getByRole("button", { name: /connect instantly/i })).toBeInTheDocument();
     });
-
-    await waitFor(() => {
-      expect(screen.getByText(/settings/i)).toBeInTheDocument();
-    });
+    expect(screen.getByRole("button", { name: /use your own.*plaid/i })).toBeInTheDocument();
   });
 
   it("only shows BYOK option when managed is not available", async () => {
@@ -63,7 +57,21 @@ describe("OnboardingPage", () => {
     expect(screen.queryByText(/connect instantly/i)).not.toBeInTheDocument();
   });
 
-  it("auto-calls setPlaidMode with MANAGED on mount when managed available", async () => {
+  it("does not auto-select any mode on mount", async () => {
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
+    });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /connect instantly/i })).toBeInTheDocument();
+    });
+    expect(mockApi.setPlaidMode).not.toHaveBeenCalled();
+  });
+
+  it("calls setPlaidMode with MANAGED when managed card is clicked", async () => {
+    const user = userEvent.setup();
     mockApi.getPlaidMode.mockResolvedValue({
       mode: null, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
     });
@@ -72,6 +80,11 @@ describe("OnboardingPage", () => {
     });
 
     renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /connect instantly/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /connect instantly/i }));
 
     await waitFor(() => {
       expect(mockApi.setPlaidMode).toHaveBeenCalledWith(PLAID_MODES.MANAGED);
@@ -101,45 +114,32 @@ describe("OnboardingPage", () => {
     });
   });
 
+  it("shows Settings info text on step 1", async () => {
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
+    });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/settings.*integrations/i)).toBeInTheDocument();
+    });
+  });
+
+  it("does not show skip button on step 1", async () => {
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
+    });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /connect instantly/i })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: /skip/i })).not.toBeInTheDocument();
+  });
+
   // ── Wizard progression ──────────────────────────────────────
-
-  it("shows continue button after managed auto-selection", async () => {
-    mockApi.getPlaidMode.mockResolvedValue({
-      mode: null, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
-    });
-    mockApi.setPlaidMode.mockResolvedValue({
-      mode: PLAID_MODES.MANAGED, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
-    });
-
-    renderWithProviders(<OnboardingPage />);
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /continue/i })).toBeInTheDocument();
-    });
-  });
-
-  it("continue button advances to next step after managed auto-selection", async () => {
-    const user = userEvent.setup();
-    mockApi.getPlaidMode.mockResolvedValue({
-      mode: null, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
-    });
-    mockApi.setPlaidMode.mockResolvedValue({
-      mode: PLAID_MODES.MANAGED, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
-    });
-    mockApi.getLLMMode.mockResolvedValue({ mode: null, managed_available: false });
-
-    renderWithProviders(<OnboardingPage />);
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /continue/i })).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole("button", { name: /continue/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/step 2/i)).toBeInTheDocument();
-    });
-  });
 
   it("shows step indicator (step 1 of 2)", async () => {
     mockApi.getPlaidMode.mockResolvedValue({
@@ -227,7 +227,7 @@ describe("OnboardingPage", () => {
     expect(screen.getByText(/bring your own.*api/i)).toBeInTheDocument();
   });
 
-  it("shows skip option on LLM mode step", async () => {
+  it("does not show skip button on step 2", async () => {
     const user = userEvent.setup();
     mockApi.getPlaidMode.mockResolvedValue({
       mode: null, managed_available: false, managed_plaid_env: null, has_linked_accounts: false,
@@ -240,13 +240,62 @@ describe("OnboardingPage", () => {
     renderWithProviders(<OnboardingPage />);
 
     await waitFor(() => {
-      expect(screen.getByText(/use your own.*plaid/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /use your own.*plaid/i })).toBeInTheDocument();
     });
-
     await user.click(screen.getByRole("button", { name: /use your own.*plaid/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /skip/i })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /ai categorization/i })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: /skip/i })).not.toBeInTheDocument();
+  });
+
+  it("shows back button on step 2", async () => {
+    const user = userEvent.setup();
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null, managed_available: false, managed_plaid_env: null, has_linked_accounts: false,
+    });
+    mockApi.setPlaidMode.mockResolvedValue({
+      mode: PLAID_MODES.BYOK, managed_available: false, managed_plaid_env: null, has_linked_accounts: false,
+    });
+    mockApi.getLLMMode.mockResolvedValue({ mode: null, managed_available: false });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /use your own.*plaid/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /use your own.*plaid/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /back/i })).toBeInTheDocument();
+    });
+  });
+
+  it("back button on step 2 returns to step 1", async () => {
+    const user = userEvent.setup();
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null, managed_available: false, managed_plaid_env: null, has_linked_accounts: false,
+    });
+    mockApi.setPlaidMode.mockResolvedValue({
+      mode: PLAID_MODES.BYOK, managed_available: false, managed_plaid_env: null, has_linked_accounts: false,
+    });
+    mockApi.getLLMMode.mockResolvedValue({ mode: null, managed_available: false });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /use your own.*plaid/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /use your own.*plaid/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /back/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /back/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/step 1/i)).toBeInTheDocument();
     });
   });
 
@@ -300,37 +349,6 @@ describe("OnboardingPage", () => {
     });
   });
 
-  it("calls setLLMMode with NONE on skip and redirects", async () => {
-    const user = userEvent.setup();
-    mockApi.getPlaidMode.mockResolvedValue({
-      mode: null, managed_available: false, managed_plaid_env: null, has_linked_accounts: false,
-    });
-    mockApi.setPlaidMode.mockResolvedValue({
-      mode: PLAID_MODES.BYOK, managed_available: false, managed_plaid_env: null, has_linked_accounts: false,
-    });
-    mockApi.getLLMMode.mockResolvedValue({ mode: null, managed_available: false });
-    mockApi.setLLMMode.mockResolvedValue({ mode: LLM_MODES.NONE, managed_available: false });
-
-    renderWithProviders(<OnboardingPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/use your own.*plaid/i)).toBeInTheDocument();
-    });
-    await user.click(screen.getByRole("button", { name: /use your own.*plaid/i }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /skip/i })).toBeInTheDocument();
-    });
-    await user.click(screen.getByRole("button", { name: /skip/i }));
-
-    await waitFor(() => {
-      expect(mockApi.setLLMMode).toHaveBeenCalledWith(LLM_MODES.NONE);
-    });
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith("/");
-    });
-  });
-
   it("redirects to dashboard after LLM mode selection", async () => {
     const user = userEvent.setup();
     mockApi.getPlaidMode.mockResolvedValue({
@@ -361,12 +379,9 @@ describe("OnboardingPage", () => {
 
   // ── Sandbox indicator on Plaid mode step ───────────────────────
 
-  it("shows sandbox banner after managed auto-selection with sandbox keys", async () => {
+  it("shows sandbox banner on step 1 when managed available with sandbox keys", async () => {
     mockApi.getPlaidMode.mockResolvedValue({
       mode: null, managed_available: true, managed_plaid_env: "sandbox", has_linked_accounts: false,
-    });
-    mockApi.setPlaidMode.mockResolvedValue({
-      mode: PLAID_MODES.MANAGED, managed_available: true, managed_plaid_env: "sandbox", has_linked_accounts: false,
     });
 
     renderWithProviders(<OnboardingPage />);
@@ -376,25 +391,23 @@ describe("OnboardingPage", () => {
     });
   });
 
-  it("does not show sandbox banner after managed auto-selection with production keys", async () => {
+  it("does not show sandbox banner when managed available with production keys", async () => {
     mockApi.getPlaidMode.mockResolvedValue({
       mode: null, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
-    });
-    mockApi.setPlaidMode.mockResolvedValue({
-      mode: PLAID_MODES.MANAGED, managed_available: true, managed_plaid_env: "production", has_linked_accounts: false,
     });
 
     renderWithProviders(<OnboardingPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /continue/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /connect instantly/i })).toBeInTheDocument();
     });
     expect(screen.queryByTestId("sandbox-banner")).not.toBeInTheDocument();
   });
 
   // ── Cache invalidation ────────────────────────────────────────
 
-  it("invalidates plaid-config cache after managed auto-selection", async () => {
+  it("invalidates plaid-config cache when managed card is clicked", async () => {
+    const user = userEvent.setup();
     mockApi.getPlaidMode.mockResolvedValue({
       mode: null, managed_available: true, managed_plaid_env: "sandbox", has_linked_accounts: false,
     });
@@ -415,7 +428,48 @@ describe("OnboardingPage", () => {
     renderWithProviders(<OnboardingPage />, { queryClient });
 
     await waitFor(() => {
+      expect(screen.getByRole("button", { name: /connect instantly/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /connect instantly/i }));
+
+    await waitFor(() => {
       expect(mockApi.setPlaidMode).toHaveBeenCalledWith(PLAID_MODES.MANAGED);
+    });
+
+    await waitFor(() => {
+      const state = queryClient.getQueryState(["plaid-config"]);
+      expect(state?.isInvalidated).toBe(true);
+    });
+  });
+
+  it("invalidates plaid-config cache when BYOK card is clicked", async () => {
+    const user = userEvent.setup();
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null, managed_available: false, managed_plaid_env: null, has_linked_accounts: false,
+    });
+    mockApi.setPlaidMode.mockResolvedValue({
+      mode: PLAID_MODES.BYOK, managed_available: false, managed_plaid_env: null, has_linked_accounts: false,
+    });
+    mockApi.getPlaidConfig.mockResolvedValue({
+      configured: false, plaid_env: null, client_id_last4: null, secret_last4: null,
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(["plaid-config"], {
+      configured: false, plaid_env: null, client_id_last4: null, secret_last4: null,
+    });
+
+    renderWithProviders(<OnboardingPage />, { queryClient });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /use your own.*plaid/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /use your own.*plaid/i }));
+
+    await waitFor(() => {
+      expect(mockApi.setPlaidMode).toHaveBeenCalledWith(PLAID_MODES.BYOK);
     });
 
     await waitFor(() => {

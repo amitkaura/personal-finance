@@ -22,10 +22,10 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Connect bank accounts, credit cards, loans, and investment accounts via Plaid Link
 - **Sandbox mode indicator** -- when Plaid is configured in sandbox/test mode, a visible banner appears on the Dashboard, Connections page, and during onboarding; the Link Account button shows "Link Demo Account"; the onboarding managed-mode card shows a "(Demo)" tag
 - **Managed or Bring Your Own Plaid** -- hosted instances can offer managed Plaid credentials so users connect instantly; alternatively each household configures its own Plaid API keys in Settings; Plaid and LLM mode can be switched in Settings when no accounts are linked
-- **Managed or Bring Your Own LLM** -- admin can configure app-level LLM credentials for managed AI categorization; users choose managed, BYOK, or skip during onboarding; switchable in Settings at any time
+- **Managed or Bring Your Own LLM** -- admin can configure app-level LLM credentials for managed AI categorization; users choose managed or BYOK during onboarding; switchable in Settings at any time
 - **Admin Plaid config** -- instance admin can configure app-level Plaid credentials, toggle managed mode, and see how many households use it (managed via Admin Panel → Plaid Config tab)
 - **Admin LLM config** -- instance admin can configure app-level LLM credentials (base URL, API key, model), toggle enabled, and see managed household count (Admin Panel → LLM Config tab)
-- **Onboarding** -- full-screen wizard (no sidebar); managed Plaid auto-selected when available; OnboardingRedirect moved from Dashboard into AuthGate for global coverage
+- **Onboarding** -- full-screen two-step wizard (no sidebar); step 1 lets users choose between managed Plaid and BYOK; step 2 lets users choose between managed AI and BYOK; no skip option on either step; back button on step 2; verbose Settings switch info on both steps; OnboardingRedirect in AuthGate for global coverage
 - Supports US and Canadian institutions
 - Automatic balance refresh on every sync
 - Account type and subtype selection during creation, with editable subtypes
@@ -252,7 +252,7 @@ personal-finance/
 │   │   ├── cashflow/page.tsx       # Cash flow with drill-down bar chart
 │   │   ├── reports/page.tsx        # Spending reports and trends
 │   │   ├── recurring/page.tsx      # Recurring transaction analysis
-│   │   ├── onboarding/page.tsx     # Extensible wizard: Step 1 = Plaid mode, Step 2 = LLM mode (skippable)
+│   │   ├── onboarding/page.tsx     # Extensible wizard: Step 1 = Plaid mode, Step 2 = LLM mode (with back nav)
 │   │   ├── connections/page.tsx    # Plaid connections management
 │   │   ├── admin/page.tsx          # Admin panel (overview, users, plaid health, analytics, plaid config, llm config)
 │   │   ├── settings/page.tsx       # User preferences and configuration
@@ -343,7 +343,7 @@ personal-finance/
 │       ├── dashboard-actions.test.tsx # Dashboard action buttons, partner status, navigation
 │       ├── add-partner-dialog.test.tsx # Email input, invite submit, error handling, close
 │       ├── link-account.test.tsx   # Token fetch, Plaid link, success message
-│       ├── onboarding.test.tsx    # Wizard: Plaid mode step, LLM mode step, skip, progression, redirect
+│       ├── onboarding.test.tsx    # Wizard: Plaid mode step, LLM mode step, back navigation, progression, redirect
 │       ├── plaid-mode-aware.test.tsx # PlaidSetupBanner + LinkAccount mode awareness
 │       ├── admin.test.tsx           # Admin panel: tabs, KPI cards, user management, plaid health, analytics, plaid config, llm config
 │       ├── admin-plaid-section.test.tsx # Admin section visibility and household count
@@ -696,7 +696,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (484 tests across 47 files):**
+**What's tested (487 tests across 47 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -741,7 +741,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `link-account` | 6 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label |
 | `sandbox-banner` | 2 | Test-mode warning text, demo accounts mention |
 | `sandbox-banner-wrapper` | 3 | Renders banner when sandbox, nothing when production, nothing when unconfigured |
-| `onboarding` | 18 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls, managed auto-selected when available; wizard step 2 (LLM mode): managed AI + BYOK cards, skip button, setLLMMode calls; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete; full-screen layout (no sidebar); sandbox indicator: banner + Demo tag when managed sandbox keys, hidden for production; cache invalidation: plaid-config cache cleared after mode selection |
+| `onboarding` | 21 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, no auto-selection, setPlaidMode calls on card click, Settings info text, no skip; wizard step 2 (LLM mode): managed AI + BYOK cards, no skip, back button returns to step 1, setLLMMode calls, Settings info text; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete; sandbox indicator: banner when managed sandbox keys, hidden for production; cache invalidation: plaid-config cache cleared on managed and BYOK card click |
 | `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
 | `admin` | 20 | Tab rendering (6 tabs including Plaid Config and LLM Config), KPI cards with drill-down click (Active 7d, Linked/Manual accounts → users tab with filters), filter badge and clear, user list, disable/delete actions with confirmation, expandable user detail row (accounts, transactions, activity), tab switching (plaid health, analytics with active-users and transaction-volume charts), Plaid Config tab (config status, environment selector, save button), LLM Config tab (config status, model/base URL display, save button, enabled toggle) |
 | `admin-plaid-section` | 3 | Plaid Config tab visibility in admin panel, managed household count, environment selector |
