@@ -7,6 +7,7 @@ import type { ViewScope, PlaidConnection } from "@/lib/types";
 
 const mockApi = vi.hoisted(() => ({
   getPlaidItems: vi.fn(),
+  getPlaidConfig: vi.fn(),
   triggerSync: vi.fn(),
   unlinkPlaidItem: vi.fn(),
   createLinkToken: vi.fn(),
@@ -51,6 +52,12 @@ describe("ConnectionsPage", () => {
     vi.clearAllMocks();
     mockScope.value = "personal";
     mockApi.getPlaidItems.mockResolvedValue([TEST_CONNECTION]);
+    mockApi.getPlaidConfig.mockResolvedValue({
+      configured: true,
+      plaid_env: "production",
+      client_id_last4: "1234",
+      secret_last4: "5678",
+    });
     mockApi.triggerSync.mockResolvedValue({ status: "synced" });
     mockApi.unlinkPlaidItem.mockResolvedValue({
       status: "unlinked",
@@ -122,5 +129,49 @@ describe("ConnectionsPage", () => {
 
     const syncBtn = screen.getByText("Syncing...").closest("button")!;
     expect(syncBtn).toBeDisabled();
+  });
+
+  // --- Sandbox banner ---
+
+  it("shows sandbox banner when plaid_env is sandbox", async () => {
+    mockApi.getPlaidConfig.mockResolvedValue({
+      configured: true,
+      plaid_env: "sandbox",
+      client_id_last4: "1234",
+      secret_last4: "5678",
+    });
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId("sandbox-banner")).toBeInTheDocument();
+    });
+  });
+
+  it("does not show sandbox banner when plaid_env is production", async () => {
+    mockApi.getPlaidConfig.mockResolvedValue({
+      configured: true,
+      plaid_env: "production",
+      client_id_last4: "1234",
+      secret_last4: "5678",
+    });
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("sandbox-banner")).not.toBeInTheDocument();
+  });
+
+  it("does not show sandbox banner when plaid is not configured", async () => {
+    mockApi.getPlaidConfig.mockResolvedValue({
+      configured: false,
+      plaid_env: null,
+      client_id_last4: null,
+      secret_last4: null,
+    });
+    mockApi.getPlaidItems.mockResolvedValue([]);
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText(/plaid integration is not set up/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("sandbox-banner")).not.toBeInTheDocument();
   });
 });

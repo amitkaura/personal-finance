@@ -20,6 +20,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 ### Account Management
 - Connect bank accounts, credit cards, loans, and investment accounts via Plaid Link
+- **Sandbox mode indicator** -- when Plaid is configured in sandbox/test mode, a visible banner appears on the Connections page and the Link Account button shows "Link Demo Account"
 - **Managed or Bring Your Own Plaid** -- hosted instances can offer managed Plaid credentials so users connect instantly; alternatively each household configures its own Plaid API keys in Settings; one-time onboarding choice (managed vs BYOK) with no switching
 - **Managed or Bring Your Own LLM** -- admin can configure app-level LLM credentials for managed AI categorization; users choose managed, BYOK, or skip during onboarding; switchable in Settings at any time
 - **Admin Plaid config** -- instance admin can configure app-level Plaid credentials, toggle managed mode, and see how many households use it (managed via Admin Panel → Plaid Config tab)
@@ -269,7 +270,8 @@ personal-finance/
 │   │   ├── dashboard-actions.tsx    # Dashboard header actions (link/add account, partner status)
 │   │   ├── add-partner-dialog.tsx  # Invite partner email dialog
 │   │   ├── plaid-setup-banner.tsx  # Dismissible Plaid config prompt (hidden for managed mode)
-│   │   ├── link-account.tsx        # Plaid Link flow (mode-aware: managed skips config redirect)
+│   │   ├── sandbox-banner.tsx       # Amber warning banner shown when Plaid is in sandbox/test mode
+│   │   ├── link-account.tsx        # Plaid Link flow (mode-aware: managed skips config redirect, sandbox label)
 │   │   ├── onboarding-redirect.tsx # Dashboard redirect to /onboarding when plaid_mode or llm_mode is null
 │   │   ├── categorization-progress-provider.tsx # Global progress context (sync, categorize, import)
 │   │   ├── categorization-drawer.tsx  # Persistent progress drawer (importing, syncing, categorizing, complete)
@@ -320,7 +322,8 @@ personal-finance/
 │       ├── goals-page.test.tsx     # Active/completed, create dialog, progress, shared summary
 │       ├── reports-page.test.tsx   # Period selector, summary cards, category bars, merchants
 │       ├── recurring-page.test.tsx # Frequency tabs, sort, consistent/varies badges
-│       ├── connections-page.test.tsx # Connection cards, sync, disconnect, confirm
+│       ├── connections-page.test.tsx # Connection cards, sync, disconnect, confirm, sandbox banner
+│       ├── sandbox-banner.test.tsx  # Sandbox mode warning banner rendering
 │       ├── login-page.test.tsx     # Hero, trust badges, Google sign-in flow
 │       ├── net-worth-card.test.tsx  # Loading, data display, asset/liability breakdown
 │       ├── net-worth-history.test.tsx # Empty state, snapshot, chart, change indicator
@@ -689,7 +692,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (458 tests across 44 files):**
+**What's tested (465 tests across 45 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -711,7 +714,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `budgets-page` | 10 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes, click row navigates to filtered transactions, add-budget validation message for zero amount |
 | `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
 | `recurring-page` | 7 | Title, loading, empty state, recurring cards, summary, consistent/varies badges, sort dropdown |
-| `connections-page` | 6 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync |
+| `connections-page` | 9 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync, sandbox banner shown/hidden based on plaid_env |
 | `net-worth-history` | 7 | Loading, empty state with snapshot, SVG line chart rendering, polyline assertion, change indicator, period selector |
 | `credit-cards-widget` | 6 | Loading, empty, card list, total owed, utilization bar colors, no-limit handling |
 | `recurring-widget` | 6 | Loading, empty, recurring detection, max 6 items, null merchant handling, sort by amount |
@@ -730,7 +733,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
 | `dashboard-actions` | 6 | Add Account/Link Account/Add Partner buttons, partner status message, navigation to /accounts?add=true, partner dialog open |
 | `add-partner-dialog` | 6 | Email input and submit, invitePartner API call, onClose on success, error display, close button, hidden when closed |
-| `link-account` | 4 | Idle button, token fetch on click, success message, pluralization |
+| `link-account` | 6 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label |
+| `sandbox-banner` | 2 | Test-mode warning text, demo accounts mention |
 | `onboarding` | 12 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls; wizard step 2 (LLM mode): managed AI + BYOK cards, skip button, setLLMMode calls; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete |
 | `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
 | `admin` | 20 | Tab rendering (6 tabs including Plaid Config and LLM Config), KPI cards with drill-down click (Active 7d, Linked/Manual accounts → users tab with filters), filter badge and clear, user list, disable/delete actions with confirmation, expandable user detail row (accounts, transactions, activity), tab switching (plaid health, analytics with active-users and transaction-volume charts), Plaid Config tab (config status, environment selector, save button), LLM Config tab (config status, model/base URL display, save button, enabled toggle) |

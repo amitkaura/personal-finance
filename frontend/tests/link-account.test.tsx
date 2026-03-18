@@ -13,6 +13,16 @@ vi.mock("react-plaid-link", () => ({
 const mockApi = vi.hoisted(() => ({
   createLinkToken: vi.fn(),
   exchangeToken: vi.fn(),
+  getPlaidConfig: vi.fn().mockResolvedValue({
+    configured: true,
+    plaid_env: "production",
+    client_id_last4: "1234",
+    secret_last4: "5678",
+  }),
+  getPlaidMode: vi.fn().mockResolvedValue({
+    mode: "byok",
+    managed_available: false,
+  }),
 }));
 
 vi.mock("@/lib/api", () => ({ api: mockApi }));
@@ -59,6 +69,34 @@ describe("LinkAccount", () => {
 
     await waitFor(() => {
       expect(mockApi.createLinkToken).toHaveBeenCalled();
+    });
+  });
+
+  // --- Sandbox label ---
+
+  it("shows 'Link Demo Account' when plaid_env is sandbox", async () => {
+    mockApi.getPlaidConfig.mockResolvedValue({
+      configured: true,
+      plaid_env: "sandbox",
+      client_id_last4: "1234",
+      secret_last4: "5678",
+    });
+    renderWithProviders(<LinkAccount />);
+    await waitFor(() => {
+      expect(screen.getByText("Link Demo Account")).toBeInTheDocument();
+    });
+  });
+
+  it("shows 'Link Account' when plaid_env is production", async () => {
+    mockApi.getPlaidConfig.mockResolvedValue({
+      configured: true,
+      plaid_env: "production",
+      client_id_last4: "1234",
+      secret_last4: "5678",
+    });
+    renderWithProviders(<LinkAccount />);
+    await waitFor(() => {
+      expect(screen.getByText("Link Account")).toBeInTheDocument();
     });
   });
 });
