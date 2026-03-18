@@ -299,6 +299,10 @@ def _auto_categorize_stream(session: Session, user: User):
     progress_idx = 0
     llm_pending: list[Transaction] = []
 
+    # #region agent log
+    print(f"[DEBUG ff3a38] stream: total_uncategorized={total}, user_id={user.id}", flush=True)
+    # #endregion
+
     for txn in txns:
         cat = categorize_by_rules(txn.merchant_name or "", session, user.id)
         if cat:
@@ -319,6 +323,9 @@ def _auto_categorize_stream(session: Session, user: User):
     if llm_pending:
         import httpx as _httpx
         base_url, api_key, model, batch_size = _get_llm_config(user.id)
+        # #region agent log
+        print(f"[DEBUG ff3a38] stream: llm_pending={len(llm_pending)}, has_api_key={bool(api_key)}, base_url={base_url}, model={model}, batch_size={batch_size}", flush=True)
+        # #endregion
         if api_key:
             txn_dicts = [
                 {
