@@ -70,20 +70,30 @@ def categorize_by_rules(merchant_name: str, session: Session, user_id: int) -> s
     match "internet").  Multi-word keywords still match as substrings so that
     "whole foods" matches "Whole Foods Market".
     """
+    rules = session.exec(
+        select(CategoryRule).where(CategoryRule.user_id == user_id)
+    ).all()
+    return match_rules(merchant_name, rules)
+
+
+def load_rules(session: Session, user_id: int) -> list:
+    """Load all CategoryRules for a user (call once, pass to match_rules)."""
+    return list(session.exec(
+        select(CategoryRule).where(CategoryRule.user_id == user_id)
+    ).all())
+
+
+def match_rules(merchant_name: str, rules: list) -> str | None:
+    """Pure-Python rule matching against a preloaded rule list (no DB access)."""
     import re
 
     if not merchant_name:
         return None
-
-    rules = session.exec(
-        select(CategoryRule).where(CategoryRule.user_id == user_id)
-    ).all()
     for rule in rules:
         flags = 0 if rule.case_sensitive else re.IGNORECASE
         pattern = r"\b" + re.escape(rule.keyword) + r"\b"
         if re.search(pattern, merchant_name, flags):
             return rule.category
-
     return None
 
 

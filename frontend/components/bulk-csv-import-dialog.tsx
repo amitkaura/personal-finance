@@ -188,7 +188,6 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
       ],
       transactions: transactionsForImport,
       new_categories: newCategories,
-      skip_llm: true,
     };
 
     startBulkImport(payload);

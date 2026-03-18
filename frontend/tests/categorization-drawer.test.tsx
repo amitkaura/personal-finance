@@ -71,7 +71,6 @@ function BulkImportTrigger() {
           transactions: [
             { date: "2026-01-15", amount: 4.5, merchant_name: "Coffee", account_name: "Visa" },
           ],
-          skip_llm: true,
         })
       }
       disabled={state !== "idle"}
