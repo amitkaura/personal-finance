@@ -32,6 +32,13 @@ Add a section at the top of the plan body listing every applicable rule and how 
 - **responsive-design**: New grid uses `grid-cols-1 sm:grid-cols-2`.
 ```
 
+## Step 4 — Railway compatibility check
+
+If the plan touches streaming, environment variables, cross-service calls, or database schema:
+
+- Verify the plan satisfies `railway-deployment.mdc`
+- If the plan reveals a **new** difference between local and Railway behavior (e.g., a new buffering issue, a new env var gotcha), add it to `railway-deployment.mdc` as part of the implementation.
+
 ## Why This Exists
 
 Without this checklist, rules are silently skipped during planning — causing rework when the user catches violations after the fact.

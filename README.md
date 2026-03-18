@@ -172,11 +172,13 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - Configurable per-route and global rate limiting (`memory` or `redis` backend)
 - Readiness endpoint (`/health/ready`) checks database and Redis dependencies
 
-### Global Categorization Progress Drawer
-- **Persistent progress drawer** -- fixed bottom-right card shows real-time progress during Plaid sync and auto-categorization, surviving page navigation
+### Global Progress Drawer
+- **Persistent progress drawer** -- fixed bottom-right card shows real-time progress during CSV imports, Plaid sync, and auto-categorization, surviving page navigation
+- **Import phase** -- displays account name, current merchant, and progress bar; CSV dialogs close immediately and hand off to the drawer
 - **Sync phase** -- displays institution name and account progress (e.g. "Syncing Chase... Account 1 of 3")
 - **Categorization phase** -- shows merchant name, assigned category badge, and progress bar (current/total)
-- **Completion summary** -- displays synced count, categorized count, and skipped count
+- **Automatic chaining** -- after import, auto-categorization starts automatically if uncategorized transactions remain
+- **Completion summary** -- displays imported count, synced count, categorized count, and skipped count
 - **Error handling** -- displays error message with dismiss button
 - **Manual dismiss** -- completion and error states show an X button to reset to idle
 - Triggers from both the Sync Now button (connections page) and Auto-Categorize button (transactions page)
@@ -269,8 +271,8 @@ personal-finance/
 │   │   ├── plaid-setup-banner.tsx  # Dismissible Plaid config prompt (hidden for managed mode)
 │   │   ├── link-account.tsx        # Plaid Link flow (mode-aware: managed skips config redirect)
 │   │   ├── onboarding-redirect.tsx # Dashboard redirect to /onboarding when plaid_mode or llm_mode is null
-│   │   ├── categorization-progress-provider.tsx # Global categorization progress context
-│   │   ├── categorization-drawer.tsx  # Persistent progress drawer (fixed bottom-right)
+│   │   ├── categorization-progress-provider.tsx # Global progress context (sync, categorize, import)
+│   │   ├── categorization-drawer.tsx  # Persistent progress drawer (importing, syncing, categorizing, complete)
 │   │   ├── sync-button.tsx         # Trigger sync for all items (uses global context)
 │   │   ├── net-worth-card.tsx      # Net worth summary
 │   │   ├── net-worth-history.tsx   # Net worth line chart
@@ -282,8 +284,8 @@ personal-finance/
 │   │   ├── goals-snippet.tsx       # Goals progress summary
 │   │   ├── top-movers.tsx          # Top spending category changes
 │   │   ├── cashflow-bar-chart.tsx  # Income vs expenses bar chart with drill-down
-│   │   ├── csv-import-dialog.tsx   # Import Transactions to a single account
-│   │   ├── bulk-csv-import-dialog.tsx # Bulk Import Accounts & Transactions
+│   │   ├── csv-import-dialog.tsx   # CSV import wizard (upload, map columns, preview); hands off to drawer for progress
+│   │   ├── bulk-csv-import-dialog.tsx # Bulk import wizard (upload, columns, accounts, categories, preview); hands off to drawer
 │   │   ├── balance-import-dialog.tsx # Bulk Import Accounts & Balances
 │   │   └── confirm-dialog.tsx      # Reusable confirmation modal
 │   ├── middleware.ts                # Staging password gate (active when STAGING_PASSWORD is set)
@@ -308,8 +310,8 @@ personal-finance/
 │       ├── csv-utils.test.ts       # CSV parser, column role guessing, date normalization, row mapping
 │       ├── rule-utils.test.ts     # Keyword option generation for rule suggestions
 │       ├── accounts-page.test.tsx  # Manual/Plaid account rendering, add form, import/delete actions, edit modal
-│       ├── csv-import-dialog.test.tsx # Upload, column mapping, debit/credit, preview, import flow
-│       ├── bulk-csv-import-dialog.test.tsx # Bulk upload, multi-account mapping, category matching
+│       ├── csv-import-dialog.test.tsx # Upload, column mapping, debit/credit, preview, startImport handoff
+│       ├── bulk-csv-import-dialog.test.tsx # Bulk upload, multi-account mapping, category matching, startBulkImport handoff
 │       ├── balance-import-dialog.test.tsx # Balance history import dialog
 │       ├── cashflow-bar-chart.test.tsx # Bar chart, drill-down, period switching, breadcrumbs
 │       ├── confirm-dialog.test.tsx # Rendering, variants, ARIA attributes, dismiss
@@ -326,7 +328,7 @@ personal-finance/
 │       ├── loans-widget.test.tsx   # Loan list, total remaining
 │       ├── recurring-widget.test.tsx # Recurring detection, max 6, sort by amount
 │       ├── top-movers.test.tsx     # Investment filter, trend icons
-│       ├── categorization-drawer.test.tsx # Idle, syncing, categorizing, complete, dismiss
+│       ├── categorization-drawer.test.tsx # Idle, syncing, importing, categorizing, complete, import→categorize chain, dismiss
 │       ├── sync-button.test.tsx    # Click, syncing state, idle after completion
 │       ├── review-snippet.test.tsx # Transaction list, "all caught up", view all link
 │       ├── budget-snippet.test.tsx # Personal/shared bars, top 3, "Create one" link
@@ -687,7 +689,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (466 tests across 44 files):**
+**What's tested (458 tests across 44 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -700,8 +702,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `sidebar` | 12 | Brand, nav links (including Categories), active state, user avatar, logout, hrefs, Categories position, ARIA navigation role |
 | `accounts-page` | 27 | Empty state, Add/Link buttons, manual vs Plaid account actions, add form with subtype selector, import/delete dialogs, click row navigates to filtered transactions, edit modal with pre-filled fields, save calls updateAccount, balance disabled for Plaid, friendly type/subtype labels, statement day in add form and edit modal (appears, submits, pre-fills, editable for Plaid), auto-open add form via ?add=true query param, explicit required-name validation, create mutation error rendering |
 | `confirm-dialog` | 11 | Rendering, variants, callbacks, keyboard/click dismiss, ARIA attributes |
-| `bulk-csv-import-dialog` | 17 | Upload, preview, account detection, category matching, import flow, progress, results, errors, payload validation, auto-categorize trigger after import |
-| `csv-import-dialog` | 16 | Upload, column mapping, debit/credit, preview, import, progress, results, errors, cancel/done, auto-categorize trigger after import |
+| `bulk-csv-import-dialog` | 12 | Upload, preview, account detection, category matching, startBulkImport handoff with onClose, payload validation, fallback account, new categories |
+| `csv-import-dialog` | 10 | Upload, column mapping, debit/credit, preview, startImport handoff with onClose, cancel, back navigation |
 | `goals-page` | 12 | Title, empty state, active/completed sections, progress bar, target date, create dialog, shared summary, delete confirm, create validation message for zero target amount, contribution validation message for zero amount |
 | `statement-reminder-banner` | 5 | Banner rendering, empty state, dismiss with localStorage, dismissed stays hidden, multiple banners |
 | `invitation-banner` | 9 | Visibility, inviter details, accept/decline, dismiss, multiple invites |
@@ -723,7 +725,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `budget-snippet` | 8 | Loading, empty with "Create one" link, personal/shared totals, top-3 category sort, expanded shared categories in personal scope, partner scope, and household scope, view all link |
 | `login-page` | 5 | Hero section, trust badges, feature cards, Google sign-in flow |
 | `loans-widget` | 4 | Loading, empty, loan list, total remaining |
-| `categorization-drawer` | 5 | Idle hidden, syncing state, categorizing progress, completion summary with dismiss, dismiss resets to idle |
+| `categorization-drawer` | 9 | Idle hidden, syncing state, importing state with account name, importing→complete transition, import→categorize chain, bulk import progress, categorizing progress, completion summary with dismiss, dismiss resets to idle |
 | `sync-button` | 4 | Idle state, click triggers sync stream, syncing state (disabled), returns to idle after completion |
 | `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
 | `dashboard-actions` | 6 | Add Account/Link Account/Add Partner buttons, partner status message, navigation to /accounts?add=true, partner dialog open |
@@ -744,8 +746,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 
 ### Latest coverage snapshot
 
-- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`4214` statements, `595` missed)
-- Frontend (`npx vitest run --coverage`): **76.28% statements**, **71.95% branches**, **61.95% functions**, **77.19% lines**
+- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`4215` statements, `595` missed)
+- Frontend (`npx vitest run --coverage`): **76% statements**, **72% branches**, **62% functions**, **77% lines**
 
 ## Environment Variables
 

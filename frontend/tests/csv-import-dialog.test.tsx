@@ -5,15 +5,14 @@ import CsvImportDialog from "@/components/csv-import-dialog";
 import { renderWithProviders, TEST_SETTINGS } from "./helpers";
 
 const mockApi = vi.hoisted(() => ({
-  streamImportTransactions: vi.fn(),
   getSettings: vi.fn(),
 }));
-const mockStartAutoCategorize = vi.hoisted(() => vi.fn());
+const mockStartImport = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/api", () => ({ api: mockApi }));
 vi.mock("@/components/categorization-progress-provider", () => ({
   useCategorizationProgress: () => ({
-    startAutoCategorize: mockStartAutoCategorize,
+    startImport: mockStartImport,
   }),
 }));
 
@@ -40,13 +39,6 @@ describe("CsvImportDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockApi.getSettings.mockResolvedValue(TEST_SETTINGS);
-    mockApi.streamImportTransactions.mockResolvedValue({
-      type: "complete",
-      imported: 2,
-      skipped: 0,
-      categorized: 0,
-      errors: [],
-    });
   });
 
   it("renders upload step with file upload button", () => {
@@ -98,7 +90,7 @@ describe("CsvImportDialog", () => {
     });
   });
 
-  it("navigates through all steps: upload → columns → preview → import → result", async () => {
+  it("navigates through all steps: upload → columns → preview", async () => {
     const user = userEvent.setup();
     renderWithProviders(
       <CsvImportDialog accountId={42} accountName="Test" onClose={onClose} />,
@@ -113,15 +105,9 @@ describe("CsvImportDialog", () => {
       expect(screen.getByText(/1 transactions ready to import/)).toBeInTheDocument();
       expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
     });
-
-    await user.click(screen.getByText(/Import 1 transactions/));
-
-    await waitFor(() => {
-      expect(screen.getByText("Import complete")).toBeInTheDocument();
-    });
   });
 
-  it("Import calls streamImportTransactions with mapped data", async () => {
+  it("Import calls startImport with mapped data and closes dialog", async () => {
     const user = userEvent.setup();
     renderWithProviders(
       <CsvImportDialog accountId={42} accountName="Test" onClose={onClose} />,
@@ -136,8 +122,9 @@ describe("CsvImportDialog", () => {
     await user.click(screen.getByText(/Import 1 transactions/));
 
     await waitFor(() => {
-      expect(mockApi.streamImportTransactions).toHaveBeenCalledWith(
+      expect(mockStartImport).toHaveBeenCalledWith(
         42,
+        "Test",
         [
           {
             date: "2026-01-15",
@@ -146,110 +133,9 @@ describe("CsvImportDialog", () => {
             category: "Food",
           },
         ],
-        expect.any(Function),
-        true,
       );
+      expect(onClose).toHaveBeenCalled();
     });
-  });
-
-  it("shows progress during import", async () => {
-    let resolveImport: (value: unknown) => void;
-    const importPromise = new Promise<unknown>((resolve) => {
-      resolveImport = resolve;
-    });
-    mockApi.streamImportTransactions.mockImplementation(
-      (_id: number, _rows: unknown[], onProgress: (evt: unknown) => void) => {
-        queueMicrotask(() => {
-          onProgress({ current: 1, total: 1, merchant: "Coffee", status: "", category: null });
-        });
-        return importPromise.then(() => ({
-          type: "complete",
-          imported: 1,
-          skipped: 0,
-          categorized: 0,
-          errors: [],
-        }));
-      },
-    );
-    const user = userEvent.setup();
-    renderWithProviders(
-      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
-    );
-
-    await advanceToPreview(user, "Date,Merchant,Amount\n2026-01-15,Coffee,4.50\n");
-    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 transactions/));
-
-    await waitFor(() => {
-      expect(screen.getByText("Importing...")).toBeInTheDocument();
-      expect(screen.getByText("1/1")).toBeInTheDocument();
-    });
-
-    resolveImport!(undefined);
-  });
-
-  it("shows results after import", async () => {
-    mockApi.streamImportTransactions.mockResolvedValue({
-      type: "complete",
-      imported: 2,
-      skipped: 1,
-      categorized: 1,
-      errors: [],
-    });
-    const user = userEvent.setup();
-    renderWithProviders(
-      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
-    );
-
-    await advanceToPreview(
-      user,
-      "Date,Description,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n",
-    );
-
-    await waitFor(() => expect(screen.getByText(/Import 2 transactions/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 2 transactions/));
-
-    await waitFor(() => {
-      expect(screen.getByText("Import complete")).toBeInTheDocument();
-      expect(screen.getByText(/2 imported, 1 skipped, 1 auto-categorized/)).toBeInTheDocument();
-    });
-  });
-
-  it("shows errors in results after import", async () => {
-    mockApi.streamImportTransactions.mockResolvedValue({
-      type: "complete",
-      imported: 1,
-      skipped: 0,
-      categorized: 0,
-      errors: ["Row 1: invalid date 'bad'"],
-    });
-    const user = userEvent.setup();
-    renderWithProviders(
-      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
-    );
-
-    await advanceToPreview(user, "Date,Description,Amount\n2026-01-15,Coffee,4.50\n");
-    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 transactions/));
-
-    await waitFor(() => {
-      expect(screen.getByText("Import complete")).toBeInTheDocument();
-      expect(screen.getByText("Row 1: invalid date 'bad'")).toBeInTheDocument();
-    });
-  });
-
-  it("Done button calls onClose", async () => {
-    const user = userEvent.setup();
-    renderWithProviders(
-      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
-    );
-    await advanceToPreview(user, "Date,Description,Amount\n2026-01-15,Coffee,4.50\n");
-    await waitFor(() => expect(screen.getByText(/Import 1 transactions/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 1 transactions/));
-
-    await waitFor(() => expect(screen.getByText("Done")).toBeInTheDocument());
-    await user.click(screen.getByText("Done"));
-    expect(onClose).toHaveBeenCalled();
   });
 
   it("Back button returns to upload step and resets", async () => {
@@ -312,57 +198,4 @@ describe("CsvImportDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("triggers auto-categorize after import when uncategorized transactions exist", async () => {
-    mockApi.streamImportTransactions.mockResolvedValue({
-      type: "complete",
-      imported: 3,
-      skipped: 0,
-      categorized: 1,
-      errors: [],
-    });
-    const user = userEvent.setup();
-    renderWithProviders(
-      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
-    );
-
-    await advanceToPreview(
-      user,
-      "Date,Description,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n2026-01-17,Gas,35.00\n",
-    );
-
-    await waitFor(() => expect(screen.getByText(/Import 3 transactions/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 3 transactions/));
-
-    await waitFor(() => {
-      expect(screen.getByText("Import complete")).toBeInTheDocument();
-      expect(mockStartAutoCategorize).toHaveBeenCalled();
-    });
-  });
-
-  it("does not trigger auto-categorize when all transactions already categorized", async () => {
-    mockApi.streamImportTransactions.mockResolvedValue({
-      type: "complete",
-      imported: 2,
-      skipped: 0,
-      categorized: 2,
-      errors: [],
-    });
-    const user = userEvent.setup();
-    renderWithProviders(
-      <CsvImportDialog accountId={1} accountName="Test" onClose={onClose} />,
-    );
-
-    await advanceToPreview(
-      user,
-      "Date,Description,Amount\n2026-01-15,Coffee,4.50\n2026-01-16,Grocery,42.00\n",
-    );
-
-    await waitFor(() => expect(screen.getByText(/Import 2 transactions/)).toBeInTheDocument());
-    await user.click(screen.getByText(/Import 2 transactions/));
-
-    await waitFor(() => {
-      expect(screen.getByText("Import complete")).toBeInTheDocument();
-    });
-    expect(mockStartAutoCategorize).not.toHaveBeenCalled();
-  });
 });

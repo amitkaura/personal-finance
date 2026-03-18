@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useRef, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, X, Loader2, CheckCircle2, AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
-import { api, ImportProgressEvent, ImportCompleteEvent } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { Upload, X, AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
+import { api } from "@/lib/api";
 import { useCategorizationProgress } from "@/components/categorization-progress-provider";
-import type { LLMConfig } from "@/lib/types";
 import {
   parseCsv,
   guessRole,
@@ -21,19 +20,16 @@ interface Props {
   onClose: () => void;
 }
 
-type Step = "upload" | "columns" | "preview" | "importing" | "result";
+type Step = "upload" | "columns" | "preview";
 
 export default function CsvImportDialog({ accountId, accountName, onClose }: Props) {
-  const queryClient = useQueryClient();
-  const { startAutoCategorize } = useCategorizationProgress();
+  const { startImport } = useCategorizationProgress();
   const { data: llmConfig } = useQuery({ queryKey: ["llm-config"], queryFn: api.getLLMConfig });
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>("upload");
   const [rawRows, setRawRows] = useState<string[][]>([]);
   const [columnRoles, setColumnRoles] = useState<ColumnRole[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
-  const [result, setResult] = useState<ImportCompleteEvent | null>(null);
   const [negateAmounts, setNegateAmounts] = useState(false);
 
   const headers = rawRows[0] ?? [];
@@ -75,28 +71,9 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
     });
   }
 
-  async function handleImport() {
-    setStep("importing");
-    setError(null);
-    try {
-      const complete = await api.streamImportTransactions(
-        accountId,
-        mappedRows,
-        (evt) => setProgress(evt),
-        true,
-      );
-      setResult(complete);
-      setStep("result");
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
-      if (complete.imported > complete.categorized) {
-        startAutoCategorize();
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Import failed");
-      setStep("preview");
-    }
+  function handleImport() {
+    startImport(accountId, accountName, mappedRows);
+    onClose();
   }
 
   const selectClass =
@@ -119,9 +96,7 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
         <div className="mb-4 flex gap-1">
           {(["Upload", "Map Columns", "Preview"] as const).map((label, i) => {
             const stepOrder: Step[] = ["upload", "columns", "preview"];
-            const active = stepOrder.indexOf(
-              step === "importing" || step === "result" ? "preview" : step,
-            ) >= i;
+            const active = stepOrder.indexOf(step) >= i;
             return (
               <div
                 key={label}
@@ -323,56 +298,6 @@ export default function CsvImportDialog({ accountId, accountName, onClose }: Pro
           </div>
         )}
 
-        {/* ── Importing step ── */}
-        {step === "importing" && (
-          <div className="space-y-4 py-4">
-            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Importing...
-            </div>
-            {progress && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span className="truncate max-w-[200px]">{progress.merchant}</span>
-                  <span>{progress.current}/{progress.total}</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-accent transition-all"
-                    style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Result step ── */}
-        {step === "result" && result && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-green-400">
-              <CheckCircle2 className="h-5 w-5" />
-              <span className="font-medium">Import complete</span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {result.imported} imported, {result.skipped} skipped, {result.categorized} auto-categorized
-            </p>
-            {result.errors.length > 0 && (
-              <div className="rounded-lg bg-red-500/10 p-3 text-xs text-red-400">
-                {result.errors.slice(0, 5).map((e, i) => (
-                  <p key={i}>{e}</p>
-                ))}
-                {result.errors.length > 5 && <p>...and {result.errors.length - 5} more</p>}
-              </div>
-            )}
-            <button
-              onClick={onClose}
-              className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground"
-            >
-              Done
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

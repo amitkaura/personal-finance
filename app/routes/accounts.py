@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import func
+from sqlalchemy import delete as sa_delete, func
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, or_, select
@@ -161,31 +161,12 @@ def delete_account(
     if acct.is_linked:
         raise HTTPException(status_code=400, detail="Unlink the account before deleting it")
 
-    txns = session.exec(
-        select(Transaction).where(Transaction.account_id == account_id)
-    ).all()
-    txn_ids = [t.id for t in txns]
+    txn_subq = select(Transaction.id).where(Transaction.account_id == account_id)
 
-    if txn_ids:
-        tag_links = session.exec(
-            select(TransactionTag).where(TransactionTag.transaction_id.in_(txn_ids))  # type: ignore[union-attr]
-        ).all()
-        for tl in tag_links:
-            session.delete(tl)
-
-    for txn in txns:
-        session.delete(txn)
-
-    goal_links = session.exec(
-        select(GoalAccountLink).where(GoalAccountLink.account_id == account_id)
-    ).all()
-    for gl in goal_links:
-        session.delete(gl)
-
-    for bs in session.exec(
-        select(AccountBalanceSnapshot).where(AccountBalanceSnapshot.account_id == account_id)
-    ).all():
-        session.delete(bs)
+    session.exec(sa_delete(TransactionTag).where(TransactionTag.transaction_id.in_(txn_subq)))  # type: ignore[arg-type]
+    session.exec(sa_delete(Transaction).where(Transaction.account_id == account_id))  # type: ignore[arg-type]
+    session.exec(sa_delete(GoalAccountLink).where(GoalAccountLink.account_id == account_id))  # type: ignore[arg-type]
+    session.exec(sa_delete(AccountBalanceSnapshot).where(AccountBalanceSnapshot.account_id == account_id))  # type: ignore[arg-type]
 
     session.delete(acct)
     session.commit()

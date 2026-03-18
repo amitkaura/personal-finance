@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useRef, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, X, Loader2, CheckCircle2, AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
-import { api, BulkImportPayload, ImportProgressEvent, ImportCompleteEvent } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { Upload, X, AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
+import { api, BulkImportPayload } from "@/lib/api";
 import { useCategorizationProgress } from "@/components/categorization-progress-provider";
 import { useHousehold } from "@/components/household-provider";
 import { ACCOUNT_TYPES, SUBTYPES } from "@/app/accounts/page";
@@ -22,11 +22,10 @@ interface Props {
   onClose: () => void;
 }
 
-type Step = "upload" | "columns" | "accounts" | "categories" | "preview" | "importing" | "result";
+type Step = "upload" | "columns" | "accounts" | "categories" | "preview";
 
 export default function BulkCsvImportDialog({ onClose }: Props) {
-  const queryClient = useQueryClient();
-  const { startAutoCategorize } = useCategorizationProgress();
+  const { startBulkImport } = useCategorizationProgress();
   const { data: llmConfig } = useQuery({ queryKey: ["llm-config"], queryFn: api.getLLMConfig });
   const fileRef = useRef<HTMLInputElement>(null);
   const { household } = useHousehold();
@@ -35,8 +34,6 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
   const [sourceFileName, setSourceFileName] = useState("");
   const [columnRoles, setColumnRoles] = useState<ColumnRole[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
-  const [result, setResult] = useState<ImportCompleteEvent | null>(null);
   const [negateAmounts, setNegateAmounts] = useState(false);
   const [accountMeta, setAccountMeta] = useState<Record<string, { type: string; subtype: string; balance: string }>>({});
 
@@ -152,67 +149,50 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
     }
   }
 
-  async function handleImport() {
-    setStep("importing");
-    setError(null);
-    try {
-      const newAccountNames = csvAccountNames.filter(
-        (n) => !existingAccountNames.has(n.toLowerCase()),
-      );
-      const fallbackAccountNameBase = sourceFileName.replace(/\.[^/.]+$/, "").trim();
-      const fallbackAccountName = fallbackAccountNameBase || "Imported Account";
-      const shouldCreateFallbackAccount =
-        newAccountNames.length === 0 &&
-        csvAccountNames.length === 0 &&
-        (existingAccounts?.length ?? 0) === 0;
-      const newCategories = categoryMatches
-        .filter((m) => m.isNew)
-        .map((m) => m.csvCategory);
-      const transactionsForImport = shouldCreateFallbackAccount
-        ? mappedRows.map((row) => ({ ...row, account_name: fallbackAccountName }))
-        : mappedRows;
+  function handleImport() {
+    const newAccountNames = csvAccountNames.filter(
+      (n) => !existingAccountNames.has(n.toLowerCase()),
+    );
+    const fallbackAccountNameBase = sourceFileName.replace(/\.[^/.]+$/, "").trim();
+    const fallbackAccountName = fallbackAccountNameBase || "Imported Account";
+    const shouldCreateFallbackAccount =
+      newAccountNames.length === 0 &&
+      csvAccountNames.length === 0 &&
+      (existingAccounts?.length ?? 0) === 0;
+    const newCategories = categoryMatches
+      .filter((m) => m.isNew)
+      .map((m) => m.csvCategory);
+    const transactionsForImport = shouldCreateFallbackAccount
+      ? mappedRows.map((row) => ({ ...row, account_name: fallbackAccountName }))
+      : mappedRows;
 
-      const payload: BulkImportPayload = {
-        accounts: [
-          ...newAccountNames.map((name) => {
-            const m = accountMeta[name];
-            return {
-              name,
-              type: m?.type ?? "depository",
-              subtype: m?.subtype ?? SUBTYPES["depository"]?.[0] ?? "",
-              current_balance: parseFloat(m?.balance ?? "0") || 0,
-            };
-          }),
-          ...(shouldCreateFallbackAccount
-            ? [{
-                name: fallbackAccountName,
-                type: "depository",
-                subtype: SUBTYPES["depository"]?.[0] ?? "",
-                current_balance: 0,
-              }]
-            : []),
-        ],
-        transactions: transactionsForImport,
-        new_categories: newCategories,
-        skip_llm: true,
-      };
+    const payload: BulkImportPayload = {
+      accounts: [
+        ...newAccountNames.map((name) => {
+          const m = accountMeta[name];
+          return {
+            name,
+            type: m?.type ?? "depository",
+            subtype: m?.subtype ?? SUBTYPES["depository"]?.[0] ?? "",
+            current_balance: parseFloat(m?.balance ?? "0") || 0,
+          };
+        }),
+        ...(shouldCreateFallbackAccount
+          ? [{
+              name: fallbackAccountName,
+              type: "depository",
+              subtype: SUBTYPES["depository"]?.[0] ?? "",
+              current_balance: 0,
+            }]
+          : []),
+      ],
+      transactions: transactionsForImport,
+      new_categories: newCategories,
+      skip_llm: true,
+    };
 
-      const complete = await api.bulkImportTransactions(payload, (evt) =>
-        setProgress(evt),
-      );
-      setResult(complete);
-      setStep("result");
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
-      if (complete.imported > complete.categorized) {
-        startAutoCategorize();
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Import failed");
-      setStep("preview");
-    }
+    startBulkImport(payload);
+    onClose();
   }
 
   const selectClass =
@@ -220,9 +200,7 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
 
   const stepLabels = ["Upload", "Map Columns", "Accounts", "Categories", "Preview"];
   const stepOrder: Step[] = ["upload", "columns", "accounts", "categories", "preview"];
-  const currentStepIdx = stepOrder.indexOf(
-    step === "importing" || step === "result" ? "preview" : step,
-  );
+  const currentStepIdx = stepOrder.indexOf(step);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -567,56 +545,6 @@ export default function BulkCsvImportDialog({ onClose }: Props) {
           </div>
         )}
 
-        {/* ── Importing ── */}
-        {step === "importing" && (
-          <div className="space-y-4 py-4">
-            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Importing...
-            </div>
-            {progress && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span className="truncate max-w-[200px]">{progress.merchant}</span>
-                  <span>{progress.current}/{progress.total}</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-accent transition-all"
-                    style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Result ── */}
-        {step === "result" && result && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-green-400">
-              <CheckCircle2 className="h-5 w-5" />
-              <span className="font-medium">Import complete</span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {result.imported} imported, {result.skipped} skipped, {result.categorized} auto-categorized
-            </p>
-            {result.errors.length > 0 && (
-              <div className="rounded-lg bg-red-500/10 p-3 text-xs text-red-400">
-                {result.errors.slice(0, 5).map((e, i) => (
-                  <p key={i}>{e}</p>
-                ))}
-                {result.errors.length > 5 && <p>...and {result.errors.length - 5} more</p>}
-              </div>
-            )}
-            <button
-              onClick={onClose}
-              className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground"
-            >
-              Done
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
