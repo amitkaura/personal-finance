@@ -4,9 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -61,16 +59,14 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
 
   const scopeKey = useMemo(() => scopeKeyFor(user?.id), [user?.id]);
-  const prevKeyRef = useRef(scopeKey);
 
   const [scope, setScopeState] = useState<ViewScope>(() => readScope(scopeKey));
 
-  useEffect(() => {
-    if (prevKeyRef.current !== scopeKey) {
-      setScopeState(readScope(scopeKey));
-      prevKeyRef.current = scopeKey;
-    }
-  }, [scopeKey]);
+  const [prevScopeKey, setPrevScopeKey] = useState(scopeKey);
+  if (scopeKey !== prevScopeKey) {
+    setPrevScopeKey(scopeKey);
+    setScopeState(readScope(scopeKey));
+  }
 
   const setScope = useCallback(
     (s: ViewScope) => {
@@ -101,13 +97,10 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const partner =
     household?.members.find((m) => m.user_id !== user?.id) ?? null;
 
-  useEffect(() => {
-    const shouldReset = !householdLoading && (!household || !partner) && scope !== "personal";
-    if (shouldReset) {
-      setScopeState("personal");
-      if (scopeKey) localStorage.setItem(scopeKey, "personal");
-    }
-  }, [household, householdLoading, partner, scope, scopeKey]);
+  if (!householdLoading && (!household || !partner) && scope !== "personal") {
+    setScopeState("personal");
+    if (scopeKey) localStorage.setItem(scopeKey, "personal");
+  }
 
   const refetch = useCallback(() => {
     refetchHousehold();

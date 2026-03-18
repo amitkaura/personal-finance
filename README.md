@@ -42,7 +42,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Statement reminders** -- set a recurring day-of-month (1-31) per account for statement availability; triggers an in-app banner and email reminder on that day (with last-day-of-month fallback for days 29-31)
 
 ### Transaction Management
-- Automatic transaction sync from all linked Plaid items
+- **Batched transaction sync** -- all sync paths (first sync after linking, manual sync, scheduled sync) use batch DB lookups and batch LLM categorization instead of per-transaction queries; first sync after linking shows streaming progress in the drawer (same UX as CSV import)
 - Manual transaction entry with merchant name, amount, date, category, and notes
 - **CSV import** -- bulk import accounts & transactions from bank exports with a multi-step wizard; auto-creates accounts, categorizes transactions, skips duplicates, and lets you set account type, subtype, and starting balance per new account
   - Drag-and-drop or file picker upload
@@ -650,7 +650,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (516 tests across 23 files):**
+**What's tested (523 tests across 23 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -663,7 +663,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_accounts` | 35 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization, statement_available_day (create/update/clear/validate), statement-reminders endpoint (match/no-match/last-day-fallback/auth) |
 | `test_scheduler` | 11 | Statement reminder scheduler job (day match, de-duplication, last-day-of-month fallback, no-accounts), per-household scheduler (reads DB config, no-config skips, disabled skips, multiple households, scoped sync items, scoped reminders) |
 | `test_sync_config` | 13 | Sync config CRUD (get configured/unconfigured/no-household/member-read, create/update/invalid-hour/invalid-minute/non-owner/no-household, delete/non-owner/not-configured/no-household) |
-| `test_plaid` | 17 | Link token, exchange token (success, relink, conflict, institution name), sync, sync-all-stream (NDJSON streaming), items (all Plaid calls mocked) |
+| `test_plaid` | 24 | Link token, exchange token (success, relink, conflict, institution name, no background sync), sync, sync-all-stream (NDJSON streaming, batch account lookup, update-existing, batch LLM, rules-before-LLM), background sync (batch lookups, batch LLM), items (all Plaid calls mocked) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 11 | Resend HTTP API, invitation + statement reminder templates, send/skip/fail/network-error handling, bearer auth, app_url in CTAs |
@@ -696,7 +696,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (487 tests across 47 files):**
+**What's tested (488 tests across 47 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -738,7 +738,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
 | `dashboard-actions` | 6 | Add Account/Link Account/Add Partner buttons, partner status message, navigation to /accounts?add=true, partner dialog open |
 | `add-partner-dialog` | 6 | Email input and submit, invitePartner API call, onClose on success, error display, close button, hidden when closed |
-| `link-account` | 6 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label |
+| `link-account` | 7 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label, startSync triggered after exchange |
 | `sandbox-banner` | 2 | Test-mode warning text, demo accounts mention |
 | `sandbox-banner-wrapper` | 3 | Renders banner when sandbox, nothing when production, nothing when unconfigured |
 | `onboarding` | 21 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, no auto-selection, setPlaidMode calls on card click, Settings info text, no skip; wizard step 2 (LLM mode): managed AI + BYOK cards, no skip, back button returns to step 1, setLLMMode calls, Settings info text; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete; sandbox indicator: banner when managed sandbox keys, hidden for production; cache invalidation: plaid-config cache cleared on managed and BYOK card click |

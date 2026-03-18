@@ -7,10 +7,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, CheckCircle, Loader2, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { PLAID_MODES } from "@/lib/types";
+import { useCategorizationProgress } from "@/components/categorization-progress-provider";
 
 export default function LinkAccount() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { startSync } = useCategorizationProgress();
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "linking" | "exchanging" | "done">("idle");
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -52,6 +54,7 @@ export default function LinkAccount() {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["plaidItems"] });
       queryClient.invalidateQueries({ queryKey: ["netWorthHistory"] });
+      startSync();
     },
     onError: () => {
       setStatus("idle");

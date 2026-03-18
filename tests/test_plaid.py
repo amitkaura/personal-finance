@@ -4,7 +4,9 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from app.models import AccountType, PlaidItem
+from sqlmodel import select
+
+from app.models import AccountType, CategoryRule, PlaidItem, Transaction
 from app.crypto import encrypt_token
 from tests.conftest import (
     add_household_member,
@@ -319,3 +321,238 @@ def test_sync_all_stream_requires_auth(client):
     """Streaming sync requires authentication."""
     resp = client.post("/api/v1/plaid/sync-all-stream")
     assert resp.status_code == 401
+
+
+# -- Batch DB lookups (streaming) ------------------------------------------
+
+
+def _make_mock_txn(txn_id, account_id, amount=10.0, merchant="Store", txn_date=None):
+    """Build a mock Plaid transaction object."""
+    txn = MagicMock()
+    txn.transaction_id = txn_id
+    txn.date = txn_date or date(2026, 3, 1)
+    txn.amount = amount
+    txn.merchant_name = merchant
+    txn.pending = False
+    txn.account_id = account_id
+    txn.personal_finance_category = None
+    txn.category = None
+    return txn
+
+
+def test_sync_stream_multi_txn_correct_accounts(auth_client, session):
+    """Batch account lookup maps each transaction to the correct account."""
+    import json as _json
+
+    client, user = auth_client
+    item = _make_plaid_item(session, user)
+    acct_a = make_account(session, user, name="Checking", plaid_account_id="acct-A", plaid_item_id=item.id)
+    acct_b = make_account(session, user, name="Savings", plaid_account_id="acct-B", plaid_item_id=item.id)
+
+    txns = [
+        _make_mock_txn("txn-1", "acct-A", 10.0, "Amazon"),
+        _make_mock_txn("txn-2", "acct-B", 20.0, "Costco"),
+        _make_mock_txn("txn-3", "acct-A", 30.0, "Target"),
+    ]
+    mock_client = _mock_plaid_transactions(transactions=txns, total=3)
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client), \
+         patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)):
+        resp = client.post("/api/v1/plaid/sync-all-stream")
+
+    assert resp.status_code == 200
+
+    saved = session.exec(select(Transaction).where(Transaction.user_id == user.id)).all()
+    by_plaid_id = {t.plaid_transaction_id: t for t in saved}
+    assert by_plaid_id["txn-1"].account_id == acct_a.id
+    assert by_plaid_id["txn-2"].account_id == acct_b.id
+    assert by_plaid_id["txn-3"].account_id == acct_a.id
+
+
+def test_sync_stream_updates_existing_txn(auth_client, session):
+    """Existing transaction is updated (not duplicated) via batch lookup."""
+    import json as _json
+
+    client, user = auth_client
+    item = _make_plaid_item(session, user)
+    acct = make_account(session, user, name="Checking", plaid_account_id="acct-X", plaid_item_id=item.id)
+
+    existing = Transaction(
+        plaid_transaction_id="txn-existing",
+        date=date(2026, 2, 1),
+        amount=Decimal("50.00"),
+        merchant_name="Old Merchant",
+        account_id=acct.id,
+        user_id=user.id,
+    )
+    session.add(existing)
+    session.commit()
+
+    txns = [_make_mock_txn("txn-existing", "acct-X", 99.99, "New Merchant")]
+    mock_client = _mock_plaid_transactions(transactions=txns, total=1)
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client), \
+         patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)):
+        resp = client.post("/api/v1/plaid/sync-all-stream")
+
+    assert resp.status_code == 200
+
+    all_txns = session.exec(
+        select(Transaction).where(Transaction.plaid_transaction_id == "txn-existing")
+    ).all()
+    assert len(all_txns) == 1
+    assert float(all_txns[0].amount) == 99.99
+    assert all_txns[0].merchant_name == "New Merchant"
+
+
+# -- Batch categorization (streaming) -------------------------------------
+
+
+def test_sync_stream_batch_llm_called(auth_client, session):
+    """Categorization uses batch LLM, not per-transaction single LLM."""
+    import json as _json
+
+    client, user = auth_client
+    item = _make_plaid_item(session, user)
+    make_account(session, user, name="Checking", plaid_account_id="acct-cat", plaid_item_id=item.id)
+
+    txns = [
+        _make_mock_txn("txn-c1", "acct-cat", 10.0, "Store A"),
+        _make_mock_txn("txn-c2", "acct-cat", 20.0, "Store B"),
+        _make_mock_txn("txn-c3", "acct-cat", 30.0, "Store C"),
+    ]
+    mock_client = _mock_plaid_transactions(transactions=txns, total=3)
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client), \
+         patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)), \
+         patch("app.routes.plaid.categorize_batch_llm", return_value={}) as mock_batch:
+        resp = client.post("/api/v1/plaid/sync-all-stream")
+
+    assert resp.status_code == 200
+    mock_batch.assert_called()
+
+    events = [_json.loads(l) for l in resp.text.strip().split("\n") if l]
+    cat_events = [e for e in events if e["status"] in ("categorized", "skipped")]
+    assert len(cat_events) == 3
+
+
+def test_sync_stream_rules_before_llm(auth_client, session):
+    """Rule-matched txns skip LLM; only unmatched go to batch LLM."""
+    import json as _json
+
+    client, user = auth_client
+    item = _make_plaid_item(session, user)
+    make_account(session, user, name="Checking", plaid_account_id="acct-rule", plaid_item_id=item.id)
+
+    rule = CategoryRule(user_id=user.id, keyword="Walmart", category="Shopping")
+    session.add(rule)
+    session.commit()
+
+    txns = [
+        _make_mock_txn("txn-r1", "acct-rule", 10.0, "Walmart"),
+        _make_mock_txn("txn-r2", "acct-rule", 20.0, "Unknown Vendor"),
+    ]
+    mock_client = _mock_plaid_transactions(transactions=txns, total=2)
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client), \
+         patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)), \
+         patch("app.routes.plaid.categorize_batch_llm", return_value={}) as mock_batch:
+        resp = client.post("/api/v1/plaid/sync-all-stream")
+
+    assert resp.status_code == 200
+    assert mock_batch.call_count == 1
+    batch_arg = mock_batch.call_args[0][0]
+    assert len(batch_arg) == 1
+    assert batch_arg[0].merchant_name == "Unknown Vendor"
+
+    session.expire_all()
+    walmart_txn = session.exec(
+        select(Transaction).where(Transaction.plaid_transaction_id == "txn-r1")
+    ).first()
+    assert walmart_txn.category == "Shopping"
+
+
+# -- Background sync parity -----------------------------------------------
+
+
+def test_sync_transactions_batch_lookups(session):
+    """Background sync_transactions uses batch account lookups."""
+    user = make_user(session)
+    item = _make_plaid_item(session, user)
+    acct_a = make_account(session, user, name="Checking", plaid_account_id="bg-acct-A", plaid_item_id=item.id)
+    acct_b = make_account(session, user, name="Savings", plaid_account_id="bg-acct-B", plaid_item_id=item.id)
+
+    txns = [
+        _make_mock_txn("bg-txn-1", "bg-acct-A", 10.0, "Amazon"),
+        _make_mock_txn("bg-txn-2", "bg-acct-B", 20.0, "Costco"),
+        _make_mock_txn("bg-txn-3", "bg-acct-A", 30.0, "Target"),
+    ]
+    mock_client = _mock_plaid_transactions(transactions=txns, total=3)
+
+    from tests.conftest import _test_engine
+    from app.routes.plaid import sync_transactions
+
+    with patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)), \
+         patch("app.database.engine", _test_engine):
+        sync_transactions(item.id)
+
+    session.expire_all()
+    saved = session.exec(select(Transaction).where(Transaction.user_id == user.id)).all()
+    by_plaid_id = {t.plaid_transaction_id: t for t in saved}
+    assert by_plaid_id["bg-txn-1"].account_id == acct_a.id
+    assert by_plaid_id["bg-txn-2"].account_id == acct_b.id
+    assert by_plaid_id["bg-txn-3"].account_id == acct_a.id
+
+
+def test_sync_transactions_batch_llm(session):
+    """Background sync_transactions uses batch LLM, not single LLM."""
+    user = make_user(session)
+    item = _make_plaid_item(session, user)
+    make_account(session, user, name="Checking", plaid_account_id="bg-acct-llm", plaid_item_id=item.id)
+
+    txns = [
+        _make_mock_txn("bg-llm-1", "bg-acct-llm", 10.0, "Store A"),
+        _make_mock_txn("bg-llm-2", "bg-acct-llm", 20.0, "Store B"),
+    ]
+    mock_client = _mock_plaid_transactions(transactions=txns, total=2)
+
+    from tests.conftest import _test_engine
+    from app.routes.plaid import sync_transactions
+
+    with patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)), \
+         patch("app.routes.plaid.categorize_batch_llm", return_value={}) as mock_batch, \
+         patch("app.database.engine", _test_engine):
+        sync_transactions(item.id)
+
+    mock_batch.assert_called()
+
+
+# -- Exchange-token no background sync ------------------------------------
+
+
+def test_exchange_token_no_background_sync(auth_client, session):
+    """exchange-token should NOT trigger sync_transactions as a background task."""
+    client, user = auth_client
+    mock_client = _mock_plaid_exchange()
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client), \
+         patch("app.routes.plaid.sync_transactions") as mock_sync:
+        resp = client.post("/api/v1/plaid/exchange-token", json={
+            "public_token": "public-sandbox-abc",
+            "institution_name": "Test Bank",
+        })
+
+    assert resp.status_code == 200
+    mock_sync.assert_not_called()

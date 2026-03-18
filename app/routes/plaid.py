@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.auth import get_current_user
-from app.categorizer import categorize_by_rules, categorize_single_llm
+from app.categorizer import categorize_batch_llm, load_rules, match_rules
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
 from app.household import get_scoped_user_ids
@@ -68,7 +68,6 @@ def create_link_token(
 @router.post("/exchange-token", response_model=ExchangeTokenResponse)
 def exchange_public_token(
     body: ExchangeTokenRequest,
-    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
@@ -124,8 +123,6 @@ def exchange_public_token(
     session.commit()
     session.refresh(plaid_item)
 
-    background_tasks.add_task(sync_transactions, plaid_item.id)
-
     return ExchangeTokenResponse(item_id=item_id, accounts_synced=synced)
 
 
@@ -179,6 +176,167 @@ def sync_all_stream(
     )
 
 
+def _build_account_map(session: Session, user_id: int) -> dict[str, Account]:
+    """Preload all accounts for a user into {plaid_account_id: Account}."""
+    accounts = session.exec(
+        select(Account).where(Account.user_id == user_id)
+    ).all()
+    return {a.plaid_account_id: a for a in accounts if a.plaid_account_id}
+
+
+def _extract_plaid_category(txn) -> str | None:
+    """Extract category string from a Plaid transaction object."""
+    if hasattr(txn, "personal_finance_category") and txn.personal_finance_category:
+        return getattr(txn.personal_finance_category, "primary", None)
+    elif txn.category:
+        return " > ".join(txn.category)
+    return None
+
+
+def _upsert_plaid_page(
+    session: Session,
+    plaid_transactions: list,
+    user_id: int,
+    account_map: dict[str, Account],
+) -> int:
+    """Upsert a page of Plaid transactions using batch lookups. Returns new count."""
+    if not plaid_transactions:
+        return 0
+
+    plaid_ids = [t.transaction_id for t in plaid_transactions]
+    existing_rows = session.exec(
+        select(Transaction).where(
+            Transaction.plaid_transaction_id.in_(plaid_ids)  # type: ignore[union-attr]
+        )
+    ).all()
+    existing_map = {t.plaid_transaction_id: t for t in existing_rows}
+
+    new_count = 0
+    for txn in plaid_transactions:
+        existing = existing_map.get(txn.transaction_id)
+        account = account_map.get(txn.account_id)
+        plaid_cat = _extract_plaid_category(txn)
+
+        if existing:
+            existing.amount = Decimal(str(txn.amount))
+            existing.merchant_name = txn.merchant_name
+            existing.plaid_category_code = plaid_cat
+            existing.pending_status = txn.pending
+            existing.date = txn.date
+            session.add(existing)
+        else:
+            new_txn = Transaction(
+                plaid_transaction_id=txn.transaction_id,
+                date=txn.date,
+                amount=Decimal(str(txn.amount)),
+                merchant_name=txn.merchant_name,
+                plaid_category_code=plaid_cat,
+                category=None,
+                pending_status=txn.pending,
+                account_id=account.id if account else None,
+                user_id=user_id,
+            )
+            session.add(new_txn)
+            new_count += 1
+
+    return new_count
+
+
+def _sync_single_item(
+    session: Session,
+    item: PlaidItem,
+    user_id: int,
+    client,
+    account_map: dict[str, Account],
+) -> int:
+    """Paginate through Plaid transactions for one item and upsert. Returns new count."""
+    access_token = decrypt_token(item.encrypted_access_token)
+    end_date = date.today()
+    start_date = end_date - timedelta(days=30)
+
+    total_synced = 0
+    offset = 0
+    page_total = 1
+    while offset < page_total:
+        txn_request = TransactionsGetRequest(
+            access_token=access_token,
+            start_date=start_date,
+            end_date=end_date,
+            options=TransactionsGetRequestOptions(offset=offset, count=100),
+        )
+        txn_response = client.transactions_get(txn_request)
+        page_total = txn_response.total_transactions
+
+        total_synced += _upsert_plaid_page(
+            session, txn_response.transactions, user_id, account_map,
+        )
+        session.commit()
+
+        batch_size = len(txn_response.transactions)
+        if batch_size == 0:
+            break
+        offset += batch_size
+
+    return total_synced
+
+
+def _categorize_uncategorized(
+    session: Session, user_id: int,
+) -> tuple[int, int, list[dict]]:
+    """Batch-categorize uncategorized transactions. Returns (categorized, skipped, events)."""
+    user_account_ids = session.exec(
+        select(Account.id).where(Account.user_id == user_id)
+    ).all()
+    pending = session.exec(
+        select(Transaction).where(
+            Transaction.category == None,  # noqa: E711
+            Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+        )
+    ).all()
+
+    if not pending:
+        return 0, 0, []
+
+    rules = load_rules(session, user_id)
+    llm_pending: list[Transaction] = []
+    rule_results: dict[int, str] = {}
+
+    for t in pending:
+        cat = match_rules(t.merchant_name or "", rules)
+        if cat:
+            t.category = cat
+            session.add(t)
+            rule_results[t.id] = cat
+        else:
+            llm_pending.append(t)
+
+    llm_results = categorize_batch_llm(llm_pending, user_id) if llm_pending else {}
+    for t in llm_pending:
+        cat = llm_results.get(t.id)
+        if cat:
+            t.category = cat
+            session.add(t)
+
+    session.commit()
+
+    categorized = 0
+    events: list[dict] = []
+    for idx, t in enumerate(pending, 1):
+        cat = rule_results.get(t.id) or llm_results.get(t.id)
+        status = "categorized" if cat else "skipped"
+        if cat:
+            categorized += 1
+        events.append({
+            "status": status,
+            "current": idx,
+            "total": len(pending),
+            "merchant_name": t.merchant_name,
+            "category": cat,
+        })
+
+    return categorized, len(pending) - categorized, events
+
+
 def _sync_all_stream_generator(
     items: list[PlaidItem], user_id: int, session: Session,
 ):
@@ -186,6 +344,7 @@ def _sync_all_stream_generator(
     total_items = len(items)
     total_synced = 0
 
+    account_map = _build_account_map(session, user_id)
     client = get_household_plaid_client_for_user_id(session, user_id)
 
     for idx, item in enumerate(items, 1):
@@ -200,110 +359,17 @@ def _sync_all_stream_generator(
             "total": total_items,
         }) + "\n"
 
-        access_token = decrypt_token(item.encrypted_access_token)
-
-        end_date = date.today()
-        start_date = end_date - timedelta(days=30)
-
-        offset = 0
-        page_total = 1
-        while offset < page_total:
-            txn_request = TransactionsGetRequest(
-                access_token=access_token,
-                start_date=start_date,
-                end_date=end_date,
-                options=TransactionsGetRequestOptions(offset=offset, count=100),
-            )
-            txn_response = client.transactions_get(txn_request)
-            page_total = txn_response.total_transactions
-
-            for txn in txn_response.transactions:
-                existing = session.exec(
-                    select(Transaction).where(
-                        Transaction.plaid_transaction_id == txn.transaction_id
-                    )
-                ).first()
-
-                account = session.exec(
-                    select(Account).where(
-                        Account.plaid_account_id == txn.account_id
-                    )
-                ).first()
-
-                plaid_cat = None
-                if hasattr(txn, "personal_finance_category") and txn.personal_finance_category:
-                    plaid_cat = getattr(txn.personal_finance_category, "primary", None)
-                elif txn.category:
-                    plaid_cat = " > ".join(txn.category)
-
-                if existing:
-                    existing.amount = Decimal(str(txn.amount))
-                    existing.merchant_name = txn.merchant_name
-                    existing.plaid_category_code = plaid_cat
-                    existing.pending_status = txn.pending
-                    existing.date = txn.date
-                    session.add(existing)
-                else:
-                    new_txn = Transaction(
-                        plaid_transaction_id=txn.transaction_id,
-                        date=txn.date,
-                        amount=Decimal(str(txn.amount)),
-                        merchant_name=txn.merchant_name,
-                        plaid_category_code=plaid_cat,
-                        category=None,
-                        pending_status=txn.pending,
-                        account_id=account.id if account else None,
-                        user_id=user_id,
-                    )
-                    session.add(new_txn)
-                    total_synced += 1
-
-            session.commit()
-
-            batch_size = len(txn_response.transactions)
-            if batch_size == 0:
-                break
-            offset += batch_size
+        total_synced += _sync_single_item(session, item, user_id, client, account_map)
 
         try:
+            access_token = decrypt_token(item.encrypted_access_token)
             _update_balances(session, access_token, item.id, user_id, client=client)
         except Exception:
             pass
 
-    # Categorization phase
-    user_account_ids = session.exec(
-        select(Account.id).where(Account.user_id == user_id)
-    ).all()
-    pending = session.exec(
-        select(Transaction).where(
-            Transaction.category == None,  # noqa: E711
-            Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
-        )
-    ).all()
-
-    cat_total = len(pending)
-    categorized = 0
-
-    for cat_idx, t in enumerate(pending, 1):
-        cat = categorize_by_rules(t.merchant_name or "", session, user_id)
-        if not cat:
-            cat = categorize_single_llm(t, user_id)
-        status = "skipped"
-        if cat:
-            t.category = cat
-            session.add(t)
-            categorized += 1
-            status = "categorized"
-
-        yield json.dumps({
-            "status": status,
-            "current": cat_idx,
-            "total": cat_total,
-            "merchant_name": t.merchant_name,
-            "category": cat,
-        }) + "\n"
-
-    session.commit()
+    categorized, skipped, events = _categorize_uncategorized(session, user_id)
+    for event in events:
+        yield json.dumps(event) + "\n"
 
     _refresh_linked_goal_balances(session, user_id)
 
@@ -317,7 +383,7 @@ def _sync_all_stream_generator(
         "status": "complete",
         "synced": total_synced,
         "categorized": categorized,
-        "skipped": cat_total - categorized,
+        "skipped": skipped,
     }) + "\n"
 
 
@@ -428,91 +494,13 @@ def sync_transactions(plaid_item_id: int) -> None:
             return
 
         user_id = item.user_id
-        access_token = decrypt_token(item.encrypted_access_token)
+        account_map = _build_account_map(session, user_id)
         client = get_household_plaid_client_for_user_id(session, user_id)
 
-        end_date = date.today()
-        start_date = end_date - timedelta(days=30)
+        _sync_single_item(session, item, user_id, client, account_map)
+        _categorize_uncategorized(session, user_id)
 
-        offset = 0
-        total = 1
-        while offset < total:
-            txn_request = TransactionsGetRequest(
-                access_token=access_token,
-                start_date=start_date,
-                end_date=end_date,
-                options=TransactionsGetRequestOptions(offset=offset, count=100),
-            )
-            txn_response = client.transactions_get(txn_request)
-            total = txn_response.total_transactions
-
-            for txn in txn_response.transactions:
-                existing = session.exec(
-                    select(Transaction).where(
-                        Transaction.plaid_transaction_id == txn.transaction_id
-                    )
-                ).first()
-
-                account = session.exec(
-                    select(Account).where(
-                        Account.plaid_account_id == txn.account_id
-                    )
-                ).first()
-
-                plaid_cat = None
-                if hasattr(txn, "personal_finance_category") and txn.personal_finance_category:
-                    plaid_cat = getattr(txn.personal_finance_category, "primary", None)
-                elif txn.category:
-                    plaid_cat = " > ".join(txn.category)
-
-                if existing:
-                    existing.amount = Decimal(str(txn.amount))
-                    existing.merchant_name = txn.merchant_name
-                    existing.plaid_category_code = plaid_cat
-                    existing.pending_status = txn.pending
-                    existing.date = txn.date
-                    session.add(existing)
-                else:
-                    new_txn = Transaction(
-                        plaid_transaction_id=txn.transaction_id,
-                        date=txn.date,
-                        amount=Decimal(str(txn.amount)),
-                        merchant_name=txn.merchant_name,
-                        plaid_category_code=plaid_cat,
-                        category=None,
-                        pending_status=txn.pending,
-                        account_id=account.id if account else None,
-                        user_id=user_id,
-                    )
-                    session.add(new_txn)
-
-            session.commit()
-
-            batch_size = len(txn_response.transactions)
-            if batch_size == 0:
-                break
-            offset += batch_size
-
-        user_account_ids = session.exec(
-            select(Account.id).where(Account.user_id == user_id)
-        ).all()
-        pending = session.exec(
-            select(Transaction).where(
-                Transaction.category == None,  # noqa: E711
-                Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
-            )
-        ).all()
-
-        for t in pending:
-            cat = categorize_by_rules(t.merchant_name or "", session, user_id)
-            if not cat:
-                cat = categorize_single_llm(t, user_id)
-            if cat:
-                t.category = cat
-                session.add(t)
-
-        session.commit()
-
+        access_token = decrypt_token(item.encrypted_access_token)
         _update_balances(session, access_token, plaid_item_id, user_id, client=client)
 
         _refresh_linked_goal_balances(session, user_id)
