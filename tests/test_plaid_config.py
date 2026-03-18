@@ -188,3 +188,37 @@ def test_delete_plaid_config_no_household(auth_client):
     client, _ = auth_client
     resp = client.delete("/api/v1/settings/plaid-config")
     assert resp.status_code == 404
+
+
+# -- GET /plaid-mode -------------------------------------------------------
+
+def test_get_plaid_mode_includes_managed_plaid_env_sandbox(auth_client, session):
+    """When managed Plaid is available with sandbox keys, managed_plaid_env should be 'sandbox'."""
+    client, user = auth_client
+    make_household(session, user)
+    app_config = AppPlaidConfig(
+        encrypted_client_id=encrypt_token("cid_1234"),
+        encrypted_secret=encrypt_token("sec_5678"),
+        plaid_env="sandbox",
+        enabled=True,
+    )
+    session.add(app_config)
+    session.commit()
+
+    resp = client.get("/api/v1/settings/plaid-mode")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["managed_available"] is True
+    assert data["managed_plaid_env"] == "sandbox"
+
+
+def test_get_plaid_mode_managed_plaid_env_null_when_unavailable(auth_client, session):
+    """When managed Plaid is not available, managed_plaid_env should be null."""
+    client, user = auth_client
+    make_household(session, user)
+
+    resp = client.get("/api/v1/settings/plaid-mode")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["managed_available"] is False
+    assert data["managed_plaid_env"] is None

@@ -349,7 +349,11 @@ def get_plaid_mode(
     app_config = session.exec(select(AppPlaidConfig)).first()
     managed_available = bool(app_config and app_config.enabled)
 
-    return {"mode": mode, "managed_available": managed_available}
+    return {
+        "mode": mode,
+        "managed_available": managed_available,
+        "managed_plaid_env": app_config.plaid_env if managed_available else None,
+    }
 
 
 @router.put("/plaid-mode")
@@ -381,7 +385,11 @@ def set_plaid_mode(
     app_config = session.exec(select(AppPlaidConfig)).first()
     managed_available = bool(app_config and app_config.enabled)
 
-    return {"mode": household.plaid_mode, "managed_available": managed_available}
+    return {
+        "mode": household.plaid_mode,
+        "managed_available": managed_available,
+        "managed_plaid_env": app_config.plaid_env if managed_available else None,
+    }
 
 
 # ── Admin Plaid Config (app-level) ─────────────────────────────

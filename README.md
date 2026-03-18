@@ -20,7 +20,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 ### Account Management
 - Connect bank accounts, credit cards, loans, and investment accounts via Plaid Link
-- **Sandbox mode indicator** -- when Plaid is configured in sandbox/test mode, a visible banner appears on the Connections page and the Link Account button shows "Link Demo Account"
+- **Sandbox mode indicator** -- when Plaid is configured in sandbox/test mode, a visible banner appears on the Dashboard, Connections page, and during onboarding; the Link Account button shows "Link Demo Account"; the onboarding managed-mode card shows a "(Demo)" tag
 - **Managed or Bring Your Own Plaid** -- hosted instances can offer managed Plaid credentials so users connect instantly; alternatively each household configures its own Plaid API keys in Settings; one-time onboarding choice (managed vs BYOK) with no switching
 - **Managed or Bring Your Own LLM** -- admin can configure app-level LLM credentials for managed AI categorization; users choose managed, BYOK, or skip during onboarding; switchable in Settings at any time
 - **Admin Plaid config** -- instance admin can configure app-level Plaid credentials, toggle managed mode, and see how many households use it (managed via Admin Panel → Plaid Config tab)
@@ -271,6 +271,7 @@ personal-finance/
 │   │   ├── add-partner-dialog.tsx  # Invite partner email dialog
 │   │   ├── plaid-setup-banner.tsx  # Dismissible Plaid config prompt (hidden for managed mode)
 │   │   ├── sandbox-banner.tsx       # Amber warning banner shown when Plaid is in sandbox/test mode
+│   │   ├── sandbox-banner-wrapper.tsx # Client wrapper that queries plaidConfig and conditionally renders SandboxBanner
 │   │   ├── link-account.tsx        # Plaid Link flow (mode-aware: managed skips config redirect, sandbox label)
 │   │   ├── onboarding-redirect.tsx # Dashboard redirect to /onboarding when plaid_mode or llm_mode is null
 │   │   ├── categorization-progress-provider.tsx # Global progress context (sync, categorize, import)
@@ -324,6 +325,7 @@ personal-finance/
 │       ├── recurring-page.test.tsx # Frequency tabs, sort, consistent/varies badges
 │       ├── connections-page.test.tsx # Connection cards, sync, disconnect, confirm, sandbox banner
 │       ├── sandbox-banner.test.tsx  # Sandbox mode warning banner rendering
+│       ├── sandbox-banner-wrapper.test.tsx # Wrapper: renders banner when sandbox, nothing otherwise
 │       ├── login-page.test.tsx     # Hero, trust badges, Google sign-in flow
 │       ├── net-worth-card.test.tsx  # Loading, data display, asset/liability breakdown
 │       ├── net-worth-history.test.tsx # Empty state, snapshot, chart, change indicator
@@ -496,7 +498,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | GET | `/plaid-config` | Get household Plaid config status (masked credentials) |
 | PUT | `/plaid-config` | Create or update Plaid credentials (owner-only) |
 | DELETE | `/plaid-config` | Remove Plaid credentials (owner-only) |
-| GET | `/plaid-mode` | Get household's Plaid mode (managed/byok/null) and managed availability |
+| GET | `/plaid-mode` | Get household's Plaid mode (managed/byok/null), managed availability, and managed_plaid_env |
 | PUT | `/plaid-mode` | Set Plaid mode (one-time, no switching) |
 | GET | `/admin/plaid-config` | Get app-level Plaid config status (admin-only) |
 | PUT | `/admin/plaid-config` | Create/update managed Plaid credentials (admin-only) |
@@ -646,7 +648,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (509 tests across 23 files):**
+**What's tested (511 tests across 23 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -663,7 +665,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 11 | Resend HTTP API, invitation + statement reminder templates, send/skip/fail/network-error handling, bearer auth, app_url in CTAs |
-| `test_plaid_config` | 14 | GET (configured/not/no-household/member-read/managed-returns-app-env), PUT (create/update/non-owner/no-household/invalid-env), DELETE (success/non-owner/not-configured/no-household) |
+| `test_plaid_config` | 16 | GET (configured/not/no-household/member-read/managed-returns-app-env), PUT (create/update/non-owner/no-household/invalid-env), DELETE (success/non-owner/not-configured/no-household), GET plaid-mode (managed_plaid_env sandbox, null when unavailable) |
 | `test_llm_config` | 20 | BYO LLM config CRUD (owner-only, encryption, batch_size default/custom/validation), SSRF validation, Railway internal URL |
 | `test_auth` | 8 | Google OAuth login (mocked), session, `/me`, logout, auto-household on signup, no duplicate household on re-login |
 | `test_managed_plaid` | 16 | PlaidMode enum, AppPlaidConfig model, Household.plaid_mode field, plaid client resolution (managed vs BYOK: uses correct credentials, raises when disabled/missing/none) |
@@ -692,7 +694,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (465 tests across 45 files):**
+**What's tested (471 tests across 46 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -735,7 +737,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `add-partner-dialog` | 6 | Email input and submit, invitePartner API call, onClose on success, error display, close button, hidden when closed |
 | `link-account` | 6 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label |
 | `sandbox-banner` | 2 | Test-mode warning text, demo accounts mention |
-| `onboarding` | 12 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls; wizard step 2 (LLM mode): managed AI + BYOK cards, skip button, setLLMMode calls; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete |
+| `sandbox-banner-wrapper` | 3 | Renders banner when sandbox, nothing when production, nothing when unconfigured |
+| `onboarding` | 15 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls; wizard step 2 (LLM mode): managed AI + BYOK cards, skip button, setLLMMode calls; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete; sandbox indicator: banner + Demo tag when managed sandbox keys, hidden for production |
 | `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
 | `admin` | 20 | Tab rendering (6 tabs including Plaid Config and LLM Config), KPI cards with drill-down click (Active 7d, Linked/Manual accounts → users tab with filters), filter badge and clear, user list, disable/delete actions with confirmation, expandable user detail row (accounts, transactions, activity), tab switching (plaid health, analytics with active-users and transaction-volume charts), Plaid Config tab (config status, environment selector, save button), LLM Config tab (config status, model/base URL display, save button, enabled toggle) |
 | `admin-plaid-section` | 3 | Plaid Config tab visibility in admin panel, managed household count, environment selector |
@@ -750,7 +753,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 
 ### Latest coverage snapshot
 
-- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`4201` statements, `600` missed)
+- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`4207` statements, `601` missed)
 - Frontend (`npx vitest run --coverage`): **76% statements**, **72% branches**, **62% functions**, **77% lines**
 
 ## Environment Variables

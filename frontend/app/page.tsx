@@ -41,6 +41,9 @@ const PlaidSetupBanner = dynamic(() => import("@/components/plaid-setup-banner")
 const OnboardingRedirect = dynamic(() => import("@/components/onboarding-redirect"), {
   loading: () => null,
 });
+const SandboxBannerWrapper = dynamic(() => import("@/components/sandbox-banner-wrapper"), {
+  loading: () => null,
+});
 
 export default function DashboardPage() {
   return (
@@ -61,6 +64,10 @@ export default function DashboardPage() {
 
       <div className="mt-6">
         <PlaidSetupBanner />
+      </div>
+
+      <div className="mt-6">
+        <SandboxBannerWrapper />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">

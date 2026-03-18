@@ -256,4 +256,51 @@ describe("OnboardingPage", () => {
       expect(mockPush).toHaveBeenCalledWith("/");
     });
   });
+
+  // ── Sandbox indicator on Plaid mode step ───────────────────────
+
+  it("shows sandbox banner when managed plaid uses sandbox keys", async () => {
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null,
+      managed_available: true,
+      managed_plaid_env: "sandbox",
+    });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("sandbox-banner")).toBeInTheDocument();
+    });
+  });
+
+  it("shows Demo tag on managed card when sandbox keys are used", async () => {
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null,
+      managed_available: true,
+      managed_plaid_env: "sandbox",
+    });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/connect instantly/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText("Demo")).toBeInTheDocument();
+  });
+
+  it("does not show sandbox banner when managed plaid uses production keys", async () => {
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null,
+      managed_available: true,
+      managed_plaid_env: "production",
+    });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/connect instantly/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("sandbox-banner")).not.toBeInTheDocument();
+    expect(screen.queryByText("Demo")).not.toBeInTheDocument();
+  });
 });

@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Zap, Key, Brain, KeyRound, SkipForward } from "lucide-react";
 import { api } from "@/lib/api";
 import { PLAID_MODES, LLM_MODES } from "@/lib/types";
+import SandboxBanner from "@/components/sandbox-banner";
 
 interface StepProps {
   onComplete: () => void;
@@ -38,6 +39,7 @@ function PlaidModeStep({ onComplete }: StepProps) {
   }
 
   const managedAvailable = plaidMode?.managed_available ?? false;
+  const isSandbox = managedAvailable && plaidMode?.managed_plaid_env === "sandbox";
 
   return (
     <div className="space-y-6">
@@ -47,6 +49,8 @@ function PlaidModeStep({ onComplete }: StepProps) {
           Choose how you want to link your financial accounts.
         </p>
       </div>
+
+      {isSandbox && <SandboxBanner />}
 
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -65,7 +69,14 @@ function PlaidModeStep({ onComplete }: StepProps) {
               <Zap className="h-6 w-6 text-accent" />
             </div>
             <div>
-              <h2 className="text-base font-semibold">Connect instantly</h2>
+              <div className="flex items-center justify-center gap-2">
+                <h2 className="text-base font-semibold">Connect instantly</h2>
+                {isSandbox && (
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
+                    Demo
+                  </span>
+                )}
+              </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 Link your bank accounts right away — no setup required.
               </p>
