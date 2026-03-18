@@ -1,0 +1,77 @@
+---
+description: Ensure features work on Railway's production deployment, not just local dev
+alwaysApply: true
+---
+
+# Railway Deployment Compatibility
+
+This app deploys to Railway with Next.js `output: "standalone"`. Several behaviors differ between `next dev` (local) and the production standalone server (Railway). Every feature must account for these differences.
+
+## Streaming Endpoints
+
+**Never use `rewrites` for streaming responses.** Next.js rewrites buffer the entire response body before forwarding it to the client, which breaks NDJSON and SSE streams.
+
+| Response type | Routing method |
+|---|---|
+| Regular JSON (`application/json`) | `rewrites` in `next.config.ts` — fine |
+| Streaming (`application/x-ndjson`, `text/event-stream`) | App Router route handler that pipes `ReadableStream` directly |
+
+The streaming proxy lives at `frontend/app/stream/[...path]/route.ts`. Any new streaming endpoint must use the `STREAM_BASE` (`/stream`) prefix in `frontend/lib/api.ts`, not the regular `API_BASE` (`/api/v1`).
+
+### Why it works locally but fails on Railway
+
+`next dev` proxies to `localhost:8000` — the connection is fast enough that the buffered response arrives before the client notices. On Railway, the network hop + buffering causes the client to time out or disconnect, triggering `GeneratorExit` on the backend.
+
+## Proxy Timeout
+
+Next.js `rewrites` have an approximately **30-second timeout**. Any backend operation that takes longer will return a `500` to the client even if the backend eventually succeeds.
+
+- **Never use ORM loop deletions** (`for row in ...: session.delete(row)`) for tables that can have hundreds+ of rows. Use bulk `sa_delete()` instead.
+- **Keep request handlers fast.** If an operation is inherently slow (e.g., syncing thousands of transactions, LLM calls), use streaming or background tasks.
+
+## Environment Variables
+
+### `NEXT_PUBLIC_*` is build-time only
+
+Any `NEXT_PUBLIC_*` variable is **baked into the JS bundle at `next build` time**. It is NOT read at runtime.
+
+- If a value must differ per environment at runtime, use a **server-side** env var (no `NEXT_PUBLIC_` prefix) in a route handler or Server Component.
+- If you add or change a `NEXT_PUBLIC_*` variable, the frontend must be **rebuilt** for it to take effect.
+
+### Server-side env vars
+
+`BACKEND_URL`, `STAGING_PASSWORD`, and other non-prefixed vars are available at runtime in route handlers and Server Components, but NOT in client components.
+
+## Auth Cookies Are Same-Origin
+
+Auth cookies (`session`) are scoped to the frontend's domain. **Never call the backend directly from the browser** — always proxy through the frontend (via `rewrites` or route handlers). Cross-origin fetches to the backend's internal Railway URL will not include cookies.
+
+## Internal DNS
+
+Railway services communicate via `*.railway.internal` hostnames. These are:
+- Not resolvable outside Railway's network
+- Subject to SSRF allowlist checks — ensure `*.railway.internal` is in the backend's allowlist if services need to call each other
+
+## Database Schema
+
+`create_db_and_tables()` creates **new** tables but does **not** ALTER existing ones. When adding columns to existing models:
+1. The `auto_sync_columns` startup function handles this automatically
+2. But always verify with the CI schema sync test before deploying
+
+## Testing Before Deployment
+
+Before merging to `staging`, verify the feature works in production mode locally:
+
+```bash
+cd frontend && npm run build && npm run start
+```
+
+This runs the standalone production server — the same thing Railway deploys. Issues that surface here:
+- Rewrite buffering on streaming endpoints
+- Missing `NEXT_PUBLIC_*` vars (build-time bake)
+- Route handler compilation errors
+- Static/dynamic rendering mismatches
+
+## Updating This Rule
+
+When a feature works locally but fails on staging/production, add the root cause and fix to this rule so future plans account for it.
