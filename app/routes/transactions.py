@@ -18,6 +18,8 @@ from sqlmodel import Session, or_, select
 
 from app.auth import get_current_user
 from app.categorizer import (
+    _categorize_chunk_llm,
+    _get_llm_config,
     auto_categorize_pending,
     categorize_by_rules,
     categorize_single_llm,
@@ -271,7 +273,14 @@ def auto_categorize(
 
 
 def _auto_categorize_stream(session: Session, user: User):
-    """Stream per-transaction categorization progress as NDJSON."""
+    """Stream per-transaction categorization progress as NDJSON.
+
+    Batches LLM calls using the configured batch_size but yields
+    individual progress events per transaction.
+    """
+    import logging as _logging
+    _logger = _logging.getLogger(__name__)
+
     user_account_ids = session.exec(
         select(Account.id).where(Account.user_id == user.id)
     ).all()
@@ -287,25 +296,94 @@ def _auto_categorize_stream(session: Session, user: User):
 
     total = len(txns)
     categorized = 0
+    progress_idx = 0
+    llm_pending: list[Transaction] = []
 
-    for idx, txn in enumerate(txns, 1):
+    for txn in txns:
         cat = categorize_by_rules(txn.merchant_name or "", session, user.id)
-        if not cat:
-            cat = categorize_single_llm(txn, user.id)
-        status = "skipped"
         if cat:
             txn.category = cat
             session.add(txn)
             categorized += 1
-            status = "categorized"
+            progress_idx += 1
+            yield json.dumps({
+                "status": "categorized",
+                "current": progress_idx,
+                "total": total,
+                "merchant_name": txn.merchant_name,
+                "category": cat,
+            }) + "\n"
+        else:
+            llm_pending.append(txn)
 
-        yield json.dumps({
-            "status": status,
-            "current": idx,
-            "total": total,
-            "merchant_name": txn.merchant_name,
-            "category": cat,
-        }) + "\n"
+    if llm_pending:
+        import httpx as _httpx
+        base_url, api_key, model, batch_size = _get_llm_config(user.id)
+        if api_key:
+            txn_dicts = [
+                {
+                    "id": t.id,
+                    "merchant_name": t.merchant_name or "Unknown",
+                    "plaid_category": getattr(t, "plaid_category_code", None) or "N/A",
+                    "amount": float(t.amount),
+                }
+                for t in llm_pending
+            ]
+            txn_by_id = {t.id: t for t in llm_pending}
+
+            for i in range(0, len(txn_dicts), batch_size):
+                chunk = txn_dicts[i : i + batch_size]
+                chunk_txns = llm_pending[i : i + batch_size]
+                try:
+                    results = _categorize_chunk_llm(chunk, base_url, api_key, model)
+                except (_httpx.TimeoutException, _httpx.ConnectError) as exc:
+                    _logger.warning("LLM unreachable (batch %d–%d): %s", i, i + len(chunk), exc)
+                    for txn in chunk_txns:
+                        progress_idx += 1
+                        yield json.dumps({
+                            "status": "skipped",
+                            "current": progress_idx,
+                            "total": total,
+                            "merchant_name": txn.merchant_name,
+                            "category": None,
+                        }) + "\n"
+                    break
+                except Exception:
+                    _logger.exception("LLM categorization failed (batch %d–%d)", i, i + len(chunk))
+                    results = {}
+
+                for txn in chunk_txns:
+                    cat = results.get(txn.id)
+                    progress_idx += 1
+                    if cat:
+                        txn.category = cat
+                        session.add(txn)
+                        categorized += 1
+                        yield json.dumps({
+                            "status": "categorized",
+                            "current": progress_idx,
+                            "total": total,
+                            "merchant_name": txn.merchant_name,
+                            "category": cat,
+                        }) + "\n"
+                    else:
+                        yield json.dumps({
+                            "status": "skipped",
+                            "current": progress_idx,
+                            "total": total,
+                            "merchant_name": txn.merchant_name,
+                            "category": None,
+                        }) + "\n"
+        else:
+            for txn in llm_pending:
+                progress_idx += 1
+                yield json.dumps({
+                    "status": "skipped",
+                    "current": progress_idx,
+                    "total": total,
+                    "merchant_name": txn.merchant_name,
+                    "category": None,
+                }) + "\n"
 
     session.commit()
     yield json.dumps({

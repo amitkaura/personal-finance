@@ -292,8 +292,8 @@ def test_auto_categorize_with_rules(auth_client, session):
 
 # -- Auto-categorize LLM batching ------------------------------------------
 
-def test_auto_categorize_llm_per_transaction(auth_client, session):
-    """LLM is called once per transaction (not batched)."""
+def test_auto_categorize_llm_batched(auth_client, session):
+    """LLM calls are batched: 5 txns with batch_size=10 should make 1 LLM call."""
     from unittest.mock import patch, MagicMock
     import json as _json
 
@@ -320,7 +320,7 @@ def test_auto_categorize_llm_per_transaction(auth_client, session):
         return resp
 
     with patch("app.categorizer._get_llm_config", return_value=(
-        "http://fake-llm", "fake-key", "test-model",
+        "http://fake-llm", "fake-key", "test-model", 10,
     )), patch("httpx.post", side_effect=fake_llm_response) as mock_post:
         resp = client.post("/api/v1/transactions/auto-categorize")
 
@@ -329,11 +329,49 @@ def test_auto_categorize_llm_per_transaction(auth_client, session):
     assert data["total"] == 5
     assert data["categorized"] == 5
     assert data["skipped"] == 0
-    assert mock_post.call_count == 5  # one per transaction
+    assert mock_post.call_count == 1  # batched into 1 call
+
+
+def test_auto_categorize_llm_respects_batch_size(auth_client, session):
+    """7 txns with batch_size=3 should make 3 LLM calls (3+3+1)."""
+    from unittest.mock import patch, MagicMock
+    import json as _json
+
+    client, user = auth_client
+    acct = make_account(session, user)
+    for i in range(7):
+        make_transaction(
+            session, user, merchant=f"Merchant {i}", category=None,
+            account=acct, is_manual=False,
+        )
+
+    def fake_llm_response(url, **kwargs):
+        body = kwargs.get("json", {})
+        user_msg = body["messages"][1]["content"]
+        input_txns = _json.loads(user_msg)
+        result = [{"id": t["id"], "category": "Shopping"} for t in input_txns]
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "choices": [{"message": {"content": _json.dumps(result)}}]
+        }
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch("app.categorizer._get_llm_config", return_value=(
+        "http://fake-llm", "fake-key", "test-model", 3,
+    )), patch("httpx.post", side_effect=fake_llm_response) as mock_post:
+        resp = client.post("/api/v1/transactions/auto-categorize")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 7
+    assert data["categorized"] == 7
+    assert mock_post.call_count == 3  # ceil(7/3) = 3 calls
 
 
 def test_auto_categorize_llm_partial_failure(auth_client, session):
-    """If some per-txn LLM calls fail, the successful ones are preserved."""
+    """If a batch fails with ConnectError, remaining batches are skipped."""
     from unittest.mock import patch, MagicMock
     import json as _json
 
@@ -364,21 +402,21 @@ def test_auto_categorize_llm_partial_failure(auth_client, session):
         return resp
 
     with patch("app.categorizer._get_llm_config", return_value=(
-        "http://fake-llm", "fake-key", "test-model",
+        "http://fake-llm", "fake-key", "test-model", 1,
     )), patch("httpx.post", side_effect=fake_llm_response):
         resp = client.post("/api/v1/transactions/auto-categorize")
 
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] == 5
-    assert data["categorized"] == 4  # 4 succeeded, 1 failed
-    assert data["skipped"] == 1
+    assert data["categorized"] == 2  # 2 succeeded before ConnectError
+    assert data["skipped"] == 3  # 3rd failed + 4th/5th skipped (break on ConnectError)
 
 
 # -- Auto-categorize streaming ---------------------------------------------
 
 def test_auto_categorize_streaming(auth_client, session):
-    """Auto-categorize with Accept: application/x-ndjson streams per-txn progress."""
+    """Streaming auto-categorize batches LLM calls but yields per-txn progress."""
     from unittest.mock import patch, MagicMock
     import json as _json
 
@@ -404,13 +442,16 @@ def test_auto_categorize_streaming(auth_client, session):
         return resp
 
     with patch("app.categorizer._get_llm_config", return_value=(
-        "http://fake-llm", "fake-key", "test-model",
-    )), patch("httpx.post", side_effect=fake_llm_response):
+        "http://fake-llm", "fake-key", "test-model", 10,
+    )), patch("app.routes.transactions._get_llm_config", return_value=(
+        "http://fake-llm", "fake-key", "test-model", 10,
+    )), patch("httpx.post", side_effect=fake_llm_response) as mock_post:
         resp = client.post(
             "/api/v1/transactions/auto-categorize",
             headers={"Accept": "application/x-ndjson"},
         )
 
+    assert mock_post.call_count == 1  # all 3 in one batch
     lines = [l for l in resp.text.strip().split("\n") if l]
     assert len(lines) == 4  # 3 progress + 1 complete
     for i in range(3):

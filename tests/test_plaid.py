@@ -288,7 +288,7 @@ def test_sync_all_stream_success(auth_client, session):
     with patch(MOCK_HH_CLIENT, return_value=mock_client), \
          patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
          patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
-         patch("app.categorizer._get_llm_config", return_value=("", "", "")):
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)):
         resp = client.post(
             "/api/v1/plaid/sync-all-stream",
             headers={"Accept": "application/x-ndjson"},
