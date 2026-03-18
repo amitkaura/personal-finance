@@ -701,6 +701,16 @@ function IntegrationsSection() {
 
   if (!household) return null;
 
+  const switchPlaidMutation = useMutation({
+    mutationFn: (mode: string) => api.setPlaidMode(mode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["plaid-mode"] });
+      queryClient.invalidateQueries({ queryKey: ["plaid-config"] });
+    },
+  });
+
+  const hasLinkedAccounts = plaidMode?.has_linked_accounts ?? false;
+
   if (plaidMode?.mode === PLAID_MODES.MANAGED) {
     return (
       <div className="rounded-2xl border border-border bg-card p-6">
@@ -712,6 +722,23 @@ function IntegrationsSection() {
           You&apos;re using managed Plaid — no configuration needed. Your bank
           connections are handled automatically.
         </p>
+        <div className="mt-4 space-y-3">
+          <button
+            onClick={() => switchPlaidMutation.mutate(PLAID_MODES.BYOK)}
+            disabled={hasLinkedAccounts || switchPlaidMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ArrowLeftRight className="h-3.5 w-3.5" />
+            Switch to your own Plaid keys
+          </button>
+          {hasLinkedAccounts && (
+            <p className="text-xs text-muted-foreground">
+              To switch modes, unlink all bank accounts on the{" "}
+              <a href="/connections" className="text-accent hover:underline">Connections</a>{" "}
+              page first.
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -726,6 +753,26 @@ function IntegrationsSection() {
         Connect your bank accounts via Plaid. Credentials are encrypted and stored
         per-household.
       </p>
+
+      {plaidMode?.managed_available && (
+        <div className="mt-3 space-y-2">
+          <button
+            onClick={() => switchPlaidMutation.mutate(PLAID_MODES.MANAGED)}
+            disabled={hasLinkedAccounts || switchPlaidMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ArrowLeftRight className="h-3.5 w-3.5" />
+            Switch to managed Plaid
+          </button>
+          {hasLinkedAccounts && (
+            <p className="text-xs text-muted-foreground">
+              To switch modes, unlink all bank accounts on the{" "}
+              <a href="/connections" className="text-accent hover:underline">Connections</a>{" "}
+              page first.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Status indicator */}
       <div className="mt-4">

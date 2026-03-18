@@ -4,13 +4,14 @@ import os
 
 from app.auth import get_current_user
 from app.config import get_settings
-from app.crypto import decrypt_token
+from app.crypto import decrypt_token, encrypt_token
 from app.main import app
-from app.models import AppPlaidConfig, Household, PlaidMode
+from app.models import AppPlaidConfig, HouseholdPlaidConfig, Household, PlaidItem, PlaidMode
 from sqlmodel import select
 from tests.conftest import (
     add_household_member,
     make_household,
+    make_plaid_config,
     make_user,
 )
 
@@ -105,6 +106,28 @@ class TestGetPlaidMode:
         assert resp.status_code == 200
         assert resp.json()["mode"] is None
 
+    def test_has_linked_accounts_false_when_none(self, auth_client, session):
+        client, user = auth_client
+        make_household(session, user)
+        resp = client.get("/api/v1/settings/plaid-mode")
+        assert resp.status_code == 200
+        assert resp.json()["has_linked_accounts"] is False
+
+    def test_has_linked_accounts_true_with_plaid_items(self, auth_client, session):
+        client, user = auth_client
+        make_household(session, user)
+        item = PlaidItem(
+            user_id=user.id,
+            encrypted_access_token=encrypt_token("access-token"),
+            item_id="item-linked-test",
+        )
+        session.add(item)
+        session.commit()
+
+        resp = client.get("/api/v1/settings/plaid-mode")
+        assert resp.status_code == 200
+        assert resp.json()["has_linked_accounts"] is True
+
 
 # ── PUT /settings/plaid-mode ────────────────────────────────────
 
@@ -135,16 +158,89 @@ class TestSetPlaidMode:
         assert resp.status_code == 200
         assert resp.json()["mode"] == PlaidMode.MANAGED
 
-    def test_cannot_switch_after_set(self, auth_client, session):
-        """Once plaid_mode is set, it cannot be changed."""
+    def test_switch_allowed_without_linked_accounts(self, auth_client, session):
+        """Switching plaid_mode is allowed when no PlaidItems exist."""
+        client, user = auth_client
+        hh = make_household(session, user)
+        hh.plaid_mode = PlaidMode.BYOK
+        session.add(hh)
+
+        app_config = AppPlaidConfig(
+            encrypted_client_id=encrypt_token("cid"),
+            encrypted_secret=encrypt_token("sec"),
+            enabled=True,
+        )
+        session.add(app_config)
+        session.commit()
+
+        resp = client.put("/api/v1/settings/plaid-mode", json={"mode": PlaidMode.MANAGED})
+        assert resp.status_code == 200
+        assert resp.json()["mode"] == PlaidMode.MANAGED
+
+    def test_switch_blocked_with_linked_accounts(self, auth_client, session):
+        """Cannot switch plaid_mode when PlaidItems exist for household members."""
+        client, user = auth_client
+        hh = make_household(session, user)
+        hh.plaid_mode = PlaidMode.BYOK
+        session.add(hh)
+
+        app_config = AppPlaidConfig(
+            encrypted_client_id=encrypt_token("cid"),
+            encrypted_secret=encrypt_token("sec"),
+            enabled=True,
+        )
+        session.add(app_config)
+
+        item = PlaidItem(
+            user_id=user.id,
+            encrypted_access_token=encrypt_token("access-token"),
+            item_id="item-block-switch",
+        )
+        session.add(item)
+        session.commit()
+
+        resp = client.put("/api/v1/settings/plaid-mode", json={"mode": PlaidMode.MANAGED})
+        assert resp.status_code == 409
+        assert "unlink" in resp.json()["detail"].lower()
+
+    def test_switch_clears_byok_config(self, auth_client, session):
+        """Switching from BYOK to managed clears HouseholdPlaidConfig."""
+        client, user = auth_client
+        hh = make_household(session, user)
+        hh.plaid_mode = PlaidMode.BYOK
+        session.add(hh)
+        make_plaid_config(session, hh)
+
+        app_config = AppPlaidConfig(
+            encrypted_client_id=encrypt_token("cid"),
+            encrypted_secret=encrypt_token("sec"),
+            enabled=True,
+        )
+        session.add(app_config)
+        session.commit()
+
+        resp = client.put("/api/v1/settings/plaid-mode", json={"mode": PlaidMode.MANAGED})
+        assert resp.status_code == 200
+
+        session.expire_all()
+        byok_config = session.exec(
+            select(HouseholdPlaidConfig).where(
+                HouseholdPlaidConfig.household_id == hh.id
+            )
+        ).first()
+        assert byok_config is None
+
+    def test_set_same_mode_is_noop(self, auth_client, session):
+        """Setting the same mode that's already set succeeds without error."""
         client, user = auth_client
         hh = make_household(session, user)
         hh.plaid_mode = PlaidMode.BYOK
         session.add(hh)
         session.commit()
 
-        resp = client.put("/api/v1/settings/plaid-mode", json={"mode": PlaidMode.MANAGED})
-        assert resp.status_code == 409
+        resp = client.put("/api/v1/settings/plaid-mode", json={"mode": PlaidMode.BYOK})
+        assert resp.status_code == 200
+        assert resp.json()["mode"] == PlaidMode.BYOK
 
     def test_invalid_mode_rejected(self, auth_client, session):
         client, user = auth_client

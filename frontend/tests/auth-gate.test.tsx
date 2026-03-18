@@ -5,6 +5,12 @@ import AuthGate from "@/components/auth-gate";
 import { TEST_USER } from "./helpers";
 import { render } from "@testing-library/react";
 
+const mockPathname = vi.hoisted(() => ({ value: "/" }));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => mockPathname.value,
+}));
+
 const mockAuthState = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
 }));
@@ -42,9 +48,15 @@ vi.mock("@/app/login/page", () => ({
   default: () => <div data-testid="login-page">Login</div>,
 }));
 
+vi.mock("@/components/onboarding-redirect", () => ({
+  __esModule: true,
+  default: () => <div data-testid="onboarding-redirect" />,
+}));
+
 describe("AuthGate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPathname.value = "/";
     mockAuthState.value = {
       user: TEST_USER,
       isLoading: false,
@@ -96,5 +108,36 @@ describe("AuthGate", () => {
     const classes = main!.className.split(/\s+/);
     expect(classes).not.toContain("ml-60");
     expect(classes).toContain("lg:ml-60");
+  });
+
+  it("hides sidebar on /onboarding", () => {
+    mockPathname.value = "/onboarding";
+    render(<AuthGate><div>Onboarding</div></AuthGate>);
+    expect(screen.queryByTestId("sidebar")).not.toBeInTheDocument();
+    expect(screen.getByText("Onboarding")).toBeInTheDocument();
+  });
+
+  it("shows fino header on /onboarding", () => {
+    mockPathname.value = "/onboarding";
+    render(<AuthGate><div>Onboarding</div></AuthGate>);
+    expect(screen.getByText("fino")).toBeInTheDocument();
+  });
+
+  it("does not show hamburger menu on /onboarding", () => {
+    mockPathname.value = "/onboarding";
+    render(<AuthGate><div>Onboarding</div></AuthGate>);
+    expect(screen.queryByLabelText("Toggle menu")).not.toBeInTheDocument();
+  });
+
+  it("renders OnboardingRedirect on non-onboarding pages", () => {
+    mockPathname.value = "/";
+    render(<AuthGate><div>Dashboard</div></AuthGate>);
+    expect(screen.getByTestId("onboarding-redirect")).toBeInTheDocument();
+  });
+
+  it("does not render OnboardingRedirect on /onboarding", () => {
+    mockPathname.value = "/onboarding";
+    render(<AuthGate><div>Onboarding</div></AuthGate>);
+    expect(screen.queryByTestId("onboarding-redirect")).not.toBeInTheDocument();
   });
 });

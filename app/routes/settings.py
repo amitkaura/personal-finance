@@ -341,10 +341,19 @@ def get_plaid_mode(
     ).first()
 
     mode = None
+    has_linked = False
     if member:
         household = session.get(Household, member.household_id)
         if household:
             mode = household.plaid_mode
+        member_ids = [m.user_id for m in session.exec(
+            select(HouseholdMember).where(
+                HouseholdMember.household_id == member.household_id
+            )
+        ).all()]
+        has_linked = session.exec(
+            select(PlaidItem).where(PlaidItem.user_id.in_(member_ids))
+        ).first() is not None
 
     app_config = session.exec(select(AppPlaidConfig)).first()
     managed_available = bool(app_config and app_config.enabled)
@@ -353,6 +362,7 @@ def get_plaid_mode(
         "mode": mode,
         "managed_available": managed_available,
         "managed_plaid_env": app_config.plaid_env if managed_available else None,
+        "has_linked_accounts": has_linked,
     }
 
 
@@ -370,13 +380,32 @@ def set_plaid_mode(
 
     household = session.get(Household, member.household_id)
 
-    if household.plaid_mode is not None:
-        raise HTTPException(status_code=409, detail="Plaid mode already set and cannot be changed")
+    if household.plaid_mode is not None and household.plaid_mode != body.mode:
+        member_ids = [m.user_id for m in session.exec(
+            select(HouseholdMember).where(
+                HouseholdMember.household_id == member.household_id
+            )
+        ).all()]
+        has_linked = session.exec(
+            select(PlaidItem).where(PlaidItem.user_id.in_(member_ids))
+        ).first() is not None
+        if has_linked:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot switch Plaid mode while accounts are linked. Unlink all accounts first.",
+            )
 
     if body.mode == PlaidMode.MANAGED:
         app_config = session.exec(select(AppPlaidConfig)).first()
         if not app_config or not app_config.enabled:
             raise HTTPException(status_code=400, detail="Managed Plaid is not available")
+        byok_config = session.exec(
+            select(HouseholdPlaidConfig).where(
+                HouseholdPlaidConfig.household_id == member.household_id
+            )
+        ).first()
+        if byok_config:
+            session.delete(byok_config)
 
     household.plaid_mode = body.mode
     session.add(household)
@@ -389,6 +418,7 @@ def set_plaid_mode(
         "mode": household.plaid_mode,
         "managed_available": managed_available,
         "managed_plaid_env": app_config.plaid_env if managed_available else None,
+        "has_linked_accounts": False,
     }
 
 
