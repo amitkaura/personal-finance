@@ -110,14 +110,8 @@ def _get_llm_config(user_id: int) -> tuple[str, str, str, int]:
 
             household = session.get(Household, member.household_id)
             if not household:
-                # #region agent log
-                print(f"[DEBUG ff3a38] _get_llm_config: no household found for member", flush=True)
-                # #endregion
                 return _empty
 
-            # #region agent log
-            print(f"[DEBUG ff3a38] _get_llm_config: llm_mode={household.llm_mode}, household_id={household.id}", flush=True)
-            # #endregion
             if household.llm_mode == LLMMode.MANAGED:
                 app_config = session.exec(select(AppLLMConfig)).first()
                 if not app_config or not app_config.enabled or not app_config.encrypted_api_key:
@@ -166,23 +160,14 @@ def _categorize_chunk_llm(
         ],
     }
 
-    # #region agent log
-    print(f"[DEBUG ff3a38] _categorize_chunk_llm: url={base_url}/chat/completions, model={model}, chunk_size={len(txn_list)}", flush=True)
-    # #endregion
     resp = httpx.post(
         f"{base_url}/chat/completions",
         headers=headers,
         json=payload,
         timeout=120.0,
     )
-    # #region agent log
-    print(f"[DEBUG ff3a38] _categorize_chunk_llm: status={resp.status_code}", flush=True)
-    # #endregion
     resp.raise_for_status()
     content = resp.json()["choices"][0]["message"]["content"]
-    # #region agent log
-    print(f"[DEBUG ff3a38] _categorize_chunk_llm: raw_content={content[:500]}", flush=True)
-    # #endregion
 
     content = content.strip()
     if content.startswith("```"):
@@ -200,11 +185,6 @@ def _categorize_chunk_llm(
         if isinstance(item, dict)
         and item.get("category", "").lower() in valid
     }
-    # #region agent log
-    print(f"[DEBUG ff3a38] _categorize_chunk_llm: parsed={len(results)} items, valid={len(mapped)} items", flush=True)
-    if len(results) > 0 and len(mapped) == 0:
-        print(f"[DEBUG ff3a38] _categorize_chunk_llm: sample_item={results[0]}", flush=True)
-    # #endregion
     return mapped
 
 

@@ -22,10 +22,6 @@ export async function POST(
 
   const cookie = request.headers.get("cookie") || "";
 
-  // #region agent log
-  console.log(`[DEBUG ff3a38] stream-proxy: url=${url}`);
-  // #endregion
-
   const backendRes = await fetch(url, {
     method: "POST",
     headers: {
@@ -38,15 +34,8 @@ export async function POST(
     duplex: "half",
   });
 
-  // #region agent log
-  console.log(`[DEBUG ff3a38] stream-proxy: backend status=${backendRes.status}, has_body=${!!backendRes.body}`);
-  // #endregion
-
   if (!backendRes.ok || !backendRes.body) {
     const text = await backendRes.text();
-    // #region agent log
-    console.log(`[DEBUG ff3a38] stream-proxy: error response text=${text.substring(0, 200)}`);
-    // #endregion
     return new Response(text, {
       status: backendRes.status,
       headers: { "Content-Type": "application/json" },
