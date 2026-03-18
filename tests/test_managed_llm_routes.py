@@ -214,6 +214,7 @@ class TestAdminGetLLMConfig:
             assert data["llm_base_url"] == "https://api.openai.com/v1"
             assert data["llm_model"] == "gpt-4o"
             assert data["api_key_last4"] == "5678"
+            assert data["batch_size"] == 10  # default
         finally:
             _clear_admin_email()
 
@@ -324,6 +325,50 @@ class TestAdminUpdateLLMConfig:
         finally:
             _clear_admin_email()
 
+    def test_admin_creates_config_with_batch_size(self, auth_client, session):
+        client, user = auth_client
+        _set_admin_email(user.email)
+        try:
+            resp = client.put("/api/v1/settings/admin/llm-config", json={
+                "llm_base_url": "https://api.openai.com/v1",
+                "llm_api_key": "sk-batch-key-1234",
+                "llm_model": "gpt-4o",
+                "enabled": True,
+                "batch_size": 25,
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["batch_size"] == 25
+
+            db_config = session.exec(select(AppLLMConfig)).first()
+            assert db_config.batch_size == 25
+        finally:
+            _clear_admin_email()
+
+    def test_batch_size_validation(self, auth_client, session):
+        client, user = auth_client
+        _set_admin_email(user.email)
+        try:
+            resp = client.put("/api/v1/settings/admin/llm-config", json={
+                "llm_base_url": "https://api.openai.com/v1",
+                "llm_api_key": "key",
+                "llm_model": "gpt-4o",
+                "enabled": True,
+                "batch_size": 0,
+            })
+            assert resp.status_code == 422
+
+            resp = client.put("/api/v1/settings/admin/llm-config", json={
+                "llm_base_url": "https://api.openai.com/v1",
+                "llm_api_key": "key",
+                "llm_model": "gpt-4o",
+                "enabled": True,
+                "batch_size": 51,
+            })
+            assert resp.status_code == 422
+        finally:
+            _clear_admin_email()
+
     def test_ssrf_base_url_rejected(self, auth_client, session):
         client, user = auth_client
         _set_admin_email(user.email)
@@ -403,10 +448,37 @@ class TestCategorizerLLMResolution:
         from tests.conftest import _test_engine
         monkeypatch.setattr(cat_module, "engine", _test_engine)
 
-        base_url, api_key, model = cat_module._get_llm_config(user.id)
+        base_url, api_key, model, batch_size = cat_module._get_llm_config(user.id)
         assert base_url == "https://api.openai.com/v1"
         assert api_key == "app_managed_key"
         assert model == "gpt-4o"
+        assert batch_size == 10  # default
+
+    def test_managed_mode_returns_custom_batch_size(self, auth_client, session, monkeypatch):
+        """Managed config with custom batch_size propagates to _get_llm_config."""
+        client, user = auth_client
+        hh = make_household(session, user)
+        hh.llm_mode = LLMMode.MANAGED
+        session.add(hh)
+        session.commit()
+
+        cfg = make_app_llm_config(
+            session,
+            base_url="https://api.openai.com/v1",
+            api_key="managed_key",
+            model="gpt-4o",
+            enabled=True,
+        )
+        cfg.batch_size = 25
+        session.add(cfg)
+        session.commit()
+
+        import app.categorizer as cat_module
+        from tests.conftest import _test_engine
+        monkeypatch.setattr(cat_module, "engine", _test_engine)
+
+        _, _, _, batch_size = cat_module._get_llm_config(user.id)
+        assert batch_size == 25
 
     def test_byok_mode_uses_household_config(self, auth_client, session, monkeypatch):
         """When llm_mode is byok, categorizer should use HouseholdLLMConfig."""
@@ -427,10 +499,11 @@ class TestCategorizerLLMResolution:
         from tests.conftest import _test_engine
         monkeypatch.setattr(cat_module, "engine", _test_engine)
 
-        base_url, api_key, model = cat_module._get_llm_config(user.id)
+        base_url, api_key, model, batch_size = cat_module._get_llm_config(user.id)
         assert base_url == "http://localhost:11434/v1"
         assert api_key == "byok_key_here"
         assert model == "llama3"
+        assert batch_size == 10  # default
 
     def test_none_mode_returns_empty(self, auth_client, session, monkeypatch):
         """When llm_mode is none, categorizer should skip LLM."""
@@ -444,7 +517,7 @@ class TestCategorizerLLMResolution:
         from tests.conftest import _test_engine
         monkeypatch.setattr(cat_module, "engine", _test_engine)
 
-        base_url, api_key, model = cat_module._get_llm_config(user.id)
+        base_url, api_key, model, batch_size = cat_module._get_llm_config(user.id)
         assert api_key == ""
 
     def test_null_mode_returns_empty(self, auth_client, session, monkeypatch):
@@ -456,7 +529,7 @@ class TestCategorizerLLMResolution:
         from tests.conftest import _test_engine
         monkeypatch.setattr(cat_module, "engine", _test_engine)
 
-        base_url, api_key, model = cat_module._get_llm_config(user.id)
+        base_url, api_key, model, batch_size = cat_module._get_llm_config(user.id)
         assert api_key == ""
 
     def test_managed_mode_disabled_returns_empty(self, auth_client, session, monkeypatch):
@@ -473,5 +546,5 @@ class TestCategorizerLLMResolution:
         from tests.conftest import _test_engine
         monkeypatch.setattr(cat_module, "engine", _test_engine)
 
-        base_url, api_key, model = cat_module._get_llm_config(user.id)
+        base_url, api_key, model, batch_size = cat_module._get_llm_config(user.id)
         assert api_key == ""

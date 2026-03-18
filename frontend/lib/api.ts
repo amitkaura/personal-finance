@@ -11,6 +11,7 @@ import type {
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
+const STREAM_BASE = "/stream";
 
 type ValidationErrorItem = {
   field?: string;
@@ -165,7 +166,7 @@ async function streamNdjson<T>(
   body: unknown,
   onProgress: (event: ImportProgressEvent) => void,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${STREAM_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -225,7 +226,7 @@ async function streamAutoCategorize(
   path: string,
   onProgress?: (event: AutoCatProgressEvent) => void,
 ): Promise<AutoCatCompleteEvent> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${STREAM_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -282,7 +283,7 @@ async function streamSyncAll(
   path: string,
   onEvent?: (event: SyncProgressEvent | AutoCatProgressEvent) => void,
 ): Promise<SyncCompleteEvent> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${STREAM_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -539,6 +540,7 @@ export const api = {
     llm_api_key: string;
     llm_model: string;
     enabled: boolean;
+    batch_size?: number;
   }) =>
     fetcher<AdminLLMConfig>("/settings/admin/llm-config", {
       method: "PUT",
@@ -560,7 +562,7 @@ export const api = {
   // LLM config (per-household BYOK)
   getLLMConfig: () => fetcher<LLMConfig>("/settings/llm-config"),
 
-  updateLLMConfig: (body: { llm_base_url: string; llm_api_key: string; llm_model: string }) =>
+  updateLLMConfig: (body: { llm_base_url: string; llm_api_key: string; llm_model: string; batch_size?: number }) =>
     fetcher<LLMConfig>("/settings/llm-config", {
       method: "PUT",
       body: JSON.stringify(body),

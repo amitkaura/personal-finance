@@ -96,26 +96,27 @@ def categorize_by_llm(transaction: Transaction, user_id: int) -> str | None:
 _last_llm_error: str | None = None
 
 
-def _get_llm_config(user_id: int) -> tuple[str, str, str]:
-    """Return (base_url, api_key, model) based on household's llm_mode."""
+def _get_llm_config(user_id: int) -> tuple[str, str, str, int]:
+    """Return (base_url, api_key, model, batch_size) based on household's llm_mode."""
     global _last_llm_error
+    _empty = ("", "", "", 10)
     try:
         with Session(engine) as session:
             member = session.exec(
                 select(HouseholdMember).where(HouseholdMember.user_id == user_id)
             ).first()
             if not member:
-                return ("", "", "")
+                return _empty
 
             household = session.get(Household, member.household_id)
             if not household:
-                return ("", "", "")
+                return _empty
 
             if household.llm_mode == LLMMode.MANAGED:
                 app_config = session.exec(select(AppLLMConfig)).first()
                 if not app_config or not app_config.enabled or not app_config.encrypted_api_key:
-                    return ("", "", "")
-                return (app_config.llm_base_url, decrypt_token(app_config.encrypted_api_key), app_config.llm_model)
+                    return _empty
+                return (app_config.llm_base_url, decrypt_token(app_config.encrypted_api_key), app_config.llm_model, app_config.batch_size)
 
             if household.llm_mode == LLMMode.BYOK:
                 config = session.exec(
@@ -124,17 +125,14 @@ def _get_llm_config(user_id: int) -> tuple[str, str, str]:
                     )
                 ).first()
                 if not config or not config.encrypted_api_key:
-                    return ("", "", "")
-                return (config.llm_base_url, decrypt_token(config.encrypted_api_key), config.llm_model)
+                    return _empty
+                return (config.llm_base_url, decrypt_token(config.encrypted_api_key), config.llm_model, config.batch_size)
 
-            return ("", "", "")
+            return _empty
     except Exception as exc:
         _last_llm_error = f"Config lookup failed: {type(exc).__name__}: {exc}"
         logger.exception("_get_llm_config failed for user %s", user_id)
-        return ("", "", "")
-
-
-_LLM_BATCH_SIZE = 25
+        return _empty
 
 
 def _categorize_chunk_llm(
@@ -181,17 +179,18 @@ def _categorize_chunk_llm(
 
     results = json.loads(content)
     valid = {c.lower() for c in AVAILABLE_CATEGORIES}
-    return {
+    mapped = {
         item["id"]: item["category"]
         for item in results
         if isinstance(item, dict)
         and item.get("category", "").lower() in valid
     }
+    return mapped
 
 
 def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[int, str]:
-    """Send transactions to the LLM in chunks of _LLM_BATCH_SIZE and return {id: category}."""
-    base_url, api_key, model = _get_llm_config(user_id)
+    """Send transactions to the LLM in chunks using configured batch_size."""
+    base_url, api_key, model, batch_size = _get_llm_config(user_id)
     if not api_key:
         logger.warning("LLM API key not configured — skipping LLM categorization")
         return {}
@@ -210,8 +209,8 @@ def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[
         return {}
 
     all_results: dict[int, str] = {}
-    for i in range(0, len(txn_list), _LLM_BATCH_SIZE):
-        chunk = txn_list[i : i + _LLM_BATCH_SIZE]
+    for i in range(0, len(txn_list), batch_size):
+        chunk = txn_list[i : i + batch_size]
         try:
             chunk_results = _categorize_chunk_llm(chunk, base_url, api_key, model)
             all_results.update(chunk_results)
@@ -227,7 +226,7 @@ def categorize_batch_llm(transactions: list[Transaction], user_id: int) -> dict[
 def categorize_single_llm(transaction: Transaction, user_id: int) -> str | None:
     """Categorize one transaction via LLM. Returns category or None on failure."""
     global _last_llm_error
-    base_url, api_key, model = _get_llm_config(user_id)
+    base_url, api_key, model, _batch = _get_llm_config(user_id)
     if not api_key:
         _last_llm_error = "LLM API key not configured"
         return None
@@ -282,14 +281,50 @@ def auto_categorize_pending(session: Session, user_id: int) -> dict:
         return {"total": 0, "categorized": 0, "skipped": 0}
 
     categorized = 0
+    llm_pending: list[Transaction] = []
+
     for txn in txns:
         cat = categorize_by_rules(txn.merchant_name or "", session, user_id)
-        if not cat:
-            cat = categorize_single_llm(txn, user_id)
         if cat:
             txn.category = cat
             session.add(txn)
             categorized += 1
+        else:
+            llm_pending.append(txn)
+
+    if llm_pending:
+        base_url, api_key, model, batch_size = _get_llm_config(user_id)
+        if api_key:
+            txn_dicts = [
+                {
+                    "id": t.id,
+                    "merchant_name": t.merchant_name or "Unknown",
+                    "plaid_category": getattr(t, "plaid_category_code", None) or "N/A",
+                    "amount": float(t.amount),
+                }
+                for t in llm_pending
+            ]
+            txn_by_id = {t.id: t for t in llm_pending}
+
+            for i in range(0, len(txn_dicts), batch_size):
+                chunk = txn_dicts[i : i + batch_size]
+                try:
+                    results = _categorize_chunk_llm(chunk, base_url, api_key, model)
+                    for tid, cat in results.items():
+                        txn_obj = txn_by_id.get(tid)
+                        if txn_obj:
+                            txn_obj.category = cat
+                            session.add(txn_obj)
+                            categorized += 1
+                except (httpx.TimeoutException, httpx.ConnectError) as exc:
+                    _last_llm_error = f"LLM unreachable at {base_url}: {type(exc).__name__}: {exc}"
+                    logger.warning("LLM unreachable (batch %d–%d): %s", i, i + len(chunk), exc)
+                    break
+                except Exception as exc:
+                    _last_llm_error = f"LLM error: {type(exc).__name__}: {exc}"
+                    logger.exception("LLM categorization failed for batch %d–%d", i, i + len(chunk))
+        else:
+            _last_llm_error = "LLM API key not configured"
 
     session.commit()
 

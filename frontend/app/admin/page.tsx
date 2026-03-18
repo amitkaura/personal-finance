@@ -880,6 +880,7 @@ function LLMConfigTab() {
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
   const [enabled, setEnabled] = useState(false);
+  const [batchSize, setBatchSize] = useState(10);
   const [showApiKey, setShowApiKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -890,6 +891,7 @@ function LLMConfigTab() {
       setBaseUrl(adminConfig.llm_base_url ?? "");
       setModel(adminConfig.llm_model ?? "");
       setEnabled(adminConfig.enabled);
+      setBatchSize(adminConfig.batch_size ?? 10);
     }
   }, [adminConfig]);
 
@@ -900,6 +902,7 @@ function LLMConfigTab() {
         llm_api_key: apiKey || "unchanged",
         llm_model: model,
         enabled,
+        batch_size: batchSize,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-llm-config"] });
@@ -917,6 +920,7 @@ function LLMConfigTab() {
         llm_api_key: "unchanged",
         llm_model: model || adminConfig?.llm_model || "",
         enabled: !enabled,
+        batch_size: batchSize,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-llm-config"] });
@@ -1015,15 +1019,32 @@ function LLMConfigTab() {
             </div>
           </div>
 
-          <div className="max-w-xs">
-            <label className={labelClass}>Model</label>
-            <input
-              type="text"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={adminConfig.configured ? adminConfig.llm_model ?? "" : "gpt-4o-mini"}
-              className={`${inputClass} w-full`}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Model</label>
+              <input
+                type="text"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder={adminConfig.configured ? adminConfig.llm_model ?? "" : "gpt-4o-mini"}
+                className={`${inputClass} w-full`}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Transactions per request</label>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={batchSize}
+                onChange={(e) => setBatchSize(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                className={`${inputClass} w-full`}
+                data-testid="llm-batch-size"
+              />
+              <p className="mt-0.5 text-right text-[10px] text-muted-foreground">
+                How many transactions to send in each LLM call (1–50)
+              </p>
+            </div>
           </div>
 
           {!adminConfig.configured && (

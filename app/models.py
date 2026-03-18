@@ -403,6 +403,7 @@ class HouseholdLLMConfig(SQLModel, table=True):
     llm_base_url: str = Field(default="https://api.openai.com/v1")
     encrypted_api_key: str
     llm_model: str = Field(default="gpt-4o-mini")
+    batch_size: int = Field(default=10)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default=None)
 
@@ -417,6 +418,7 @@ class AppLLMConfig(SQLModel, table=True):
     encrypted_api_key: str
     llm_model: str = Field(default="gpt-4o-mini")
     enabled: bool = Field(default=False)
+    batch_size: int = Field(default=10)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default=None)
 

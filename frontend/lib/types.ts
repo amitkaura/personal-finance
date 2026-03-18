@@ -309,6 +309,7 @@ export interface LLMConfig {
   llm_base_url: string | null;
   llm_model: string | null;
   api_key_last4: string | null;
+  batch_size?: number;
 }
 
 export interface PlaidConfig {
@@ -340,6 +341,7 @@ export interface AdminLLMConfig {
   llm_base_url: string | null;
   llm_model: string | null;
   api_key_last4: string | null;
+  batch_size: number;
   managed_household_count: number;
 }
 
