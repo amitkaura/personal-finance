@@ -15,9 +15,19 @@ import {
   type SyncProgressEvent,
   type SyncCompleteEvent,
   type AutoCatCompleteEvent,
+  type ImportProgressEvent,
+  type ImportCompleteEvent,
+  type BulkImportPayload,
 } from "@/lib/api";
 
-type ProgressState = "idle" | "syncing" | "categorizing" | "complete" | "error";
+type ImportRow = { date: string; amount: number; merchant_name: string; category?: string };
+
+type ProgressState = "idle" | "importing" | "syncing" | "categorizing" | "complete" | "error";
+
+interface ImportResult {
+  imported: number;
+  skipped: number;
+}
 
 interface CategorizationProgressValue {
   state: ProgressState;
@@ -28,10 +38,17 @@ interface CategorizationProgressValue {
   catTotal: number;
   merchantName: string | null;
   category: string | null;
+  importCurrent: number;
+  importTotal: number;
+  importMerchant: string | null;
+  importAccountName: string | null;
   result: { synced: number; categorized: number; skipped: number } | null;
+  importResult: ImportResult | null;
   errorMessage: string | null;
   startSync: () => void;
   startAutoCategorize: () => void;
+  startImport: (accountId: number, accountName: string, rows: ImportRow[]) => void;
+  startBulkImport: (payload: BulkImportPayload) => void;
   dismiss: () => void;
 }
 
@@ -44,10 +61,17 @@ const INITIAL: CategorizationProgressValue = {
   catTotal: 0,
   merchantName: null,
   category: null,
+  importCurrent: 0,
+  importTotal: 0,
+  importMerchant: null,
+  importAccountName: null,
   result: null,
+  importResult: null,
   errorMessage: null,
   startSync: () => {},
   startAutoCategorize: () => {},
+  startImport: () => {},
+  startBulkImport: () => {},
   dismiss: () => {},
 };
 
@@ -89,6 +113,11 @@ export function CategorizationProgressProvider({
     skipped: number;
   } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [importCurrent, setImportCurrent] = useState(0);
+  const [importTotal, setImportTotal] = useState(0);
+  const [importMerchant, setImportMerchant] = useState<string | null>(null);
+  const [importAccountName, setImportAccountName] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
   const runningRef = useRef(false);
   const queryClient = useQueryClient();
@@ -108,7 +137,12 @@ export function CategorizationProgressProvider({
     setCatTotal(0);
     setMerchantName(null);
     setCategory(null);
+    setImportCurrent(0);
+    setImportTotal(0);
+    setImportMerchant(null);
+    setImportAccountName(null);
     setResult(null);
+    setImportResult(null);
     setErrorMessage(null);
     runningRef.current = false;
   }, []);
@@ -181,6 +215,111 @@ export function CategorizationProgressProvider({
       });
   }, [invalidateAll]);
 
+  const chainAutoCategorize = useCallback(
+    (impResult: ImportResult) => {
+      setState("categorizing");
+      api
+        .autoCategorize((event: AutoCatProgressEvent) => {
+          setCatCurrent(event.current);
+          setCatTotal(event.total);
+          setMerchantName(event.merchant_name);
+          setCategory(event.category);
+        })
+        .then((complete: AutoCatCompleteEvent) => {
+          setResult({
+            synced: 0,
+            categorized: complete.categorized,
+            skipped: complete.skipped,
+          });
+          setImportResult(impResult);
+          setState("complete");
+          runningRef.current = false;
+          invalidateAll();
+        })
+        .catch((err: Error) => {
+          setErrorMessage(err.message);
+          setState("error");
+          runningRef.current = false;
+        });
+    },
+    [invalidateAll],
+  );
+
+  const startImport = useCallback(
+    (accountId: number, accountName: string, rows: ImportRow[]) => {
+      if (runningRef.current) return;
+      runningRef.current = true;
+      setState("importing");
+      setImportAccountName(accountName);
+
+      api
+        .streamImportTransactions(
+          accountId,
+          rows,
+          (evt: ImportProgressEvent) => {
+            setImportCurrent(evt.current);
+            setImportTotal(evt.total);
+            setImportMerchant(evt.merchant);
+          },
+          true,
+        )
+        .then((complete: ImportCompleteEvent) => {
+          const impResult = { imported: complete.imported, skipped: complete.skipped };
+          invalidateAll();
+          if (complete.imported > complete.categorized) {
+            setImportResult(impResult);
+            chainAutoCategorize(impResult);
+          } else {
+            setResult({ synced: 0, categorized: complete.categorized, skipped: 0 });
+            setImportResult(impResult);
+            setState("complete");
+            runningRef.current = false;
+          }
+        })
+        .catch((err: Error) => {
+          setErrorMessage(err.message);
+          setState("error");
+          runningRef.current = false;
+        });
+    },
+    [invalidateAll, chainAutoCategorize],
+  );
+
+  const startBulkImport = useCallback(
+    (payload: BulkImportPayload) => {
+      if (runningRef.current) return;
+      runningRef.current = true;
+      setState("importing");
+      setImportAccountName("Bulk Import");
+
+      api
+        .bulkImportTransactions(payload, (evt: ImportProgressEvent) => {
+          setImportCurrent(evt.current);
+          setImportTotal(evt.total);
+          setImportMerchant(evt.merchant);
+        })
+        .then((complete: ImportCompleteEvent) => {
+          const impResult = { imported: complete.imported, skipped: complete.skipped };
+          invalidateAll();
+          if (complete.imported > complete.categorized) {
+            setImportResult(impResult);
+            chainAutoCategorize(impResult);
+          } else {
+            setResult({ synced: 0, categorized: complete.categorized, skipped: 0 });
+            setImportResult(impResult);
+            setState("complete");
+            runningRef.current = false;
+          }
+        })
+        .catch((err: Error) => {
+          setErrorMessage(err.message);
+          setState("error");
+          runningRef.current = false;
+        });
+    },
+    [invalidateAll, chainAutoCategorize],
+  );
+
   const dismiss = useCallback(() => {
     reset();
   }, [reset]);
@@ -196,10 +335,17 @@ export function CategorizationProgressProvider({
         catTotal,
         merchantName,
         category,
+        importCurrent,
+        importTotal,
+        importMerchant,
+        importAccountName,
         result,
+        importResult,
         errorMessage,
         startSync,
         startAutoCategorize,
+        startImport,
+        startBulkImport,
         dismiss,
       }}
     >

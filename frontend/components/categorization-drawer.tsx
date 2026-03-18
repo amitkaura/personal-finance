@@ -15,7 +15,12 @@ export default function CategorizationDrawer() {
     catTotal,
     merchantName,
     category,
+    importCurrent,
+    importTotal,
+    importMerchant,
+    importAccountName,
     result,
+    importResult,
     errorMessage,
     dismiss,
   } = useCategorizationProgress();
@@ -37,6 +42,35 @@ export default function CategorizationDrawer() {
                 <p className="text-xs text-muted-foreground">
                   Account {syncCurrent} of {syncTotal}
                 </p>
+              )}
+            </div>
+          )}
+
+          {state === "importing" && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                Importing to {importAccountName}...
+              </div>
+              {importMerchant && (
+                <p className="truncate text-xs text-muted-foreground">
+                  {importMerchant}
+                </p>
+              )}
+              {importTotal > 0 && (
+                <>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{importCurrent} / {importTotal}</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-accent transition-all duration-200"
+                      style={{
+                        width: `${(importCurrent / importTotal) * 100}%`,
+                      }}
+                    />
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -79,9 +113,12 @@ export default function CategorizationDrawer() {
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-sm font-medium text-success">
                 <CheckCircle className="h-4 w-4 shrink-0" />
-                Sync complete
+                {importResult ? "Import complete" : "Sync complete"}
               </div>
               <p className="text-xs text-muted-foreground">
+                {importResult && (
+                  <>Imported {importResult.imported} transactions{importResult.skipped > 0 && `, ${importResult.skipped} skipped`}. </>
+                )}
                 {result.synced > 0 && (
                   <>Synced {result.synced} transactions. </>
                 )}

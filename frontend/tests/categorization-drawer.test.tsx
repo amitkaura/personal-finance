@@ -9,6 +9,8 @@ import CategorizationDrawer from "@/components/categorization-drawer";
 const mockApi = vi.hoisted(() => ({
   syncAllStream: vi.fn(),
   autoCategorize: vi.fn(),
+  streamImportTransactions: vi.fn(),
+  bulkImportTransactions: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({ api: mockApi }));
@@ -39,6 +41,42 @@ function AutoCatTrigger() {
   return (
     <button onClick={startAutoCategorize} disabled={state !== "idle"}>
       Auto-Categorize
+    </button>
+  );
+}
+
+function ImportTrigger() {
+  const { startImport, state } = useCategorizationProgress();
+  return (
+    <button
+      onClick={() =>
+        startImport(1, "My Checking", [
+          { date: "2026-01-15", amount: 4.5, merchant_name: "Coffee" },
+        ])
+      }
+      disabled={state !== "idle"}
+    >
+      Import
+    </button>
+  );
+}
+
+function BulkImportTrigger() {
+  const { startBulkImport, state } = useCategorizationProgress();
+  return (
+    <button
+      onClick={() =>
+        startBulkImport({
+          accounts: [{ name: "Visa", type: "depository" }],
+          transactions: [
+            { date: "2026-01-15", amount: 4.5, merchant_name: "Coffee", account_name: "Visa" },
+          ],
+          skip_llm: true,
+        })
+      }
+      disabled={state !== "idle"}
+    >
+      Bulk Import
     </button>
   );
 }
@@ -126,6 +164,102 @@ describe("CategorizationDrawer", () => {
     });
 
     expect(screen.getByRole("button", { name: /dismiss|close/i })).toBeInTheDocument();
+  });
+
+  it("shows importing state during import", async () => {
+    let resolveImport: (value: unknown) => void;
+    mockApi.streamImportTransactions.mockImplementation(
+      (_id: number, _rows: unknown[], onProgress: (e: unknown) => void) => {
+        onProgress({ type: "progress", current: 1, total: 3, merchant: "Coffee", status: "imported", category: null });
+        return new Promise((resolve) => { resolveImport = resolve; });
+      },
+    );
+
+    render(
+      <Wrapper>
+        <ImportTrigger />
+      </Wrapper>,
+    );
+
+    await userEvent.click(screen.getByText("Import"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Importing/)).toBeInTheDocument();
+      expect(screen.getByText(/My Checking/)).toBeInTheDocument();
+      expect(screen.getByText("1 / 3")).toBeInTheDocument();
+    });
+
+    resolveImport!({ type: "complete", imported: 3, skipped: 0, categorized: 3, errors: [] });
+  });
+
+  it("shows importing then transitions to complete when all categorized", async () => {
+    mockApi.streamImportTransactions.mockResolvedValue({
+      type: "complete", imported: 3, skipped: 0, categorized: 3, errors: [],
+    });
+
+    render(
+      <Wrapper>
+        <ImportTrigger />
+      </Wrapper>,
+    );
+
+    await userEvent.click(screen.getByText("Import"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Import complete/)).toBeInTheDocument();
+      expect(screen.getByText(/3/)).toBeInTheDocument();
+    });
+  });
+
+  it("chains import into auto-categorize when uncategorized transactions remain", async () => {
+    mockApi.streamImportTransactions.mockResolvedValue({
+      type: "complete", imported: 5, skipped: 0, categorized: 1, errors: [],
+    });
+    let resolveAutoCat: (value: unknown) => void;
+    mockApi.autoCategorize.mockImplementation((onProgress: (e: unknown) => void) => {
+      onProgress({ status: "categorized", current: 1, total: 4, merchant_name: "Target", category: "Shopping" });
+      return new Promise((resolve) => { resolveAutoCat = resolve; });
+    });
+
+    render(
+      <Wrapper>
+        <ImportTrigger />
+      </Wrapper>,
+    );
+
+    await userEvent.click(screen.getByText("Import"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Categorizing/)).toBeInTheDocument();
+      expect(screen.getByText(/Target/)).toBeInTheDocument();
+    });
+
+    resolveAutoCat!({ status: "complete", total: 4, categorized: 3, skipped: 1 });
+  });
+
+  it("shows bulk import progress in drawer", async () => {
+    let resolveBulk: (value: unknown) => void;
+    mockApi.bulkImportTransactions.mockImplementation(
+      (_payload: unknown, onProgress: (e: unknown) => void) => {
+        onProgress({ type: "progress", current: 1, total: 2, merchant: "Grocery", status: "imported", category: null });
+        return new Promise((resolve) => { resolveBulk = resolve; });
+      },
+    );
+
+    render(
+      <Wrapper>
+        <BulkImportTrigger />
+      </Wrapper>,
+    );
+
+    await userEvent.click(screen.getByText("Bulk Import"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Importing/)).toBeInTheDocument();
+      expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    });
+
+    resolveBulk!({ type: "complete", imported: 2, skipped: 0, categorized: 2, errors: [] });
   });
 
   it("dismiss resets to idle and hides the drawer", async () => {
