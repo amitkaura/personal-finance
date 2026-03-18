@@ -8,6 +8,9 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
  * Next.js rewrites buffer the full response body before forwarding,
  * which breaks streaming. This route handler pipes the backend
  * ReadableStream directly to the client without buffering.
+ *
+ * Placed under /stream/ (not /api/) so it doesn't conflict with the
+ * catch-all /api/:path* rewrite in next.config.ts.
  */
 export async function POST(
   request: NextRequest,

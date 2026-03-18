@@ -11,7 +11,7 @@ import type {
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
-const STREAM_BASE = "/api/v1/stream";
+const STREAM_BASE = "/stream";
 
 type ValidationErrorItem = {
   field?: string;
