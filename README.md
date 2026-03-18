@@ -21,10 +21,11 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Account Management
 - Connect bank accounts, credit cards, loans, and investment accounts via Plaid Link
 - **Sandbox mode indicator** -- when Plaid is configured in sandbox/test mode, a visible banner appears on the Dashboard, Connections page, and during onboarding; the Link Account button shows "Link Demo Account"; the onboarding managed-mode card shows a "(Demo)" tag
-- **Managed or Bring Your Own Plaid** -- hosted instances can offer managed Plaid credentials so users connect instantly; alternatively each household configures its own Plaid API keys in Settings; one-time onboarding choice (managed vs BYOK) with no switching
+- **Managed or Bring Your Own Plaid** -- hosted instances can offer managed Plaid credentials so users connect instantly; alternatively each household configures its own Plaid API keys in Settings; Plaid and LLM mode can be switched in Settings when no accounts are linked
 - **Managed or Bring Your Own LLM** -- admin can configure app-level LLM credentials for managed AI categorization; users choose managed, BYOK, or skip during onboarding; switchable in Settings at any time
 - **Admin Plaid config** -- instance admin can configure app-level Plaid credentials, toggle managed mode, and see how many households use it (managed via Admin Panel → Plaid Config tab)
 - **Admin LLM config** -- instance admin can configure app-level LLM credentials (base URL, API key, model), toggle enabled, and see managed household count (Admin Panel → LLM Config tab)
+- **Onboarding** -- full-screen wizard (no sidebar); managed Plaid auto-selected when available; OnboardingRedirect moved from Dashboard into AuthGate for global coverage
 - Supports US and Canadian institutions
 - Automatic balance refresh on every sync
 - Account type and subtype selection during creation, with editable subtypes
@@ -308,6 +309,7 @@ personal-finance/
 │       ├── invitation-banner.test.tsx  # Accept/decline, dismiss, multiple invites
 │       ├── statement-reminder-banner.test.tsx # Render, dismiss, localStorage, multiple
 │       ├── settings-page.test.tsx  # Profile, household, general, data management
+│       ├── settings-plaid-mode.test.tsx # Plaid mode switching in Settings
 │       ├── sidebar.test.tsx        # Nav links, branding, active state, user section
 │       ├── hooks.test.tsx          # useFormatCurrency, useFormatCurrencyPrecise, useScope
 │       ├── csv-utils.test.ts       # CSV parser, column role guessing, date normalization, row mapping
@@ -648,7 +650,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (511 tests across 23 files):**
+**What's tested (516 tests across 23 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -669,7 +671,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_llm_config` | 20 | BYO LLM config CRUD (owner-only, encryption, batch_size default/custom/validation), SSRF validation, Railway internal URL |
 | `test_auth` | 8 | Google OAuth login (mocked), session, `/me`, logout, auto-household on signup, no duplicate household on re-login |
 | `test_managed_plaid` | 16 | PlaidMode enum, AppPlaidConfig model, Household.plaid_mode field, plaid client resolution (managed vs BYOK: uses correct credentials, raises when disabled/missing/none) |
-| `test_managed_plaid_routes` | 26 | Plaid mode GET/PUT (managed/byok/none/switch-blocked/validation), admin plaid-config CRUD (admin-only guard, create/update/delete, household count), /auth/me is_admin field |
+| `test_managed_plaid_routes` | 31 | Plaid mode GET/PUT (managed/byok/none/switch-blocked/validation), admin plaid-config CRUD (admin-only guard, create/update/delete, household count), /auth/me is_admin field |
 | `test_managed_llm_routes` | 35 | LLM mode GET/PUT (managed/byok/none/switchable/validation), admin llm-config CRUD (admin-only guard, create/update/delete, unchanged sentinel, SSRF validation, household count, batch_size create/validation), categorizer resolution (managed uses AppLLMConfig with batch_size, BYOK uses HouseholdLLMConfig with batch_size, none/null returns empty, disabled returns empty) |
 | `test_admin` | 44 | Admin guard (403 on all endpoints), overview aggregates, users list (pagination, search, stats, filters: active_days/has_linked/has_manual/sort), user detail (accounts, transactions, activity, stats, 404, auth guard), user update (promote/demote/disable/enable), user delete (full FK cascade, self-deletion blocked), disabled user auth, plaid health, error log (pagination, filters), analytics (active users, feature adoption, transaction volume, storage), activity logging, timestamps (created_at on insert, updated_at on flush, created_at unchanged on update) |
 | `test_net_worth` | 5 | Snapshots, history |
@@ -694,13 +696,14 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (472 tests across 46 files):**
+**What's tested (484 tests across 47 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `csv-utils` | 51 | CSV parsing, quoted fields, column role guessing (debit/credit), date normalization, row mapping |
 | `rule-utils` | 11 | Keyword option generation: full name, cleaned name, progressive word combos, dedup, edge cases |
 | `settings-page` | 31 | All sections: profile, household, Integrations group with Bank Connections + AI sub-cards, general (save flash), sync (save flash), no category rules section, data management, delete account (button renders, confirm dialog calls deleteAccount + clearSession), explicit invalid invite email feedback, AI section mode-aware (managed badge, switch to BYOK button, BYOK form, switch to managed button, hidden switch when managed unavailable) |
+| `settings-plaid-mode` | 5 | Plaid mode switching in Settings (managed/BYOK cards, switch when no accounts linked, blocked when accounts linked) |
 | `balance-import-dialog` | 5 | Upload step rendering, column mapping, error handling, account matching, API call on submit |
 | `cashflow-bar-chart` | 15 | Bar chart rendering, drill-down, period switching, breadcrumbs |
 | `transactions-page` | 28 | Title, add form, search, filter popover with badge, loading, empty states, delete confirmation dialog, auto-categorize tooltip, click-outside dropdown close, account pre-filter from URL param, category/date pre-filter from URL params, rule suggestion (show/create/dismiss/skip-if-exists), inline edit (button renders, form pre-fills, save, cancel, one-at-a-time, category change triggers rule suggestion), explicit add-amount validation for `0`, create mutation error rendering |
@@ -724,7 +727,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `hooks` | 6 | `useFormatCurrency`, `useFormatCurrencyPrecise`, `useScope` |
 | `auth-provider` | 6 | Loading state, login/logout, cache clearing, default context |
 | `goals-snippet` | 7 | Loading, empty with "Set one" link, personal goals (max 3), expanded shared rows in personal scope, partner/household shared visibility, view all link |
-| `auth-gate` | 6 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, hamburger menu button, toggle sidebar open, responsive margin classes |
+| `auth-gate` | 11 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, hamburger menu button, toggle sidebar open, responsive margin classes, OnboardingRedirect (redirects when plaid_mode or llm_mode null, skips when modes set) |
 | `net-worth-card` | 5 | Loading skeleton, net worth display, asset/liability breakdown, account count pluralization |
 | `top-movers` | 6 | Loading, empty, investment filter, scrollable list, trend icons, official name fallback |
 | `budget-snippet` | 8 | Loading, empty with "Create one" link, personal/shared totals, top-3 category sort, expanded shared categories in personal scope, partner scope, and household scope, view all link |
@@ -738,7 +741,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `link-account` | 6 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label |
 | `sandbox-banner` | 2 | Test-mode warning text, demo accounts mention |
 | `sandbox-banner-wrapper` | 3 | Renders banner when sandbox, nothing when production, nothing when unconfigured |
-| `onboarding` | 16 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls; wizard step 2 (LLM mode): managed AI + BYOK cards, skip button, setLLMMode calls; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete; sandbox indicator: banner + Demo tag when managed sandbox keys, hidden for production; cache invalidation: plaid-config cache cleared after mode selection |
+| `onboarding` | 18 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls, managed auto-selected when available; wizard step 2 (LLM mode): managed AI + BYOK cards, skip button, setLLMMode calls; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete; full-screen layout (no sidebar); sandbox indicator: banner + Demo tag when managed sandbox keys, hidden for production; cache invalidation: plaid-config cache cleared after mode selection |
 | `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
 | `admin` | 20 | Tab rendering (6 tabs including Plaid Config and LLM Config), KPI cards with drill-down click (Active 7d, Linked/Manual accounts → users tab with filters), filter badge and clear, user list, disable/delete actions with confirmation, expandable user detail row (accounts, transactions, activity), tab switching (plaid health, analytics with active-users and transaction-volume charts), Plaid Config tab (config status, environment selector, save button), LLM Config tab (config status, model/base URL display, save button, enabled toggle) |
 | `admin-plaid-section` | 3 | Plaid Config tab visibility in admin panel, managed household count, environment selector |

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, type ComponentType } from "react";
+import { useState, useEffect, useRef, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Zap, Key, Brain, KeyRound, SkipForward } from "lucide-react";
+import { Loader2, Zap, Key, Brain, KeyRound, SkipForward, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { PLAID_MODES, LLM_MODES } from "@/lib/types";
 import SandboxBanner from "@/components/sandbox-banner";
@@ -15,6 +15,7 @@ interface StepProps {
 function PlaidModeStep({ onComplete }: StepProps) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const autoFired = useRef(false);
 
   const { data: plaidMode, isLoading } = useQuery({
     queryKey: ["plaid-mode"],
@@ -24,12 +25,31 @@ function PlaidModeStep({ onComplete }: StepProps) {
   const selectMode = useMutation({
     mutationFn: (mode: string) => api.setPlaidMode(mode),
     onSuccess: (data) => {
-      queryClient.setQueryData(["plaid-mode"], data);
       queryClient.invalidateQueries({ queryKey: ["plaid-config"] });
-      onComplete();
+      if (!autoFired.current) {
+        queryClient.setQueryData(["plaid-mode"], data);
+        onComplete();
+      }
     },
     onError: (err: Error) => setError(err.message),
   });
+
+  const managedAvailable = plaidMode?.managed_available ?? false;
+  const isSandbox = managedAvailable && plaidMode?.managed_plaid_env === "sandbox";
+
+  useEffect(() => {
+    if (managedAvailable && !autoFired.current && !selectMode.isPending && !selectMode.isSuccess) {
+      autoFired.current = true;
+      selectMode.mutate(PLAID_MODES.MANAGED);
+    }
+  }, [managedAvailable]);
+
+  function handleAutoConfirm() {
+    if (selectMode.data) {
+      queryClient.setQueryData(["plaid-mode"], selectMode.data);
+    }
+    onComplete();
+  }
 
   if (isLoading) {
     return (
@@ -39,8 +59,54 @@ function PlaidModeStep({ onComplete }: StepProps) {
     );
   }
 
-  const managedAvailable = plaidMode?.managed_available ?? false;
-  const isSandbox = managedAvailable && plaidMode?.managed_plaid_env === "sandbox";
+  if (autoFired.current && !selectMode.isSuccess && !selectMode.isError) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (autoFired.current && selectMode.isSuccess) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent/15">
+            <CheckCircle2 className="h-6 w-6 text-accent" />
+          </div>
+          <h1 className="text-2xl font-bold">Bank connection ready</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Managed Plaid has been set up for you — no API keys needed.
+          </p>
+        </div>
+
+        {isSandbox && <SandboxBanner />}
+
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          <p>
+            You can switch between managed and bring-your-own-keys mode anytime
+            in <strong className="text-foreground">Settings &gt; Integrations</strong>,
+            as long as no bank accounts are linked yet.
+          </p>
+        </div>
+
+        {error && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-center">
+          <button
+            onClick={handleAutoConfirm}
+            className="rounded-xl bg-accent px-8 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent/90"
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -51,8 +117,6 @@ function PlaidModeStep({ onComplete }: StepProps) {
         </p>
       </div>
 
-      {isSandbox && <SandboxBanner />}
-
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
@@ -60,31 +124,6 @@ function PlaidModeStep({ onComplete }: StepProps) {
       )}
 
       <div className="grid grid-cols-1 gap-4">
-        {managedAvailable && (
-          <button
-            onClick={() => selectMode.mutate(PLAID_MODES.MANAGED)}
-            disabled={selectMode.isPending}
-            className="group flex flex-col items-center gap-3 rounded-2xl border border-accent/30 bg-accent/5 p-6 text-center transition-colors hover:border-accent hover:bg-accent/10 disabled:opacity-50"
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/15">
-              <Zap className="h-6 w-6 text-accent" />
-            </div>
-            <div>
-              <div className="flex items-center justify-center gap-2">
-                <h2 className="text-base font-semibold">Connect instantly</h2>
-                {isSandbox && (
-                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
-                    Demo
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Link your bank accounts right away — no setup required.
-              </p>
-            </div>
-          </button>
-        )}
-
         <button
           onClick={() => selectMode.mutate(PLAID_MODES.BYOK)}
           disabled={selectMode.isPending}
@@ -191,6 +230,13 @@ function LLMModeStep({ onComplete }: StepProps) {
         </button>
       </div>
 
+      <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        <p>
+          You can change your AI categorization mode later
+          in <strong className="text-foreground">Settings &gt; Integrations</strong>.
+        </p>
+      </div>
+
       <div className="flex justify-center">
         <button
           onClick={() => selectMode.mutate(LLM_MODES.NONE)}
@@ -278,7 +324,7 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
+    <div className="flex flex-1 items-center justify-center px-4">
       <div className="w-full max-w-lg space-y-6">
         {STEP_IDS.length > 1 && (
           <div className="flex justify-center" data-testid="step-indicator">

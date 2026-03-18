@@ -7,10 +7,12 @@ import Sidebar from "@/components/sidebar";
 import InvitationBanner from "@/components/invitation-banner";
 import StatementReminderBanner from "@/components/statement-reminder-banner";
 import CategorizationDrawer from "@/components/categorization-drawer";
+import OnboardingRedirect from "@/components/onboarding-redirect";
 import LoginPage from "@/app/login/page";
 import { Loader2, Menu } from "lucide-react";
 
 const AUTH_BYPASS_PATHS = ["/staging-login"];
+const SIDEBAR_SKIP_PATHS = ["/onboarding"];
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -33,11 +35,23 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     return <LoginPage />;
   }
 
+  const isOnboarding = SIDEBAR_SKIP_PATHS.includes(pathname);
+
+  if (isOnboarding) {
+    return (
+      <div className="min-h-screen">
+        <header className="flex items-center px-6 py-4">
+          <span className="text-xl font-bold tracking-tight">fino</span>
+        </header>
+        {children}
+      </div>
+    );
+  }
+
   return (
     <>
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* Mobile hamburger */}
       <div className="fixed left-4 top-4 z-40 lg:hidden">
         <button
           onClick={() => setSidebarOpen(true)}
@@ -50,6 +64,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
       <main className="lg:ml-60 min-h-screen">
         <div className="mx-auto max-w-7xl px-6 py-8 pt-16 lg:pt-8">
+          <OnboardingRedirect />
           <InvitationBanner />
           <StatementReminderBanner />
           {children}
