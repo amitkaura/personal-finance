@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import func
+from sqlalchemy import delete as sa_delete, func
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, or_, select
@@ -170,47 +170,20 @@ def delete_account(
     if acct.is_linked:
         raise HTTPException(status_code=400, detail="Unlink the account before deleting it")
 
-    txns = session.exec(
-        select(Transaction).where(Transaction.account_id == account_id)
-    ).all()
-    txn_ids = [t.id for t in txns]
-    # #region agent log
-    print(f"{_pfx} txns_loaded: count={len(txns)}")
-    # #endregion
-
-    if txn_ids:
-        tag_links = session.exec(
-            select(TransactionTag).where(TransactionTag.transaction_id.in_(txn_ids))  # type: ignore[union-attr]
-        ).all()
-        for tl in tag_links:
-            session.delete(tl)
-
-    for txn in txns:
-        session.delete(txn)
+    txn_subq = select(Transaction.id).where(Transaction.account_id == account_id)
 
     # #region agent log
-    print(f"{_pfx} before_goal_links_query: autoflush may fire here")
+    import time as _t; _t0 = _t.monotonic()
     # #endregion
-    try:
-        goal_links = session.exec(
-            select(GoalAccountLink).where(GoalAccountLink.account_id == account_id)
-        ).all()
-        for gl in goal_links:
-            session.delete(gl)
-    except Exception as e:
-        # #region agent log
-        print(f"{_pfx} goal_links_error: {type(e).__name__}: {e}")
-        # #endregion
-        raise
 
-    for bs in session.exec(
-        select(AccountBalanceSnapshot).where(AccountBalanceSnapshot.account_id == account_id)
-    ).all():
-        session.delete(bs)
+    session.exec(sa_delete(TransactionTag).where(TransactionTag.transaction_id.in_(txn_subq)))  # type: ignore[arg-type]
+    session.exec(sa_delete(Transaction).where(Transaction.account_id == account_id))  # type: ignore[arg-type]
+    session.exec(sa_delete(GoalAccountLink).where(GoalAccountLink.account_id == account_id))  # type: ignore[arg-type]
+    session.exec(sa_delete(AccountBalanceSnapshot).where(AccountBalanceSnapshot.account_id == account_id))  # type: ignore[arg-type]
 
     session.delete(acct)
     # #region agent log
-    print(f"{_pfx} before_commit: all deletes scheduled")
+    print(f"{_pfx} before_commit: bulk deletes done in {(_t.monotonic()-_t0)*1000:.0f}ms")
     # #endregion
     try:
         session.commit()
@@ -220,7 +193,7 @@ def delete_account(
         # #endregion
         raise
     # #region agent log
-    print(f"{_pfx} delete_success: account_id={account_id} txn_count={len(txns)}")
+    print(f"{_pfx} delete_success: account_id={account_id} elapsed={(_t.monotonic()-_t0)*1000:.0f}ms")
     # #endregion
     return {"ok": True}
 
