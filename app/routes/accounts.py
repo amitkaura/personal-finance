@@ -155,8 +155,17 @@ def delete_account(
     user: User = Depends(get_current_user),
 ):
     """Delete a manual or unlinked account and its transactions."""
+    # #region agent log
+    _pfx = "[DEBUG-ff3a38]"
+    # #endregion
     acct = session.get(Account, account_id)
+    # #region agent log
+    print(f"{_pfx} account_lookup: account_id={account_id} found={acct is not None} acct_user_id={acct.user_id if acct else None} current_user_id={user.id}")
+    # #endregion
     if not acct or acct.user_id != user.id:
+        # #region agent log
+        print(f"{_pfx} 404_raised: reason={'not_found' if not acct else 'user_mismatch'} acct_user_id={acct.user_id if acct else None} current_user_id={user.id}")
+        # #endregion
         raise HTTPException(status_code=404, detail="Account not found")
     if acct.is_linked:
         raise HTTPException(status_code=400, detail="Unlink the account before deleting it")
@@ -165,6 +174,9 @@ def delete_account(
         select(Transaction).where(Transaction.account_id == account_id)
     ).all()
     txn_ids = [t.id for t in txns]
+    # #region agent log
+    print(f"{_pfx} txns_loaded: count={len(txns)}")
+    # #endregion
 
     if txn_ids:
         tag_links = session.exec(
@@ -176,11 +188,20 @@ def delete_account(
     for txn in txns:
         session.delete(txn)
 
-    goal_links = session.exec(
-        select(GoalAccountLink).where(GoalAccountLink.account_id == account_id)
-    ).all()
-    for gl in goal_links:
-        session.delete(gl)
+    # #region agent log
+    print(f"{_pfx} before_goal_links_query: autoflush may fire here")
+    # #endregion
+    try:
+        goal_links = session.exec(
+            select(GoalAccountLink).where(GoalAccountLink.account_id == account_id)
+        ).all()
+        for gl in goal_links:
+            session.delete(gl)
+    except Exception as e:
+        # #region agent log
+        print(f"{_pfx} goal_links_error: {type(e).__name__}: {e}")
+        # #endregion
+        raise
 
     for bs in session.exec(
         select(AccountBalanceSnapshot).where(AccountBalanceSnapshot.account_id == account_id)
@@ -188,7 +209,19 @@ def delete_account(
         session.delete(bs)
 
     session.delete(acct)
-    session.commit()
+    # #region agent log
+    print(f"{_pfx} before_commit: all deletes scheduled")
+    # #endregion
+    try:
+        session.commit()
+    except Exception as e:
+        # #region agent log
+        print(f"{_pfx} commit_error: {type(e).__name__}: {e}")
+        # #endregion
+        raise
+    # #region agent log
+    print(f"{_pfx} delete_success: account_id={account_id} txn_count={len(txns)}")
+    # #endregion
     return {"ok": True}
 
 
