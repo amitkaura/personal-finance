@@ -72,8 +72,23 @@ ceiling and is intentional — it prevents a single request from returning an
 unbounded result set. Do NOT raise or remove it; paginate on the frontend
 instead.
 
-## Checklist for new data-fetching code
+## When this rule does NOT apply
 
-1. Does this component need the full dataset? → use `getAll*`
-2. Is this a paginated list or small preview? → use `get*` with a limit
-3. Never hardcode a limit like `200` and assume "that's enough"
+- Single-record fetches by ID (`getAccount(id)`, `getTransaction(id)`)
+- Mutation calls (POST/PUT/DELETE)
+- Static reference data that is not paginated (e.g., categories, tags)
+
+## Decision tree
+
+```
+Need data?
+ ├─ Single record by ID?        → getX(id)             — this rule does NOT apply
+ ├─ Full dataset (sum, group,   → getAllX(scope)        — MUST paginate under the hood
+ │   chart, analyze)?
+ ├─ Paginated UI list           → getX({ limit, offset }) via useInfiniteQuery
+ │   (infinite scroll, table)?
+ └─ Small preview (e.g. 5       → getX({ limit: 5 })
+     most recent)?
+```
+
+Never hardcode a limit like `200` and assume "that's enough".
