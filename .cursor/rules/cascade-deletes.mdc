@@ -49,6 +49,15 @@ Household
 # 4. Remove the account
 ```
 
+## When this rule does NOT apply
+
+- Soft deletes or status-flag changes (e.g., marking a record as archived)
+- Updating or patching a record without removing it
+
 ## Testing
 
 SQLite (used in tests) does **not** enforce FK constraints by default. Always add explicit tests that create child rows (tags, goal links, etc.) before asserting a successful delete.
+
+## Updating This Rule
+
+When adding a new model with foreign keys, update the FK dependency graph above to include the new parent → child relationships.

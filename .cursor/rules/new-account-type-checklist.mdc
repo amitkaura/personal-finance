@@ -25,3 +25,7 @@ When a new value is added to the `AccountType` enum, **all** of the following mu
 
 8. **`frontend/tests/helpers.tsx`** -- add the new `*_balance` field to `mockApi.getAccountSummary` return value
 9. **Backend tests** -- add test cases covering the new type in account summary and net worth snapshot tests
+
+## Updating This Rule
+
+When adding a new file or component that depends on the `AccountType` enum, add it to the checklist above so future additions don't miss it.

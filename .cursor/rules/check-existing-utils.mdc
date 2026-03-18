@@ -26,3 +26,7 @@ Before writing any non-trivial logic inline in a component, **search `frontend/l
 ## Why This Matters
 
 The CSV import dialogs were rewritten with a naive 3-line CSV parser that split on commas (breaking on quoted fields) and hardcoded column names, while `csv-utils.ts` (298 lines, 51 tests) sat unused on disk.
+
+## Updating This Rule
+
+When creating a new shared utility in `frontend/lib/`, add it to the Key Libraries table above so future work discovers it.

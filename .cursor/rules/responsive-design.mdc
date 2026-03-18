@@ -56,6 +56,11 @@ Side-by-side content (e.g., avatar + form) should stack on mobile:
 <div className="flex flex-col sm:flex-row gap-6">
 ```
 
+## When this rule does NOT apply
+
+- Modals and dialogs that already use a fixed `max-w-*` container
+- Components that are only rendered inside a constrained parent (e.g., sidebar panels with a known width)
+
 ## General Rules
 
 - Never use bare `grid-cols-N` (N >= 2) without a responsive base of `grid-cols-1`.
