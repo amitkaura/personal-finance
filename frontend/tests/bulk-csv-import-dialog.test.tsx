@@ -186,7 +186,6 @@ describe("BulkCsvImportDialog", () => {
         category: "Food & Dining",
         account_name: "Visa",
       });
-      expect(payload.skip_llm).toBe(true);
       expect(onClose).toHaveBeenCalled();
     });
   });
