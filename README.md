@@ -663,7 +663,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 11 | Resend HTTP API, invitation + statement reminder templates, send/skip/fail/network-error handling, bearer auth, app_url in CTAs |
-| `test_plaid_config` | 13 | GET (configured/not/no-household/member-read), PUT (create/update/non-owner/no-household/invalid-env), DELETE (success/non-owner/not-configured/no-household) |
+| `test_plaid_config` | 14 | GET (configured/not/no-household/member-read/managed-returns-app-env), PUT (create/update/non-owner/no-household/invalid-env), DELETE (success/non-owner/not-configured/no-household) |
 | `test_llm_config` | 20 | BYO LLM config CRUD (owner-only, encryption, batch_size default/custom/validation), SSRF validation, Railway internal URL |
 | `test_auth` | 8 | Google OAuth login (mocked), session, `/me`, logout, auto-household on signup, no duplicate household on re-login |
 | `test_managed_plaid` | 16 | PlaidMode enum, AppPlaidConfig model, Household.plaid_mode field, plaid client resolution (managed vs BYOK: uses correct credentials, raises when disabled/missing/none) |

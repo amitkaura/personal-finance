@@ -1,9 +1,9 @@
 """Tests for Plaid config CRUD endpoints (owner-only, encrypted storage)."""
 
-from app.crypto import decrypt_token
+from app.crypto import decrypt_token, encrypt_token
 from app.main import app
 from app.auth import get_current_user
-from app.models import HouseholdPlaidConfig
+from app.models import AppPlaidConfig, HouseholdPlaidConfig, PlaidMode
 from sqlmodel import select
 from tests.conftest import (
     add_household_member,
@@ -58,6 +58,28 @@ def test_get_plaid_config_member_can_read(auth_client, session):
     resp = client.get("/api/v1/settings/plaid-config")
     assert resp.status_code == 200
     assert resp.json()["configured"] is True
+
+
+def test_get_plaid_config_managed_returns_app_env(auth_client, session):
+    """When household uses managed Plaid, plaid_env should come from AppPlaidConfig."""
+    client, user = auth_client
+    hh = make_household(session, user)
+    hh.plaid_mode = PlaidMode.MANAGED
+    session.add(hh)
+    app_config = AppPlaidConfig(
+        encrypted_client_id=encrypt_token("cid_1234"),
+        encrypted_secret=encrypt_token("sec_5678"),
+        plaid_env="sandbox",
+        enabled=True,
+    )
+    session.add(app_config)
+    session.commit()
+
+    resp = client.get("/api/v1/settings/plaid-config")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["configured"] is True
+    assert data["plaid_env"] == "sandbox"
 
 
 # -- PUT -------------------------------------------------------------------

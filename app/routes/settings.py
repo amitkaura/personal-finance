@@ -243,6 +243,13 @@ def get_plaid_config(
     if not member:
         return _plaid_config_response(None)
 
+    household = session.get(Household, member.household_id)
+    if household and household.plaid_mode == PlaidMode.MANAGED:
+        app_config = session.exec(select(AppPlaidConfig)).first()
+        if app_config and app_config.enabled:
+            return {"configured": True, "plaid_env": app_config.plaid_env, "client_id_last4": None, "secret_last4": None}
+        return _plaid_config_response(None)
+
     config = session.exec(
         select(HouseholdPlaidConfig).where(
             HouseholdPlaidConfig.household_id == member.household_id
