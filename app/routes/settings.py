@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import sqlalchemy as sa
 from sqlalchemy import delete as sa_delete
 from sqlmodel import Session, or_, select
@@ -497,17 +497,19 @@ class LLMConfigUpdate(BaseModel):
     llm_base_url: str
     llm_api_key: str
     llm_model: str
+    batch_size: int = Field(default=10, ge=1, le=50)
 
 
 def _llm_config_response(config: Optional[HouseholdLLMConfig]) -> dict:
     if not config:
-        return {"configured": False, "llm_base_url": None, "llm_model": None, "api_key_last4": None}
+        return {"configured": False, "llm_base_url": None, "llm_model": None, "api_key_last4": None, "batch_size": 10}
     api_key = decrypt_token(config.encrypted_api_key)
     return {
         "configured": True,
         "llm_base_url": config.llm_base_url,
         "llm_model": config.llm_model,
         "api_key_last4": api_key[-4:] if len(api_key) >= 4 else api_key,
+        "batch_size": config.batch_size,
     }
 
 
@@ -556,12 +558,14 @@ def update_llm_config(
         config.llm_base_url = body.llm_base_url
         config.encrypted_api_key = encrypt_token(body.llm_api_key)
         config.llm_model = body.llm_model
+        config.batch_size = body.batch_size
     else:
         config = HouseholdLLMConfig(
             household_id=member.household_id,
             llm_base_url=body.llm_base_url,
             encrypted_api_key=encrypt_token(body.llm_api_key),
             llm_model=body.llm_model,
+            batch_size=body.batch_size,
         )
 
     session.add(config)
@@ -1792,6 +1796,7 @@ class AdminLLMConfigUpdate(BaseModel):
     llm_api_key: str
     llm_model: str
     enabled: bool
+    batch_size: int = Field(default=10, ge=1, le=50)
 
 
 @router.get("/admin/llm-config")
@@ -1815,6 +1820,7 @@ def get_admin_llm_config(
             "llm_base_url": None,
             "llm_model": None,
             "api_key_last4": None,
+            "batch_size": 10,
             "managed_household_count": managed_count,
         }
 
@@ -1825,6 +1831,7 @@ def get_admin_llm_config(
         "llm_base_url": config.llm_base_url,
         "llm_model": config.llm_model,
         "api_key_last4": api_key[-4:] if len(api_key) >= 4 else api_key,
+        "batch_size": config.batch_size,
         "managed_household_count": managed_count,
     }
 
@@ -1847,6 +1854,7 @@ def update_admin_llm_config(
         config.llm_base_url = body.llm_base_url
         config.llm_model = body.llm_model
         config.enabled = body.enabled
+        config.batch_size = body.batch_size
     else:
         if body.llm_api_key == _SENTINEL:
             raise HTTPException(status_code=400, detail="API key is required for initial setup")
@@ -1855,6 +1863,7 @@ def update_admin_llm_config(
             encrypted_api_key=encrypt_token(body.llm_api_key),
             llm_model=body.llm_model,
             enabled=body.enabled,
+            batch_size=body.batch_size,
         )
 
     session.add(config)
@@ -1868,6 +1877,7 @@ def update_admin_llm_config(
         "llm_base_url": config.llm_base_url,
         "llm_model": config.llm_model,
         "api_key_last4": api_key[-4:] if len(api_key) >= 4 else api_key,
+        "batch_size": config.batch_size,
     }
 
 

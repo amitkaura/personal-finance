@@ -509,5 +509,23 @@ describe("SettingsPage", () => {
       });
       expect(screen.queryByRole("button", { name: /switch to managed/i })).not.toBeInTheDocument();
     });
+
+    it("shows 'Transactions per request' field in BYOK config form", async () => {
+      mockApi.getLLMMode.mockResolvedValue({ mode: "byok", managed_available: false });
+      mockApi.getLLMConfig.mockResolvedValue({
+        configured: true,
+        llm_base_url: "https://api.openai.com/v1",
+        llm_model: "gpt-4o",
+        api_key_last4: "1234",
+        batch_size: 15,
+      });
+
+      renderWithProviders(<SettingsPage />);
+
+      await waitFor(() => {
+        const input = screen.getByTestId("llm-batch-size") as HTMLInputElement;
+        expect(input.value).toBe("15");
+      });
+    });
   });
 });

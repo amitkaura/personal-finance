@@ -371,7 +371,7 @@ def test_import_categorizes_via_llm_fallback(auth_client, session):
         return resp
 
     with patch("app.categorizer._get_llm_config", return_value=(
-        "http://fake-llm", "fake-key", "test-model",
+        "http://fake-llm", "fake-key", "test-model", 10,
     )), patch("httpx.post", side_effect=fake_llm_response):
         resp = client.post(
             f"/api/v1/settings/import/{acct.id}",
@@ -408,7 +408,7 @@ def test_import_streaming_shows_llm_category(auth_client, session):
         return resp
 
     with patch("app.categorizer._get_llm_config", return_value=(
-        "http://fake-llm", "fake-key", "test-model",
+        "http://fake-llm", "fake-key", "test-model", 10,
     )), patch("httpx.post", side_effect=fake_llm_response):
         resp = client.post(
             f"/api/v1/settings/import/{acct.id}",
@@ -436,7 +436,7 @@ def test_import_skips_llm_when_flag_set(auth_client, session):
     acct = make_account(session, user, name="Checking")
 
     with patch("app.categorizer._get_llm_config", return_value=(
-        "http://fake-llm", "fake-key", "test-model",
+        "http://fake-llm", "fake-key", "test-model", 10,
     )), patch("httpx.post") as mock_post:
         resp = client.post(
             f"/api/v1/settings/import/{acct.id}",
@@ -464,7 +464,7 @@ def test_bulk_import_skips_llm_when_flag_set(auth_client, session):
     client, user = auth_client
 
     with patch("app.categorizer._get_llm_config", return_value=(
-        "http://fake-llm", "fake-key", "test-model",
+        "http://fake-llm", "fake-key", "test-model", 10,
     )), patch("httpx.post") as mock_post:
         resp = client.post(
             "/api/v1/settings/bulk-import",
@@ -507,7 +507,7 @@ def test_bulk_import_categorizes_via_llm_fallback(auth_client, session):
         return resp
 
     with patch("app.categorizer._get_llm_config", return_value=(
-        "http://fake-llm", "fake-key", "test-model",
+        "http://fake-llm", "fake-key", "test-model", 10,
     )), patch("httpx.post", side_effect=fake_llm_response):
         resp = client.post("/api/v1/settings/bulk-import", json={
             "accounts": [],

@@ -59,9 +59,9 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 ### Hybrid Categorization
 1. **Rule-based** -- user-defined keyword-to-category mappings checked first
-2. **LLM fallback** -- uncategorized transactions are sent one-at-a-time to an OpenAI-compatible model for classification; per-transaction calls are resilient (individual failures don't block others)
-3. **Inline categorization** -- each transaction is categorized at import time (rules first, then per-transaction LLM fallback) with real-time streaming progress via NDJSON
-4. **Streaming auto-categorize** -- the manual auto-categorize endpoint streams NDJSON progress events, showing per-transaction categorization status with a progress bar on the frontend
+2. **Batched LLM fallback** -- uncategorized transactions are batched into configurable chunks (default 10, range 1–50) and sent to an OpenAI-compatible model; reduces API calls and avoids rate limiting
+3. **Inline categorization** -- each transaction is categorized at import time (rules first, then batched LLM fallback) with real-time streaming progress via NDJSON
+4. **Streaming auto-categorize** -- the manual auto-categorize endpoint batches LLM calls but streams per-transaction NDJSON progress events, showing categorization status with a progress bar on the frontend
 5. Auto-categorization also runs on every Plaid sync and can be triggered manually for any remaining uncategorized transactions
 
 ### Tags
@@ -192,7 +192,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Profile & Account** -- display name, avatar URL, bio (with Google fallback)
 - **General** -- currency (CAD, USD, EUR, GBP, etc.), date format, number locale; "Settings saved" flash on save
 - **Sync Schedule** -- per-household sync config (enable/disable, hour, minute, timezone); owner-only editing; "Schedule saved" flash on save; each household gets its own cron job on its own schedule
-- **AI Categorization** — mode-aware: shows "Using managed AI" badge with switch button when managed, or BYOK config form (base URL, model, API key) with switch-to-managed button when BYOK; switchable between managed/BYOK at any time
+- **AI Categorization** — mode-aware: shows "Using managed AI" badge with switch button when managed, or BYOK config form (base URL, model, API key, transactions per request) with switch-to-managed button when BYOK; switchable between managed/BYOK at any time
 - **Integrations** -- household owner configures Plaid client ID, secret, and environment (sandbox/development/production); credentials encrypted at rest with Fernet; masked last-4 display for verification; auto-scrolls via `?section=integrations` deep link
 - **Data Management** -- CSV export, Bulk Import Accounts & Transactions, Bulk Import Accounts & Balances, bulk delete, factory reset (wipes all financial data while preserving login and household), delete account (permanently removes user and all data with household cleanup)
 - Category rules management is on the dedicated Categories page
@@ -641,7 +641,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (492 tests across 23 files):**
+**What's tested (509 tests across 23 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -649,7 +649,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_goals` | 34 | CRUD, shared goals, linked accounts, contributions, ownership, date validation |
 | `test_budgets` | 32 | CRUD, copy, summary, shared budgets, spending preferences, conflicts |
 | `test_household` | 37 | Invite, accept, decline, cancel, rename, leave, scope, invitation email, leave cleanup (budgets, goals, preferences, invitations), accept dissolves solo household (with/without Plaid/LLM/Sync config), blocked when partnered, Plaid items warning |
-| `test_transactions` | 30 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize (rules, per-txn LLM, partial failure, NDJSON streaming), recurring, date validation, response schema |
+| `test_transactions` | 31 | CRUD, search, account/source/category filters, pagination, manual vs. Plaid, auto-categorize (rules, batched LLM, batch_size control, partial failure with break, NDJSON streaming with batched LLM), recurring, date validation, response schema |
 | `test_categories` | 27 | Full CRUD, auto-seed defaults, create validation (empty/whitespace/duplicate), rename cascades to transactions and rules, delete with reassign or nullify, cross-user isolation |
 | `test_accounts` | 35 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization, statement_available_day (create/update/clear/validate), statement-reminders endpoint (match/no-match/last-day-fallback/auth) |
 | `test_scheduler` | 11 | Statement reminder scheduler job (day match, de-duplication, last-day-of-month fallback, no-accounts), per-household scheduler (reads DB config, no-config skips, disabled skips, multiple households, scoped sync items, scoped reminders) |
@@ -659,11 +659,11 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 11 | Resend HTTP API, invitation + statement reminder templates, send/skip/fail/network-error handling, bearer auth, app_url in CTAs |
 | `test_plaid_config` | 13 | GET (configured/not/no-household/member-read), PUT (create/update/non-owner/no-household/invalid-env), DELETE (success/non-owner/not-configured/no-household) |
-| `test_llm_config` | — | BYO LLM config CRUD (owner-only, encryption) |
+| `test_llm_config` | 20 | BYO LLM config CRUD (owner-only, encryption, batch_size default/custom/validation), SSRF validation, Railway internal URL |
 | `test_auth` | 8 | Google OAuth login (mocked), session, `/me`, logout, auto-household on signup, no duplicate household on re-login |
 | `test_managed_plaid` | 16 | PlaidMode enum, AppPlaidConfig model, Household.plaid_mode field, plaid client resolution (managed vs BYOK: uses correct credentials, raises when disabled/missing/none) |
 | `test_managed_plaid_routes` | 26 | Plaid mode GET/PUT (managed/byok/none/switch-blocked/validation), admin plaid-config CRUD (admin-only guard, create/update/delete, household count), /auth/me is_admin field |
-| `test_managed_llm_routes` | 32 | LLM mode GET/PUT (managed/byok/none/switchable/validation), admin llm-config CRUD (admin-only guard, create/update/delete, unchanged sentinel, SSRF validation, household count), categorizer resolution (managed uses AppLLMConfig, BYOK uses HouseholdLLMConfig, none/null returns empty, disabled returns empty) |
+| `test_managed_llm_routes` | 35 | LLM mode GET/PUT (managed/byok/none/switchable/validation), admin llm-config CRUD (admin-only guard, create/update/delete, unchanged sentinel, SSRF validation, household count, batch_size create/validation), categorizer resolution (managed uses AppLLMConfig with batch_size, BYOK uses HouseholdLLMConfig with batch_size, none/null returns empty, disabled returns empty) |
 | `test_admin` | 44 | Admin guard (403 on all endpoints), overview aggregates, users list (pagination, search, stats, filters: active_days/has_linked/has_manual/sort), user detail (accounts, transactions, activity, stats, 404, auth guard), user update (promote/demote/disable/enable), user delete (full FK cascade, self-deletion blocked), disabled user auth, plaid health, error log (pagination, filters), analytics (active users, feature adoption, transaction volume, storage), activity logging, timestamps (created_at on insert, updated_at on flush, created_at unchanged on update) |
 | `test_net_worth` | 5 | Snapshots, history |
 | `test_health` | 2 | Liveness and readiness endpoints |
@@ -687,7 +687,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (464 tests across 44 files):**
+**What's tested (466 tests across 44 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -744,7 +744,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 
 ### Latest coverage snapshot
 
-- Backend (`pytest --cov=app --cov-report=term`): **87% total** (`4119` statements, `552` missed)
+- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`4214` statements, `595` missed)
 - Frontend (`npx vitest run --coverage`): **76.28% statements**, **71.95% branches**, **61.95% functions**, **77.19% lines**
 
 ## Environment Variables

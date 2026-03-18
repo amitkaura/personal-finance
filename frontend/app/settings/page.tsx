@@ -1360,6 +1360,7 @@ function AiSection() {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [batchSize, setBatchSize] = useState(10);
   const [showKey, setShowKey] = useState(false);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
 
@@ -1367,12 +1368,14 @@ function AiSection() {
     if (llmConfig?.configured) {
       setBaseUrl(llmConfig.llm_base_url ?? "");
       setModel(llmConfig.llm_model ?? "");
+      setBatchSize(llmConfig.batch_size ?? 10);
     }
   }, [llmConfig]);
 
   const dirty =
     baseUrl !== (llmConfig?.llm_base_url ?? "") ||
     model !== (llmConfig?.llm_model ?? "") ||
+    batchSize !== (llmConfig?.batch_size ?? 10) ||
     apiKey.length > 0;
 
   const saveMutation = useMutation({
@@ -1400,6 +1403,7 @@ function AiSection() {
       llm_base_url: baseUrl || "https://api.openai.com/v1",
       llm_api_key: apiKey || "unchanged",
       llm_model: model || "gpt-4o-mini",
+      batch_size: batchSize,
     });
   }
 
@@ -1521,6 +1525,21 @@ function AiSection() {
                   )}
                 </button>
               </div>
+            </div>
+            <div>
+              <label className={labelClass}>Transactions per request</label>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={batchSize}
+                onChange={(e) => setBatchSize(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                className={`${inputClass} w-full`}
+                data-testid="llm-batch-size"
+              />
+              <p className="mt-0.5 text-right text-[10px] text-muted-foreground">
+                How many transactions to send in each LLM call (1–50)
+              </p>
             </div>
           </div>
           <div className="mt-4 flex items-center justify-between">

@@ -134,6 +134,7 @@ const MOCK_ADMIN_LLM_CONFIG = {
   llm_base_url: "https://api.openai.com/v1",
   llm_model: "gpt-4o",
   api_key_last4: "5678",
+  batch_size: 10,
   managed_household_count: 2,
 };
 
@@ -528,5 +529,21 @@ describe("AdminPage", () => {
     await waitFor(() => {
       expect(screen.getByTestId("llm-enabled-toggle")).toBeInTheDocument();
     });
+  });
+
+  it("LLM Config tab shows 'Transactions per request' field", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /llm config/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("tab", { name: /llm config/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("llm-batch-size")).toBeInTheDocument();
+    });
+    const input = screen.getByTestId("llm-batch-size") as HTMLInputElement;
+    expect(input.value).toBe("10");
   });
 });

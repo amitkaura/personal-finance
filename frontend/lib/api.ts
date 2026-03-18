@@ -539,6 +539,7 @@ export const api = {
     llm_api_key: string;
     llm_model: string;
     enabled: boolean;
+    batch_size?: number;
   }) =>
     fetcher<AdminLLMConfig>("/settings/admin/llm-config", {
       method: "PUT",
@@ -560,7 +561,7 @@ export const api = {
   // LLM config (per-household BYOK)
   getLLMConfig: () => fetcher<LLMConfig>("/settings/llm-config"),
 
-  updateLLMConfig: (body: { llm_base_url: string; llm_api_key: string; llm_model: string }) =>
+  updateLLMConfig: (body: { llm_base_url: string; llm_api_key: string; llm_model: string; batch_size?: number }) =>
     fetcher<LLMConfig>("/settings/llm-config", {
       method: "PUT",
       body: JSON.stringify(body),

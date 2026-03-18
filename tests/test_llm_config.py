@@ -126,6 +126,51 @@ def test_put_llm_config_no_household(auth_client):
     assert resp.status_code == 404
 
 
+def test_get_llm_config_returns_batch_size(auth_client, session):
+    client, user = auth_client
+    hh = make_household(session, user)
+    make_llm_config(session, hh)
+    resp = client.get("/api/v1/settings/llm-config")
+    assert resp.status_code == 200
+    assert resp.json()["batch_size"] == 10  # default
+
+
+def test_put_llm_config_with_batch_size(auth_client, session):
+    client, user = auth_client
+    make_household(session, user)
+    resp = client.put("/api/v1/settings/llm-config", json={
+        "llm_base_url": "https://api.openai.com/v1",
+        "llm_api_key": "sk-mykey1234",
+        "llm_model": "gpt-4o-mini",
+        "batch_size": 5,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["batch_size"] == 5
+
+    config = session.exec(select(HouseholdLLMConfig)).first()
+    assert config.batch_size == 5
+
+
+def test_put_llm_config_batch_size_validation(auth_client, session):
+    client, user = auth_client
+    make_household(session, user)
+    resp = client.put("/api/v1/settings/llm-config", json={
+        "llm_base_url": "https://api.openai.com/v1",
+        "llm_api_key": "test",
+        "llm_model": "gpt-4o-mini",
+        "batch_size": 0,
+    })
+    assert resp.status_code == 422
+
+    resp = client.put("/api/v1/settings/llm-config", json={
+        "llm_base_url": "https://api.openai.com/v1",
+        "llm_api_key": "test",
+        "llm_model": "gpt-4o-mini",
+        "batch_size": 51,
+    })
+    assert resp.status_code == 422
+
+
 def test_put_llm_config_ssrf_base_url_rejected(auth_client, session):
     client, user = auth_client
     make_household(session, user)
