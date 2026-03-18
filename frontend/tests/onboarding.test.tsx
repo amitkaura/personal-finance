@@ -1,6 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
 import { PLAID_MODES, LLM_MODES } from "@/lib/types";
 
 const mockPush = vi.fn();
@@ -14,6 +15,7 @@ const mockApi = vi.hoisted(() => ({
   setPlaidMode: vi.fn(),
   getLLMMode: vi.fn(),
   setLLMMode: vi.fn(),
+  getPlaidConfig: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({ api: mockApi }));
@@ -254,6 +256,101 @@ describe("OnboardingPage", () => {
 
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith("/");
+    });
+  });
+
+  // ── Sandbox indicator on Plaid mode step ───────────────────────
+
+  it("shows sandbox banner when managed plaid uses sandbox keys", async () => {
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null,
+      managed_available: true,
+      managed_plaid_env: "sandbox",
+    });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("sandbox-banner")).toBeInTheDocument();
+    });
+  });
+
+  it("shows Demo tag on managed card when sandbox keys are used", async () => {
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null,
+      managed_available: true,
+      managed_plaid_env: "sandbox",
+    });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/connect instantly/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText("Demo")).toBeInTheDocument();
+  });
+
+  it("does not show sandbox banner when managed plaid uses production keys", async () => {
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null,
+      managed_available: true,
+      managed_plaid_env: "production",
+    });
+
+    renderWithProviders(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/connect instantly/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("sandbox-banner")).not.toBeInTheDocument();
+    expect(screen.queryByText("Demo")).not.toBeInTheDocument();
+  });
+
+  // ── Cache invalidation ────────────────────────────────────────
+
+  it("invalidates plaid-config cache after selecting managed mode", async () => {
+    const user = userEvent.setup();
+    mockApi.getPlaidMode.mockResolvedValue({
+      mode: null,
+      managed_available: true,
+      managed_plaid_env: "sandbox",
+    });
+    mockApi.setPlaidMode.mockResolvedValue({
+      mode: PLAID_MODES.MANAGED,
+      managed_available: true,
+      managed_plaid_env: "sandbox",
+    });
+    mockApi.getPlaidConfig.mockResolvedValue({
+      configured: true,
+      plaid_env: "sandbox",
+      client_id_last4: null,
+      secret_last4: null,
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(["plaid-config"], {
+      configured: false,
+      plaid_env: null,
+      client_id_last4: null,
+      secret_last4: null,
+    });
+
+    renderWithProviders(<OnboardingPage />, { queryClient });
+
+    await waitFor(() => {
+      expect(screen.getByText(/connect instantly/i)).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /connect instantly/i }));
+
+    await waitFor(() => {
+      expect(mockApi.setPlaidMode).toHaveBeenCalledWith(PLAID_MODES.MANAGED);
+    });
+
+    await waitFor(() => {
+      const state = queryClient.getQueryState(["plaid-config"]);
+      expect(state?.isInvalidated).toBe(true);
     });
   });
 });
