@@ -694,7 +694,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (471 tests across 46 files):**
+**What's tested (472 tests across 46 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -738,7 +738,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `link-account` | 6 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label |
 | `sandbox-banner` | 2 | Test-mode warning text, demo accounts mention |
 | `sandbox-banner-wrapper` | 3 | Renders banner when sandbox, nothing when production, nothing when unconfigured |
-| `onboarding` | 15 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls; wizard step 2 (LLM mode): managed AI + BYOK cards, skip button, setLLMMode calls; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete; sandbox indicator: banner + Demo tag when managed sandbox keys, hidden for production |
+| `onboarding` | 16 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, setPlaidMode calls; wizard step 2 (LLM mode): managed AI + BYOK cards, skip button, setLLMMode calls; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete; sandbox indicator: banner + Demo tag when managed sandbox keys, hidden for production; cache invalidation: plaid-config cache cleared after mode selection |
 | `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
 | `admin` | 20 | Tab rendering (6 tabs including Plaid Config and LLM Config), KPI cards with drill-down click (Active 7d, Linked/Manual accounts → users tab with filters), filter badge and clear, user list, disable/delete actions with confirmation, expandable user detail row (accounts, transactions, activity), tab switching (plaid health, analytics with active-users and transaction-volume charts), Plaid Config tab (config status, environment selector, save button), LLM Config tab (config status, model/base URL display, save button, enabled toggle) |
 | `admin-plaid-section` | 3 | Plaid Config tab visibility in admin panel, managed household count, environment selector |

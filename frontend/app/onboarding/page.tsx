@@ -25,6 +25,7 @@ function PlaidModeStep({ onComplete }: StepProps) {
     mutationFn: (mode: string) => api.setPlaidMode(mode),
     onSuccess: (data) => {
       queryClient.setQueryData(["plaid-mode"], data);
+      queryClient.invalidateQueries({ queryKey: ["plaid-config"] });
       onComplete();
     },
     onError: (err: Error) => setError(err.message),
