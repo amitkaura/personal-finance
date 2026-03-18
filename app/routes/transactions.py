@@ -267,6 +267,10 @@ def auto_categorize(
         return StreamingResponse(
             _auto_categorize_stream(session, user),
             media_type="application/x-ndjson",
+            headers={
+                "X-Accel-Buffering": "no",
+                "Cache-Control": "no-cache",
+            },
         )
     result = auto_categorize_pending(session, user.id)
     return result
@@ -281,151 +285,165 @@ def _auto_categorize_stream(session: Session, user: User):
     import logging as _logging
     _logger = _logging.getLogger(__name__)
 
-    user_account_ids = session.exec(
-        select(Account.id).where(Account.user_id == user.id)
-    ).all()
-    txns = session.exec(
-        select(Transaction).where(
-            Transaction.category == None,  # noqa: E711
-            or_(
-                Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
-                Transaction.user_id == user.id,
-            ),
-        )
-    ).all()
+    try:
+        user_account_ids = session.exec(
+            select(Account.id).where(Account.user_id == user.id)
+        ).all()
+        txns = session.exec(
+            select(Transaction).where(
+                Transaction.category == None,  # noqa: E711
+                or_(
+                    Transaction.account_id.in_(user_account_ids),  # type: ignore[union-attr]
+                    Transaction.user_id == user.id,
+                ),
+            )
+        ).all()
 
-    total = len(txns)
-    categorized = 0
-    progress_idx = 0
-    llm_pending: list[Transaction] = []
+        total = len(txns)
+        categorized = 0
+        progress_idx = 0
+        llm_pending: list[Transaction] = []
 
-    # #region agent log
-    print(f"[DEBUG ff3a38] stream: total_uncategorized={total}, user_id={user.id}", flush=True)
-    # #endregion
-
-    for txn in txns:
-        cat = categorize_by_rules(txn.merchant_name or "", session, user.id)
-        if cat:
-            txn.category = cat
-            session.add(txn)
-            categorized += 1
-            progress_idx += 1
-            yield json.dumps({
-                "status": "categorized",
-                "current": progress_idx,
-                "total": total,
-                "merchant_name": txn.merchant_name,
-                "category": cat,
-            }) + "\n"
-        else:
-            llm_pending.append(txn)
-
-    if llm_pending:
-        import httpx as _httpx
-        base_url, api_key, model, batch_size = _get_llm_config(user.id)
         # #region agent log
-        print(f"[DEBUG ff3a38] stream: llm_pending={len(llm_pending)}, has_api_key={bool(api_key)}, base_url={base_url}, model={model}, batch_size={batch_size}", flush=True)
+        print(f"[DEBUG ff3a38] stream: total_uncategorized={total}, user_id={user.id}", flush=True)
         # #endregion
-        if api_key:
-            txn_dicts = [
-                {
-                    "id": t.id,
-                    "merchant_name": t.merchant_name or "Unknown",
-                    "plaid_category": getattr(t, "plaid_category_code", None) or "N/A",
-                    "amount": float(t.amount),
-                }
-                for t in llm_pending
-            ]
-            txn_by_id = {t.id: t for t in llm_pending}
 
-            for i in range(0, len(txn_dicts), batch_size):
-                # #region agent log
-                print(f"[DEBUG ff3a38] stream: batch_start i={i}, batch_size={batch_size}", flush=True)
-                # #endregion
-                chunk = txn_dicts[i : i + batch_size]
-                chunk_txns = llm_pending[i : i + batch_size]
-                try:
-                    results = _categorize_chunk_llm(chunk, base_url, api_key, model)
-                except (_httpx.TimeoutException, _httpx.ConnectError) as exc:
-                    _logger.warning("LLM unreachable (batch %d–%d): %s", i, i + len(chunk), exc)
-                    # #region agent log
-                    print(f"[DEBUG ff3a38] stream: batch i={i} connect_error: {exc}", flush=True)
-                    # #endregion
-                    for txn in chunk_txns:
-                        progress_idx += 1
-                        yield json.dumps({
-                            "status": "skipped",
-                            "current": progress_idx,
-                            "total": total,
-                            "merchant_name": txn.merchant_name,
-                            "category": None,
-                        }) + "\n"
-                    break
-                except Exception as _exc:
-                    _logger.exception("LLM categorization failed (batch %d–%d)", i, i + len(chunk))
-                    # #region agent log
-                    print(f"[DEBUG ff3a38] stream: batch i={i} exception: {type(_exc).__name__}: {_exc}", flush=True)
-                    # #endregion
-                    results = {}
+        yield json.dumps({"status": "starting", "total": total}) + "\n"
 
-                # #region agent log
-                print(f"[DEBUG ff3a38] stream: batch i={i} yielding {len(chunk_txns)} results, results_keys={list(results.keys())[:5]}", flush=True)
-                # #endregion
-                for txn in chunk_txns:
-                    cat = results.get(txn.id)
-                    progress_idx += 1
-                    if cat:
-                        txn.category = cat
-                        session.add(txn)
-                        categorized += 1
-                        yield json.dumps({
-                            "status": "categorized",
-                            "current": progress_idx,
-                            "total": total,
-                            "merchant_name": txn.merchant_name,
-                            "category": cat,
-                        }) + "\n"
-                    else:
-                        # #region agent log
-                        print(f"[DEBUG ff3a38] stream: txn {txn.id} skipped, id_type={type(txn.id).__name__}, results_key_types={[type(k).__name__ for k in list(results.keys())[:3]]}", flush=True)
-                        # #endregion
-                        yield json.dumps({
-                            "status": "skipped",
-                            "current": progress_idx,
-                            "total": total,
-                            "merchant_name": txn.merchant_name,
-                            "category": None,
-                        }) + "\n"
-                # #region agent log
-                print(f"[DEBUG ff3a38] stream: batch i={i} done, moving to next", flush=True)
-                # #endregion
-        else:
-            # #region agent log
-            print(f"[DEBUG ff3a38] stream: no api_key, skipping all", flush=True)
-            # #endregion
-            for txn in llm_pending:
+        for txn in txns:
+            cat = categorize_by_rules(txn.merchant_name or "", session, user.id)
+            if cat:
+                txn.category = cat
+                session.add(txn)
+                categorized += 1
                 progress_idx += 1
                 yield json.dumps({
-                    "status": "skipped",
+                    "status": "categorized",
                     "current": progress_idx,
                     "total": total,
                     "merchant_name": txn.merchant_name,
-                    "category": None,
+                    "category": cat,
                 }) + "\n"
+            else:
+                llm_pending.append(txn)
 
-    # #region agent log
-    print(f"[DEBUG ff3a38] stream: committing session, categorized={categorized}", flush=True)
-    # #endregion
-    session.commit()
-    yield json.dumps({
-        "status": "complete",
-        "total": total,
-        "categorized": categorized,
-        "skipped": total - categorized,
-    }) + "\n"
-    # #region agent log
-    print(f"[DEBUG ff3a38] stream: COMPLETE yielded", flush=True)
-    # #endregion
+        if llm_pending:
+            import httpx as _httpx
+            base_url, api_key, model, batch_size = _get_llm_config(user.id)
+            # #region agent log
+            print(f"[DEBUG ff3a38] stream: llm_pending={len(llm_pending)}, has_api_key={bool(api_key)}, base_url={base_url}, model={model}, batch_size={batch_size}", flush=True)
+            # #endregion
+            if api_key:
+                txn_dicts = [
+                    {
+                        "id": t.id,
+                        "merchant_name": t.merchant_name or "Unknown",
+                        "plaid_category": getattr(t, "plaid_category_code", None) or "N/A",
+                        "amount": float(t.amount),
+                    }
+                    for t in llm_pending
+                ]
+                txn_by_id = {t.id: t for t in llm_pending}
+
+                for i in range(0, len(txn_dicts), batch_size):
+                    # #region agent log
+                    print(f"[DEBUG ff3a38] stream: batch_start i={i}, batch_size={batch_size}", flush=True)
+                    # #endregion
+                    chunk = txn_dicts[i : i + batch_size]
+                    chunk_txns = llm_pending[i : i + batch_size]
+                    try:
+                        results = _categorize_chunk_llm(chunk, base_url, api_key, model)
+                    except (_httpx.TimeoutException, _httpx.ConnectError) as exc:
+                        _logger.warning("LLM unreachable (batch %d–%d): %s", i, i + len(chunk), exc)
+                        # #region agent log
+                        print(f"[DEBUG ff3a38] stream: batch i={i} connect_error: {exc}", flush=True)
+                        # #endregion
+                        for txn in chunk_txns:
+                            progress_idx += 1
+                            yield json.dumps({
+                                "status": "skipped",
+                                "current": progress_idx,
+                                "total": total,
+                                "merchant_name": txn.merchant_name,
+                                "category": None,
+                            }) + "\n"
+                        break
+                    except Exception as _exc:
+                        _logger.exception("LLM categorization failed (batch %d–%d)", i, i + len(chunk))
+                        # #region agent log
+                        print(f"[DEBUG ff3a38] stream: batch i={i} exception: {type(_exc).__name__}: {_exc}", flush=True)
+                        # #endregion
+                        results = {}
+
+                    # #region agent log
+                    print(f"[DEBUG ff3a38] stream: batch i={i} yielding {len(chunk_txns)} results, results_keys={list(results.keys())[:5]}", flush=True)
+                    # #endregion
+                    for txn in chunk_txns:
+                        cat = results.get(txn.id)
+                        progress_idx += 1
+                        if cat:
+                            txn.category = cat
+                            session.add(txn)
+                            categorized += 1
+                            yield json.dumps({
+                                "status": "categorized",
+                                "current": progress_idx,
+                                "total": total,
+                                "merchant_name": txn.merchant_name,
+                                "category": cat,
+                            }) + "\n"
+                        else:
+                            # #region agent log
+                            print(f"[DEBUG ff3a38] stream: txn {txn.id} skipped, id_type={type(txn.id).__name__}, results_key_types={[type(k).__name__ for k in list(results.keys())[:3]]}", flush=True)
+                            # #endregion
+                            yield json.dumps({
+                                "status": "skipped",
+                                "current": progress_idx,
+                                "total": total,
+                                "merchant_name": txn.merchant_name,
+                                "category": None,
+                            }) + "\n"
+                    # #region agent log
+                    print(f"[DEBUG ff3a38] stream: batch i={i} done, moving to next", flush=True)
+                    # #endregion
+            else:
+                # #region agent log
+                print(f"[DEBUG ff3a38] stream: no api_key, skipping all", flush=True)
+                # #endregion
+                for txn in llm_pending:
+                    progress_idx += 1
+                    yield json.dumps({
+                        "status": "skipped",
+                        "current": progress_idx,
+                        "total": total,
+                        "merchant_name": txn.merchant_name,
+                        "category": None,
+                    }) + "\n"
+
+        # #region agent log
+        print(f"[DEBUG ff3a38] stream: committing session, categorized={categorized}", flush=True)
+        # #endregion
+        session.commit()
+        yield json.dumps({
+            "status": "complete",
+            "total": total,
+            "categorized": categorized,
+            "skipped": total - categorized,
+        }) + "\n"
+        # #region agent log
+        print(f"[DEBUG ff3a38] stream: COMPLETE yielded", flush=True)
+        # #endregion
+    except GeneratorExit:
+        # #region agent log
+        print(f"[DEBUG ff3a38] stream: GENERATOR_EXIT — client disconnected at progress_idx={locals().get('progress_idx', '?')}", flush=True)
+        # #endregion
+        return
+    except Exception as _gen_exc:
+        # #region agent log
+        print(f"[DEBUG ff3a38] stream: UNEXPECTED_ERROR: {type(_gen_exc).__name__}: {_gen_exc}", flush=True)
+        import traceback; traceback.print_exc()
+        # #endregion
+        raise
 
 
 @router.get("/recurring")

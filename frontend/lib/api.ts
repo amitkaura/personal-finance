@@ -255,6 +255,8 @@ async function streamAutoCategorize(
       const event = JSON.parse(line);
       if (event.status === "complete") {
         result = event as AutoCatCompleteEvent;
+      } else if (event.status === "starting") {
+        // initial keepalive event — skip
       } else if (onProgress) {
         const now = Date.now();
         if (now - lastProgressTime >= 100) {
