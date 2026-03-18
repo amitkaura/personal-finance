@@ -261,7 +261,6 @@ export function CategorizationProgressProvider({
             setImportTotal(evt.total);
             setImportMerchant(evt.merchant);
           },
-          true,
         )
         .then((complete: ImportCompleteEvent) => {
           const impResult = { imported: complete.imported, skipped: complete.skipped };

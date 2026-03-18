@@ -746,7 +746,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 
 ### Latest coverage snapshot
 
-- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`4215` statements, `595` missed)
+- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`4201` statements, `600` missed)
 - Frontend (`npx vitest run --coverage`): **76% statements**, **72% branches**, **62% functions**, **77% lines**
 
 ## Environment Variables
