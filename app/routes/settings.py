@@ -71,7 +71,7 @@ def _validate_llm_base_url(url: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid LLM base URL")
     if host in _ALLOWED_LLM_HOSTS:
         return
-    if host.endswith(".openai.com") or host.endswith(".anthropic.com"):
+    if host.endswith(".openai.com") or host.endswith(".anthropic.com") or host.endswith(".railway.internal"):
         return
     raise HTTPException(
         status_code=400,
