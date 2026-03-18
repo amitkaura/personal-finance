@@ -3,13 +3,14 @@
 import { useState, useEffect, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Zap, Key, Brain, KeyRound, SkipForward } from "lucide-react";
+import { Loader2, Zap, Key, Brain, KeyRound, ArrowLeft } from "lucide-react";
 import { api } from "@/lib/api";
 import { PLAID_MODES, LLM_MODES } from "@/lib/types";
 import SandboxBanner from "@/components/sandbox-banner";
 
 interface StepProps {
   onComplete: () => void;
+  onBack?: () => void;
 }
 
 function PlaidModeStep({ onComplete }: StepProps) {
@@ -24,12 +25,15 @@ function PlaidModeStep({ onComplete }: StepProps) {
   const selectMode = useMutation({
     mutationFn: (mode: string) => api.setPlaidMode(mode),
     onSuccess: (data) => {
-      queryClient.setQueryData(["plaid-mode"], data);
       queryClient.invalidateQueries({ queryKey: ["plaid-config"] });
+      queryClient.setQueryData(["plaid-mode"], data);
       onComplete();
     },
     onError: (err: Error) => setError(err.message),
   });
+
+  const managedAvailable = plaidMode?.managed_available ?? false;
+  const isSandbox = managedAvailable && plaidMode?.managed_plaid_env === "sandbox";
 
   if (isLoading) {
     return (
@@ -39,9 +43,6 @@ function PlaidModeStep({ onComplete }: StepProps) {
     );
   }
 
-  const managedAvailable = plaidMode?.managed_available ?? false;
-  const isSandbox = managedAvailable && plaidMode?.managed_plaid_env === "sandbox";
-
   return (
     <div className="space-y-6">
       <div className="text-center">
@@ -50,8 +51,6 @@ function PlaidModeStep({ onComplete }: StepProps) {
           Choose how you want to link your financial accounts.
         </p>
       </div>
-
-      {isSandbox && <SandboxBanner />}
 
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -70,18 +69,12 @@ function PlaidModeStep({ onComplete }: StepProps) {
               <Zap className="h-6 w-6 text-accent" />
             </div>
             <div>
-              <div className="flex items-center justify-center gap-2">
-                <h2 className="text-base font-semibold">Connect instantly</h2>
-                {isSandbox && (
-                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
-                    Demo
-                  </span>
-                )}
-              </div>
+              <h2 className="text-base font-semibold">Connect instantly</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Link your bank accounts right away — no setup required.
+                Use the built-in Plaid integration — no API keys needed.
               </p>
             </div>
+            {isSandbox && <SandboxBanner />}
           </button>
         )}
 
@@ -102,6 +95,14 @@ function PlaidModeStep({ onComplete }: StepProps) {
         </button>
       </div>
 
+      <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        <p>
+          You can switch between managed and bring-your-own-keys mode anytime
+          in <strong className="text-foreground">Settings &gt; Integrations</strong>,
+          as long as no bank accounts are linked yet.
+        </p>
+      </div>
+
       {selectMode.isPending && (
         <div className="flex justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -112,7 +113,7 @@ function PlaidModeStep({ onComplete }: StepProps) {
 }
 
 
-function LLMModeStep({ onComplete }: StepProps) {
+function LLMModeStep({ onComplete, onBack }: StepProps) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
 
@@ -191,18 +192,27 @@ function LLMModeStep({ onComplete }: StepProps) {
         </button>
       </div>
 
-      <div className="flex justify-center">
-        <button
-          onClick={() => selectMode.mutate(LLM_MODES.NONE)}
-          disabled={selectMode.isPending}
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <SkipForward className="h-4 w-4" />
-            Skip for now
-          </span>
-        </button>
+      <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        <p>
+          You can change your AI categorization mode later
+          in <strong className="text-foreground">Settings &gt; Integrations</strong>.
+        </p>
       </div>
+
+      {onBack && (
+        <div className="flex justify-center">
+          <button
+            onClick={onBack}
+            disabled={selectMode.isPending}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </span>
+          </button>
+        </div>
+      )}
 
       {selectMode.isPending && (
         <div className="flex justify-center">
@@ -277,8 +287,14 @@ export default function OnboardingPage() {
     setActiveStep(nextStep);
   }
 
+  function handleStepBack() {
+    if (currentIdx > 0) {
+      setActiveStep(STEP_IDS[currentIdx - 1]);
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
+    <div className="flex flex-1 items-center justify-center px-4">
       <div className="w-full max-w-lg space-y-6">
         {STEP_IDS.length > 1 && (
           <div className="flex justify-center" data-testid="step-indicator">
@@ -288,7 +304,10 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        <StepComponent onComplete={handleStepComplete} />
+        <StepComponent
+          onComplete={handleStepComplete}
+          onBack={currentIdx > 0 ? handleStepBack : undefined}
+        />
       </div>
     </div>
   );

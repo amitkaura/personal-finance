@@ -38,9 +38,6 @@ const DashboardActions = dynamic(() => import("@/components/dashboard-actions"),
 const PlaidSetupBanner = dynamic(() => import("@/components/plaid-setup-banner"), {
   loading: () => null,
 });
-const OnboardingRedirect = dynamic(() => import("@/components/onboarding-redirect"), {
-  loading: () => null,
-});
 const SandboxBannerWrapper = dynamic(() => import("@/components/sandbox-banner-wrapper"), {
   loading: () => null,
 });
@@ -48,7 +45,6 @@ const SandboxBannerWrapper = dynamic(() => import("@/components/sandbox-banner-w
 export default function DashboardPage() {
   return (
     <>
-      <OnboardingRedirect />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>

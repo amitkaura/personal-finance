@@ -323,6 +323,7 @@ export interface PlaidModeResponse {
   mode: "managed" | "byok" | null;
   managed_available: boolean;
   managed_plaid_env: string | null;
+  has_linked_accounts: boolean;
 }
 
 export interface AdminPlaidConfig {
