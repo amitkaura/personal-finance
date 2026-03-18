@@ -166,7 +166,7 @@ def _categorize_chunk_llm(
         f"{base_url}/chat/completions",
         headers=headers,
         json=payload,
-        timeout=15.0,
+        timeout=120.0,
     )
     resp.raise_for_status()
     content = resp.json()["choices"][0]["message"]["content"]
