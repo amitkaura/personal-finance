@@ -59,6 +59,7 @@ class LinkTokenResponse(BaseModel):
 class ExchangeTokenRequest(BaseModel):
     public_token: str
     institution_name: str | None = None
+    institution_id: str | None = None
 
 
 class ExchangeTokenResponse(BaseModel):
@@ -166,6 +167,21 @@ def exchange_public_token(
     user: User = Depends(get_current_user),
 ):
     """Exchange a public token for an access token and persist the Plaid item."""
+    if body.institution_id:
+        user_scope_ids = set(get_scoped_user_ids(session, user, "household"))
+        existing_item = session.exec(
+            select(PlaidItem).where(
+                PlaidItem.institution_id == body.institution_id,
+                PlaidItem.user_id.in_(user_scope_ids),  # type: ignore[union-attr]
+            )
+        ).first()
+        if existing_item:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{existing_item.institution_name or 'This institution'} is already linked. "
+                       "Use the Connections page to manage your existing connection.",
+            )
+
     client = get_household_plaid_client(session, user)
 
     exchange_request = ItemPublicTokenExchangeRequest(public_token=body.public_token)
@@ -179,6 +195,7 @@ def exchange_public_token(
         encrypted_access_token=encrypt_token(access_token),
         item_id=item_id,
         institution_name=body.institution_name,
+        institution_id=body.institution_id,
     )
     session.add(plaid_item)
     session.flush()
@@ -599,6 +616,7 @@ def list_plaid_items(
             "id": item.id,
             "item_id": item.item_id,
             "institution_name": item.institution_name,
+            "institution_id": item.institution_id,
             "status": item.status,
             "plaid_error_code": item.plaid_error_code,
             "plaid_error_message": item.plaid_error_message,

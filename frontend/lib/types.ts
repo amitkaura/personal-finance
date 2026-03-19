@@ -40,6 +40,7 @@ export interface PlaidConnection {
   id: number;
   item_id: string;
   institution_name: string | null;
+  institution_id: string | null;
   status: string;
   plaid_error_code: string | null;
   plaid_error_message: string | null;

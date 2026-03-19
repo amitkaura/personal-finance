@@ -539,6 +539,114 @@ def test_sync_transactions_batch_llm(session):
     mock_batch.assert_called()
 
 
+# -- Duplicate item prevention ---------------------------------------------
+
+
+def test_exchange_token_stores_institution_id(auth_client, session):
+    """institution_id from the request body is persisted on the PlaidItem."""
+    client, user = auth_client
+    mock_client = _mock_plaid_exchange()
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client):
+        resp = client.post("/api/v1/plaid/exchange-token", json={
+            "public_token": "public-sandbox-abc",
+            "institution_name": "Wells Fargo",
+            "institution_id": "ins_4",
+        })
+
+    assert resp.status_code == 200
+    item = session.exec(
+        select(PlaidItem).where(PlaidItem.user_id == user.id)
+    ).first()
+    assert item.institution_id == "ins_4"
+
+
+def test_exchange_token_duplicate_institution_rejected(auth_client, session):
+    """A 409 is returned when the user already has an item at the same institution."""
+    client, user = auth_client
+
+    existing = PlaidItem(
+        user_id=user.id,
+        encrypted_access_token=encrypt_token("access-existing"),
+        item_id="item-existing-001",
+        institution_name="Wells Fargo",
+        institution_id="ins_4",
+    )
+    session.add(existing)
+    session.commit()
+
+    mock_client = _mock_plaid_exchange()
+    with patch(MOCK_HH_CLIENT, return_value=mock_client):
+        resp = client.post("/api/v1/plaid/exchange-token", json={
+            "public_token": "public-sandbox-abc",
+            "institution_name": "Wells Fargo",
+            "institution_id": "ins_4",
+        })
+
+    assert resp.status_code == 409
+    assert "already linked" in resp.json()["detail"].lower()
+
+
+def test_exchange_token_duplicate_different_user_allowed(auth_client, session):
+    """Different users can link the same institution without conflict."""
+    client, user = auth_client
+    other = make_user(session)
+
+    existing = PlaidItem(
+        user_id=other.id,
+        encrypted_access_token=encrypt_token("access-other"),
+        item_id="item-other-001",
+        institution_name="Wells Fargo",
+        institution_id="ins_4",
+    )
+    session.add(existing)
+    session.commit()
+
+    mock_client = _mock_plaid_exchange()
+    with patch(MOCK_HH_CLIENT, return_value=mock_client):
+        resp = client.post("/api/v1/plaid/exchange-token", json={
+            "public_token": "public-sandbox-abc",
+            "institution_name": "Wells Fargo",
+            "institution_id": "ins_4",
+        })
+
+    assert resp.status_code == 200
+
+
+def test_exchange_token_no_institution_id_skips_duplicate_check(auth_client, session):
+    """When institution_id is not provided, the duplicate check is skipped."""
+    client, user = auth_client
+    mock_client = _mock_plaid_exchange()
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client):
+        resp = client.post("/api/v1/plaid/exchange-token", json={
+            "public_token": "public-sandbox-abc",
+            "institution_name": "Wells Fargo",
+        })
+
+    assert resp.status_code == 200
+
+
+def test_list_items_includes_institution_id(auth_client, session):
+    """list_plaid_items response includes institution_id."""
+    client, user = auth_client
+    item = PlaidItem(
+        user_id=user.id,
+        encrypted_access_token=encrypt_token("access-test"),
+        item_id="item-inst-id-test",
+        institution_name="Chase",
+        institution_id="ins_3",
+    )
+    session.add(item)
+    session.commit()
+
+    resp = client.get("/api/v1/plaid/items")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["institution_id"] == "ins_3"
+
+
 # -- Exchange-token no background sync ------------------------------------
 
 

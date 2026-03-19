@@ -9,7 +9,9 @@ const mockStartSync = vi.fn();
 let capturedOnSuccess: ((token: string, meta: unknown) => void) | null = null;
 const mockOpen = vi.fn(() => {
   if (capturedOnSuccess) {
-    capturedOnSuccess("public-sandbox-xyz", { institution: { name: "Test Bank" } });
+    capturedOnSuccess("public-sandbox-xyz", {
+      institution: { name: "Test Bank", institution_id: "ins_109508" },
+    });
   }
 });
 
@@ -135,6 +137,38 @@ describe("LinkAccount", () => {
 
     await waitFor(() => {
       expect(mockStartSync).toHaveBeenCalled();
+    });
+  });
+
+  it("passes institution_id to exchangeToken from onSuccess metadata", async () => {
+    const user = userEvent.setup();
+    mockApi.createLinkToken.mockResolvedValue({ link_token: "link-tok" });
+    mockApi.exchangeToken.mockResolvedValue({ item_id: "item-1", accounts_synced: 1 });
+
+    renderWithProviders(<LinkAccount />);
+    await user.click(screen.getByText("Link Account"));
+
+    await waitFor(() => {
+      expect(mockApi.exchangeToken).toHaveBeenCalledWith(
+        "public-sandbox-xyz",
+        "Test Bank",
+        "ins_109508",
+      );
+    });
+  });
+
+  it("shows duplicate item error when exchange returns 409", async () => {
+    const user = userEvent.setup();
+    mockApi.createLinkToken.mockResolvedValue({ link_token: "link-tok" });
+    mockApi.exchangeToken.mockRejectedValue(
+      new Error("Test Bank is already linked. Use the Connections page to manage your existing connection."),
+    );
+
+    renderWithProviders(<LinkAccount />);
+    await user.click(screen.getByText("Link Account"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/already linked/i)).toBeInTheDocument();
     });
   });
 

@@ -485,12 +485,13 @@ export const api = {
   repairPlaidItem: (plaidItemId: number) =>
     fetcher<{ status: string }>(`/plaid/items/${plaidItemId}/repair`, { method: "POST" }),
 
-  exchangeToken: (publicToken: string, institutionName?: string) =>
+  exchangeToken: (publicToken: string, institutionName?: string, institutionId?: string) =>
     fetcher<{ item_id: string; accounts_synced: number }>("/plaid/exchange-token", {
       method: "POST",
       body: JSON.stringify({
         public_token: publicToken,
         institution_name: institutionName,
+        ...(institutionId && { institution_id: institutionId }),
       }),
     }),
 
