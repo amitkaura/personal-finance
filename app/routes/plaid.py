@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from starlette.responses import StreamingResponse
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.country_code import CountryCode
@@ -27,8 +28,26 @@ from app.categorizer import categorize_batch_llm, load_rules, match_rules
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
 from app.household import get_scoped_user_ids
-from app.models import Account, AccountType, PlaidItem, Transaction, User
-from app.plaid_client import get_household_plaid_client, get_household_plaid_client_for_user_id
+from sqlalchemy import delete as sa_delete
+
+from app.models import (
+    Account,
+    AccountType,
+    PlaidItem,
+    PlaidWebhookEvent,
+    PLAID_ITEM_STATUS_ERROR,
+    PLAID_ITEM_STATUS_HEALTHY,
+    PLAID_ITEM_STATUS_NEW_ACCOUNTS,
+    PLAID_ITEM_STATUS_PENDING_DISCONNECT,
+    PLAID_ITEM_STATUS_REVOKED,
+    SYNC_TRIGGERING_CODES,
+    Transaction,
+    User,
+)
+from app.plaid_client import get_app_plaid_client, get_household_plaid_client, get_household_plaid_client_for_user_id
+from app.webhook_verify import verify_plaid_webhook
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/plaid", tags=["plaid"])
 
@@ -53,16 +72,91 @@ def create_link_token(
     user: User = Depends(get_current_user),
 ):
     """Generate a Plaid Link token to initialize the Link flow."""
+    from app.config import get_settings
+
+    settings = get_settings()
     client = get_household_plaid_client(session, user)
+
+    webhook_url = f"{settings.app_url}/api/v1/plaid/webhook"
     request = LinkTokenCreateRequest(
         user=LinkTokenCreateRequestUser(client_user_id=str(user.id)),
         client_name="Personal Finance",
         products=[Products("transactions"), Products("liabilities")],
         country_codes=[CountryCode("US"), CountryCode("CA")],
         language="en",
+        webhook=webhook_url,
     )
     response = client.link_token_create(request)
     return LinkTokenResponse(link_token=response.link_token)
+
+
+@router.post("/link-token/update/{plaid_item_id}", response_model=LinkTokenResponse)
+def create_update_link_token(
+    plaid_item_id: int,
+    account_selection: bool = Query(False),
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Generate a Plaid Link token for update mode (re-authentication or account selection)."""
+    from app.config import get_settings
+    from plaid.model.link_token_create_request_update import LinkTokenCreateRequestUpdate
+
+    item = session.exec(
+        select(PlaidItem).where(
+            PlaidItem.id == plaid_item_id,
+            PlaidItem.user_id == user.id,
+        )
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Plaid item not found")
+
+    settings = get_settings()
+    client = get_household_plaid_client(session, user)
+    access_token = decrypt_token(item.encrypted_access_token)
+
+    webhook_url = f"{settings.app_url}/api/v1/plaid/webhook"
+    kwargs: dict = {
+        "user": LinkTokenCreateRequestUser(client_user_id=str(user.id)),
+        "client_name": "Personal Finance",
+        "country_codes": [CountryCode("US"), CountryCode("CA")],
+        "language": "en",
+        "webhook": webhook_url,
+        "access_token": access_token,
+    }
+    if account_selection:
+        kwargs["update"] = LinkTokenCreateRequestUpdate(account_selection_enabled=True)
+
+    request = LinkTokenCreateRequest(**kwargs)
+    response = client.link_token_create(request)
+    return LinkTokenResponse(link_token=response.link_token)
+
+
+@router.post("/items/{plaid_item_id}/repair")
+def repair_plaid_item(
+    plaid_item_id: int,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Mark a PlaidItem as healthy after successful update mode and trigger sync."""
+    item = session.exec(
+        select(PlaidItem).where(
+            PlaidItem.id == plaid_item_id,
+            PlaidItem.user_id == user.id,
+        )
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Plaid item not found")
+
+    item.status = PLAID_ITEM_STATUS_HEALTHY
+    item.plaid_error_code = None
+    item.plaid_error_message = None
+    session.add(item)
+    session.commit()
+
+    background_tasks.add_task(sync_transactions, item.id)
+
+    return {"status": "repaired"}
 
 
 @router.post("/exchange-token", response_model=ExchangeTokenResponse)
@@ -505,6 +599,9 @@ def list_plaid_items(
             "id": item.id,
             "item_id": item.item_id,
             "institution_name": item.institution_name,
+            "status": item.status,
+            "plaid_error_code": item.plaid_error_code,
+            "plaid_error_message": item.plaid_error_message,
             "owner_name": owner.get("name", ""),
             "owner_picture": owner.get("picture"),
             "accounts": [
@@ -560,6 +657,177 @@ def unlink_plaid_item(
         "institution_name": item.institution_name,
         "accounts_unlinked": len(accounts),
     }
+
+
+# ── Webhook handler functions ────────────────────────────────────
+
+
+def _lookup_plaid_item(session: Session, item_id: str | None) -> PlaidItem | None:
+    if not item_id:
+        return None
+    return session.exec(
+        select(PlaidItem).where(PlaidItem.item_id == item_id)
+    ).first()
+
+
+def _handle_transaction_sync(session, payload, event, background_tasks):
+    plaid_item = _lookup_plaid_item(session, payload.get("item_id"))
+    if plaid_item:
+        background_tasks.add_task(sync_transactions, plaid_item.id)
+        event.processed = True
+        event.action_taken = "sync_triggered"
+        logger.info("Webhook triggered sync for PlaidItem %s", plaid_item.id)
+    else:
+        logger.warning("Webhook received for unknown item_id: %s", payload.get("item_id"))
+
+
+def _handle_transactions_removed(session, payload, event, background_tasks):
+    removed_ids = payload.get("removed_transactions", [])
+    if removed_ids:
+        stmt = sa_delete(Transaction).where(
+            Transaction.plaid_transaction_id.in_(removed_ids)  # type: ignore[union-attr]
+        )
+        result = session.execute(stmt)
+        count = result.rowcount
+        event.action_taken = f"transactions_removed:{count}"
+        logger.info("Removed %d transactions via webhook", count)
+    event.processed = True
+
+
+def _handle_item_error(session, payload, event, background_tasks):
+    plaid_item = _lookup_plaid_item(session, payload.get("item_id"))
+    if plaid_item:
+        error = payload.get("error") or {}
+        plaid_item.status = PLAID_ITEM_STATUS_ERROR
+        plaid_item.plaid_error_code = error.get("error_code") if isinstance(error, dict) else None
+        plaid_item.plaid_error_message = error.get("error_message") if isinstance(error, dict) else None
+        session.add(plaid_item)
+        event.action_taken = f"item_status:error:{plaid_item.plaid_error_code}"
+    event.processed = True
+
+
+def _handle_item_login_repaired(session, payload, event, background_tasks):
+    plaid_item = _lookup_plaid_item(session, payload.get("item_id"))
+    if plaid_item:
+        plaid_item.status = PLAID_ITEM_STATUS_HEALTHY
+        plaid_item.plaid_error_code = None
+        plaid_item.plaid_error_message = None
+        session.add(plaid_item)
+        background_tasks.add_task(sync_transactions, plaid_item.id)
+        event.action_taken = "item_status:healthy:sync_triggered"
+        logger.info("Login repaired for PlaidItem %s, triggering sync", plaid_item.id)
+    event.processed = True
+
+
+def _handle_item_new_accounts(session, payload, event, background_tasks):
+    plaid_item = _lookup_plaid_item(session, payload.get("item_id"))
+    if plaid_item:
+        plaid_item.status = PLAID_ITEM_STATUS_NEW_ACCOUNTS
+        session.add(plaid_item)
+        background_tasks.add_task(sync_transactions, plaid_item.id)
+        event.action_taken = "item_status:new_accounts:sync_triggered"
+        logger.info("New accounts available for PlaidItem %s, setting status and triggering sync", plaid_item.id)
+    event.processed = True
+
+
+def _handle_item_pending_disconnect(session, payload, event, background_tasks):
+    plaid_item = _lookup_plaid_item(session, payload.get("item_id"))
+    if plaid_item:
+        plaid_item.status = PLAID_ITEM_STATUS_PENDING_DISCONNECT
+        session.add(plaid_item)
+        event.action_taken = "item_status:pending_disconnect"
+        logger.info("Pending disconnect for PlaidItem %s", plaid_item.id)
+    event.processed = True
+
+
+def _handle_item_revoked(session, payload, event, background_tasks):
+    plaid_item = _lookup_plaid_item(session, payload.get("item_id"))
+    if plaid_item:
+        plaid_item.status = PLAID_ITEM_STATUS_REVOKED
+        session.add(plaid_item)
+        event.action_taken = "item_status:revoked"
+        logger.info("Permission revoked for PlaidItem %s", plaid_item.id)
+    event.processed = True
+
+
+def _handle_liabilities_update(session, payload, event, background_tasks):
+    plaid_item = _lookup_plaid_item(session, payload.get("item_id"))
+    if plaid_item:
+        background_tasks.add_task(sync_transactions, plaid_item.id)
+        event.action_taken = "sync_triggered:liabilities"
+        logger.info("Liabilities update for PlaidItem %s, triggering sync", plaid_item.id)
+    event.processed = True
+
+
+_WEBHOOK_HANDLERS = {
+    **{("TRANSACTIONS", code): _handle_transaction_sync for code in SYNC_TRIGGERING_CODES},
+    ("TRANSACTIONS", "TRANSACTIONS_REMOVED"): _handle_transactions_removed,
+    ("ITEM", "ERROR"): _handle_item_error,
+    ("ITEM", "LOGIN_REPAIRED"): _handle_item_login_repaired,
+    ("ITEM", "NEW_ACCOUNTS_AVAILABLE"): _handle_item_new_accounts,
+    ("ITEM", "PENDING_DISCONNECT"): _handle_item_pending_disconnect,
+    ("ITEM", "PENDING_EXPIRATION"): _handle_item_pending_disconnect,
+    ("ITEM", "USER_PERMISSION_REVOKED"): _handle_item_revoked,
+    ("LIABILITIES", "DEFAULT_UPDATE"): _handle_liabilities_update,
+}
+
+
+@router.post("/webhook")
+async def plaid_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    """Receive and process Plaid webhook events.
+
+    This endpoint is called by Plaid directly — no user authentication.
+    Verification is done via the Plaid-Verification JWS header.
+    """
+    body = await request.body()
+    verification_header = request.headers.get("Plaid-Verification")
+
+    if not verification_header:
+        raise HTTPException(status_code=400, detail="Missing Plaid-Verification header")
+
+    try:
+        plaid_client = get_app_plaid_client(session)
+        verify_plaid_webhook(body, verification_header, plaid_client)
+    except ValueError as exc:
+        logger.warning("Webhook verification failed: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise HTTPException(
+            status_code=503, detail="Plaid configuration unavailable for webhook verification"
+        )
+
+    payload = json.loads(body)
+    webhook_type = payload.get("webhook_type", "")
+    webhook_code = payload.get("webhook_code", "")
+    item_id = payload.get("item_id")
+
+    error_info = payload.get("error") or {}
+    error_code = error_info.get("error_code") if isinstance(error_info, dict) else None
+    error_message = error_info.get("error_message") if isinstance(error_info, dict) else None
+
+    event = PlaidWebhookEvent(
+        webhook_type=webhook_type,
+        webhook_code=webhook_code,
+        item_id=item_id,
+        error_code=error_code,
+        error_message=error_message,
+        raw_payload=json.dumps(payload),
+    )
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+
+    handler = _WEBHOOK_HANDLERS.get((webhook_type, webhook_code))
+    if handler:
+        handler(session, payload, event, background_tasks)
+        session.add(event)
+        session.commit()
+
+    return {"status": "received"}
 
 
 def sync_transactions(plaid_item_id: int) -> None:

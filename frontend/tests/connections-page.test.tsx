@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import ConnectionsPage from "@/app/connections/page";
 import { renderWithProviders } from "./helpers";
 import type { ViewScope, PlaidConnection } from "@/lib/types";
+import { PLAID_ITEM_STATUS } from "@/lib/types";
 
 const mockApi = vi.hoisted(() => ({
   getPlaidItems: vi.fn(),
@@ -12,6 +13,8 @@ const mockApi = vi.hoisted(() => ({
   unlinkPlaidItem: vi.fn(),
   createLinkToken: vi.fn(),
   exchangeToken: vi.fn(),
+  createUpdateLinkToken: vi.fn(),
+  repairPlaidItem: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -35,6 +38,9 @@ const TEST_CONNECTION: PlaidConnection = {
   id: 1,
   item_id: "item-1",
   institution_name: "Test Bank",
+  status: PLAID_ITEM_STATUS.HEALTHY,
+  plaid_error_code: null,
+  plaid_error_message: null,
   accounts: [
     {
       id: 1,
@@ -173,5 +179,78 @@ describe("ConnectionsPage", () => {
       expect(screen.getByText(/plaid integration is not set up/i)).toBeInTheDocument();
     });
     expect(screen.queryByTestId("sandbox-banner")).not.toBeInTheDocument();
+  });
+
+  // --- Connection status banners ---
+
+  it("shows error banner with Reconnect button for error-status connection", async () => {
+    const errorConnection: PlaidConnection = {
+      ...TEST_CONNECTION,
+      status: PLAID_ITEM_STATUS.ERROR,
+      plaid_error_code: "ITEM_LOGIN_REQUIRED",
+      plaid_error_message: "the login details have changed",
+    };
+    mockApi.getPlaidItems.mockResolvedValue([errorConnection]);
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/needs re-authentication/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reconnect/i })).toBeInTheDocument();
+  });
+
+  it("shows warning banner for pending_disconnect connection", async () => {
+    const pendingConnection: PlaidConnection = {
+      ...TEST_CONNECTION,
+      status: PLAID_ITEM_STATUS.PENDING_DISCONNECT,
+    };
+    mockApi.getPlaidItems.mockResolvedValue([pendingConnection]);
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/will expire soon/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reconnect/i })).toBeInTheDocument();
+  });
+
+  it("shows revoked banner for revoked connection", async () => {
+    const revokedConnection: PlaidConnection = {
+      ...TEST_CONNECTION,
+      status: PLAID_ITEM_STATUS.REVOKED,
+    };
+    mockApi.getPlaidItems.mockResolvedValue([revokedConnection]);
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/was revoked/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reconnect/i })).toBeInTheDocument();
+  });
+
+  it("shows new accounts banner with Review Accounts button", async () => {
+    const newAccountsConnection: PlaidConnection = {
+      ...TEST_CONNECTION,
+      status: PLAID_ITEM_STATUS.NEW_ACCOUNTS,
+    };
+    mockApi.getPlaidItems.mockResolvedValue([newAccountsConnection]);
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/new accounts are available/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /review accounts/i })).toBeInTheDocument();
+  });
+
+  it("does not show status banner for healthy connections", async () => {
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/needs re-authentication/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/will expire soon/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/was revoked/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/new accounts are available/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reconnect/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /review accounts/i })).not.toBeInTheDocument();
   });
 });

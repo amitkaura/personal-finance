@@ -24,6 +24,8 @@ import {
   Loader2,
   Settings,
   Brain,
+  Webhook,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { api } from "@/lib/api";
@@ -39,9 +41,10 @@ import type {
   TransactionVolumePoint,
   FeatureAdoption,
   StorageMetric,
+  WebhookEventsResponse,
 } from "@/lib/types";
 
-type Tab = "overview" | "users" | "plaid-health" | "analytics" | "plaid-config" | "llm-config";
+type Tab = "overview" | "users" | "plaid-health" | "analytics" | "plaid-config" | "llm-config" | "webhooks";
 
 interface UserFilters {
   active_days?: number;
@@ -57,6 +60,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "analytics", label: "Analytics" },
   { id: "plaid-config", label: "Plaid Config" },
   { id: "llm-config", label: "LLM Config" },
+  { id: "webhooks", label: "Webhooks" },
 ];
 
 export default function AdminPage() {
@@ -110,6 +114,7 @@ export default function AdminPage() {
       {activeTab === "analytics" && <AnalyticsTab />}
       {activeTab === "plaid-config" && <PlaidConfigTab />}
       {activeTab === "llm-config" && <LLMConfigTab />}
+      {activeTab === "webhooks" && <WebhooksTab />}
     </div>
   );
 }
@@ -1106,6 +1111,177 @@ function LLMConfigTab() {
           onCancel={() => setConfirmRemove(false)}
         />
       </div>
+    </div>
+  );
+}
+
+
+// ── Webhooks Tab ────────────────────────────────────────────────
+
+const WEBHOOK_TYPE_COLORS: Record<string, string> = {
+  TRANSACTIONS: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
+  ITEM: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  AUTH: "bg-purple-500/15 text-purple-700 dark:text-purple-300",
+  HOLDINGS: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+};
+
+function WebhooksTab() {
+  const [page, setPage] = useState(0);
+  const [typeFilter, setTypeFilter] = useState("");
+  const pageSize = 25;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin", "webhook-events", page, typeFilter],
+    queryFn: () =>
+      api.getAdminWebhookEvents({
+        limit: pageSize,
+        offset: page * pageSize,
+        webhook_type: typeFilter || undefined,
+      }),
+    refetchInterval: 10_000,
+  });
+
+  const events = data?.events ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.ceil(total / pageSize);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <Webhook className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">Webhook Events</h2>
+          <span className="text-sm text-muted-foreground">({total})</span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={typeFilter}
+            onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}
+            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+          >
+            <option value="">All types</option>
+            <option value="TRANSACTIONS">TRANSACTIONS</option>
+            <option value="ITEM">ITEM</option>
+            <option value="AUTH">AUTH</option>
+            <option value="HOLDINGS">HOLDINGS</option>
+          </select>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <RefreshCw className="h-3 w-3" />
+            Auto-refresh 10s
+          </div>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="rounded-xl border border-border bg-card p-8">
+          <div className="space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-8 animate-pulse rounded bg-muted" />
+            ))}
+          </div>
+        </div>
+      ) : events.length === 0 ? (
+        <div className="rounded-xl border border-border bg-card p-8 text-center text-muted-foreground">
+          <Webhook className="mx-auto h-10 w-10 mb-3 opacity-40" />
+          <p>No webhook events received yet.</p>
+          <p className="text-sm mt-1">Events will appear here when Plaid sends webhook notifications.</p>
+        </div>
+      ) : (
+        <>
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <th className="px-4 py-2.5 font-medium text-muted-foreground">Time</th>
+                  <th className="px-4 py-2.5 font-medium text-muted-foreground">Type</th>
+                  <th className="px-4 py-2.5 font-medium text-muted-foreground">Code</th>
+                  <th className="px-4 py-2.5 font-medium text-muted-foreground">Item ID</th>
+                  <th className="px-4 py-2.5 font-medium text-muted-foreground">Error</th>
+                  <th className="px-4 py-2.5 font-medium text-muted-foreground">Status</th>
+                  <th className="px-4 py-2.5 font-medium text-muted-foreground">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {events.map((event) => (
+                  <tr key={event.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">
+                      {event.created_at
+                        ? new Date(event.created_at).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span
+                        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                          WEBHOOK_TYPE_COLORS[event.webhook_type] ??
+                          "bg-gray-500/15 text-gray-700 dark:text-gray-300"
+                        }`}
+                      >
+                        {event.webhook_type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs">{event.webhook_code}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground max-w-[140px] truncate">
+                      {event.item_id ?? "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs">
+                      {event.error_code ? (
+                        <span className="text-destructive" title={event.error_message ?? undefined}>
+                          {event.error_code}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {event.processed ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Processed
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Received</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground max-w-[180px] truncate">
+                      {event.action_taken ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Page {page + 1} of {totalPages}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

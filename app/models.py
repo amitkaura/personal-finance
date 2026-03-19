@@ -76,6 +76,9 @@ class PlaidItem(SQLModel, table=True):
     encrypted_access_token: str = Field(index=True)
     item_id: str = Field(unique=True, index=True)
     institution_name: Optional[str] = None
+    status: str = Field(default="healthy")
+    plaid_error_code: Optional[str] = None
+    plaid_error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default=None)
 
@@ -505,6 +508,41 @@ class ErrorLog(SQLModel, table=True):
     endpoint: str
     status_code: Optional[int] = None
     detail: str
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), index=True
+    )
+    updated_at: Optional[datetime] = Field(default=None)
+
+
+# Sync-triggering webhook codes
+PLAID_ITEM_STATUS_HEALTHY = "healthy"
+PLAID_ITEM_STATUS_ERROR = "error"
+PLAID_ITEM_STATUS_PENDING_DISCONNECT = "pending_disconnect"
+PLAID_ITEM_STATUS_REVOKED = "revoked"
+PLAID_ITEM_STATUS_NEW_ACCOUNTS = "new_accounts"
+
+SYNC_TRIGGERING_CODES = frozenset({
+    "SYNC_UPDATES_AVAILABLE",
+    "DEFAULT_UPDATE",
+    "INITIAL_UPDATE",
+    "HISTORICAL_UPDATE",
+})
+
+
+class PlaidWebhookEvent(SQLModel, table=True):
+    """Records incoming Plaid webhook events for admin visibility and auto-sync."""
+
+    __tablename__ = "plaid_webhook_events"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    webhook_type: str = Field(index=True)
+    webhook_code: str = Field(index=True)
+    item_id: Optional[str] = Field(default=None, index=True)
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    raw_payload: str
+    processed: bool = Field(default=False)
+    action_taken: Optional[str] = None
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), index=True
     )

@@ -1,7 +1,7 @@
 import type {
   Account, AccountSummary, AdminLLMConfig, AdminPlaidConfig, AdminOverview, AdminUser, AdminUserDetail, AdminUsersResponse,
   AdminPlaidHealth, AdminErrorsResponse, ActiveUsersPoint, FeatureAdoption,
-  TransactionVolumePoint, StorageMetric,
+  TransactionVolumePoint, StorageMetric, WebhookEventsResponse,
   Budget, BudgetConflict, BudgetSummary,
   CategoryRule, Goal, GoalContribution, GoalsResponse,
   Household, HouseholdInvitation, MonthlyTrend, NetWorthSnapshot,
@@ -459,6 +459,15 @@ export const api = {
 
   createLinkToken: () => fetcher<{ link_token: string }>("/plaid/link-token", { method: "POST" }),
 
+  createUpdateLinkToken: (plaidItemId: number, accountSelection?: boolean) =>
+    fetcher<{ link_token: string }>(
+      `/plaid/link-token/update/${plaidItemId}${accountSelection ? "?account_selection=true" : ""}`,
+      { method: "POST" },
+    ),
+
+  repairPlaidItem: (plaidItemId: number) =>
+    fetcher<{ status: string }>(`/plaid/items/${plaidItemId}/repair`, { method: "POST" }),
+
   exchangeToken: (publicToken: string, institutionName?: string) =>
     fetcher<{ item_id: string; accounts_synced: number }>("/plaid/exchange-token", {
       method: "POST",
@@ -892,4 +901,14 @@ export const api = {
 
   getAdminStorage: () =>
     fetcher<StorageMetric[]>("/admin/analytics/storage"),
+
+  getAdminWebhookEvents: (params?: { limit?: number; offset?: number; webhook_type?: string; webhook_code?: string }) => {
+    const p = new URLSearchParams();
+    if (params?.limit != null) p.set("limit", String(params.limit));
+    if (params?.offset != null) p.set("offset", String(params.offset));
+    if (params?.webhook_type) p.set("webhook_type", params.webhook_type);
+    if (params?.webhook_code) p.set("webhook_code", params.webhook_code);
+    const qs = p.toString();
+    return fetcher<WebhookEventsResponse>(`/admin/webhook-events${qs ? `?${qs}` : ""}`);
+  },
 };
