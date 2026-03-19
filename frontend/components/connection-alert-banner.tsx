@@ -13,6 +13,10 @@ export default function ConnectionAlertBanner() {
     queryKey: ["plaidItems", scope],
     queryFn: () => api.getPlaidItems(scope),
     staleTime: 60_000,
+    refetchInterval: (query) =>
+      query.state.data?.some((c) => c.status !== PLAID_ITEM_STATUS.HEALTHY)
+        ? 30_000
+        : false,
   });
 
   const unhealthy = connections?.filter(

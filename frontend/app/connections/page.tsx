@@ -50,6 +50,10 @@ export default function ConnectionsPage() {
   const { data: connections, isLoading, isError, refetch } = useQuery({
     queryKey: ["plaidItems", scope],
     queryFn: () => api.getPlaidItems(scope),
+    refetchInterval: (query) =>
+      query.state.data?.some((c) => c.status !== PLAID_ITEM_STATUS.HEALTHY)
+        ? 30_000
+        : false,
   });
   const { data: plaidConfig } = useQuery({
     queryKey: ["plaid-config"],
