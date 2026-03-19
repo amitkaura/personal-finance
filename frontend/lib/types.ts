@@ -33,6 +33,7 @@ export const PLAID_ITEM_STATUS = {
   ERROR: "error",
   PENDING_DISCONNECT: "pending_disconnect",
   REVOKED: "revoked",
+  NEW_ACCOUNTS: "new_accounts",
 } as const;
 
 export interface PlaidConnection {

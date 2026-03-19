@@ -227,6 +227,20 @@ describe("ConnectionsPage", () => {
     expect(screen.getByRole("button", { name: /reconnect/i })).toBeInTheDocument();
   });
 
+  it("shows new accounts banner with Review Accounts button", async () => {
+    const newAccountsConnection: PlaidConnection = {
+      ...TEST_CONNECTION,
+      status: PLAID_ITEM_STATUS.NEW_ACCOUNTS,
+    };
+    mockApi.getPlaidItems.mockResolvedValue([newAccountsConnection]);
+    renderWithProviders(<ConnectionsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Test Bank")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/new accounts are available/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /review accounts/i })).toBeInTheDocument();
+  });
+
   it("does not show status banner for healthy connections", async () => {
     renderWithProviders(<ConnectionsPage />);
     await waitFor(() => {
@@ -235,6 +249,8 @@ describe("ConnectionsPage", () => {
     expect(screen.queryByText(/needs re-authentication/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/will expire soon/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/was revoked/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/new accounts are available/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /reconnect/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /review accounts/i })).not.toBeInTheDocument();
   });
 });

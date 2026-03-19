@@ -37,6 +37,7 @@ from app.models import (
     PlaidWebhookEvent,
     PLAID_ITEM_STATUS_ERROR,
     PLAID_ITEM_STATUS_HEALTHY,
+    PLAID_ITEM_STATUS_NEW_ACCOUNTS,
     PLAID_ITEM_STATUS_PENDING_DISCONNECT,
     PLAID_ITEM_STATUS_REVOKED,
     SYNC_TRIGGERING_CODES,
@@ -92,11 +93,13 @@ def create_link_token(
 @router.post("/link-token/update/{plaid_item_id}", response_model=LinkTokenResponse)
 def create_update_link_token(
     plaid_item_id: int,
+    account_selection: bool = Query(False),
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    """Generate a Plaid Link token for update mode (re-authentication)."""
+    """Generate a Plaid Link token for update mode (re-authentication or account selection)."""
     from app.config import get_settings
+    from plaid.model.link_token_create_request_update import LinkTokenCreateRequestUpdate
 
     item = session.exec(
         select(PlaidItem).where(
@@ -112,14 +115,18 @@ def create_update_link_token(
     access_token = decrypt_token(item.encrypted_access_token)
 
     webhook_url = f"{settings.app_url}/api/v1/plaid/webhook"
-    request = LinkTokenCreateRequest(
-        user=LinkTokenCreateRequestUser(client_user_id=str(user.id)),
-        client_name="Personal Finance",
-        country_codes=[CountryCode("US"), CountryCode("CA")],
-        language="en",
-        webhook=webhook_url,
-        access_token=access_token,
-    )
+    kwargs: dict = {
+        "user": LinkTokenCreateRequestUser(client_user_id=str(user.id)),
+        "client_name": "Personal Finance",
+        "country_codes": [CountryCode("US"), CountryCode("CA")],
+        "language": "en",
+        "webhook": webhook_url,
+        "access_token": access_token,
+    }
+    if account_selection:
+        kwargs["update"] = LinkTokenCreateRequestUpdate(account_selection_enabled=True)
+
+    request = LinkTokenCreateRequest(**kwargs)
     response = client.link_token_create(request)
     return LinkTokenResponse(link_token=response.link_token)
 
@@ -715,9 +722,11 @@ def _handle_item_login_repaired(session, payload, event, background_tasks):
 def _handle_item_new_accounts(session, payload, event, background_tasks):
     plaid_item = _lookup_plaid_item(session, payload.get("item_id"))
     if plaid_item:
+        plaid_item.status = PLAID_ITEM_STATUS_NEW_ACCOUNTS
+        session.add(plaid_item)
         background_tasks.add_task(sync_transactions, plaid_item.id)
-        event.action_taken = "sync_triggered:new_accounts"
-        logger.info("New accounts available for PlaidItem %s, triggering sync", plaid_item.id)
+        event.action_taken = "item_status:new_accounts:sync_triggered"
+        logger.info("New accounts available for PlaidItem %s, setting status and triggering sync", plaid_item.id)
     event.processed = True
 
 
