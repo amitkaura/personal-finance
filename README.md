@@ -45,6 +45,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 ### Transaction Management
 - **Batched transaction sync** -- all sync paths (first sync after linking, manual sync, scheduled sync) use batch DB lookups and batch LLM categorization instead of per-transaction queries; first sync after linking shows streaming progress in the drawer (same UX as CSV import)
 - **Auto-create missing accounts** -- if Plaid returns transactions for an account not yet in the database (e.g., a new account opened at the same bank), the account is automatically created, an `ACCOUNT_DISCOVERED` activity log entry is recorded, and the sync progress drawer shows an info banner notifying the user
+- **Plaid webhooks** -- receives and verifies Plaid webhook events (JWS signature verification); automatically triggers transaction sync for `SYNC_UPDATES_AVAILABLE`, `DEFAULT_UPDATE`, `INITIAL_UPDATE`, and `HISTORICAL_UPDATE` events; all events are logged with type, code, item ID, and error details; admin panel "Webhooks" tab shows event history with auto-refresh, type filtering, and pagination
 - Manual transaction entry with merchant name, amount, date, category, and notes
 - **CSV import** -- bulk import accounts & transactions from bank exports with a multi-step wizard; auto-creates accounts, categorizes transactions, skips duplicates, and lets you set account type, subtype, and starting balance per new account
   - Drag-and-drop or file picker upload
@@ -226,6 +227,7 @@ personal-finance/
 │   ├── models.py                   # All SQLModel table definitions
 │   ├── scheduler.py                # Per-household APScheduler cron jobs (sync + reminders)
 │   ├── plaid_client.py             # Plaid API client factory (managed or per-household credentials)
+│   ├── webhook_verify.py           # Plaid webhook JWS signature verification
 │   ├── crypto.py                   # Fernet encrypt/decrypt for access tokens
 │   ├── categorizer.py              # Rule-based + per-transaction LLM categorization
 │   ├── household.py                # Scope helper (personal/partner/household)
@@ -349,6 +351,7 @@ personal-finance/
 │       ├── plaid-mode-aware.test.tsx # PlaidSetupBanner + LinkAccount mode awareness
 │       ├── admin.test.tsx           # Admin panel: tabs, KPI cards, user management, plaid health, analytics, plaid config, llm config
 │       ├── admin-plaid-section.test.tsx # Admin section visibility and household count
+│       ├── admin-webhooks.test.tsx # Webhooks tab: event list, empty state, error details
 │       ├── auth-gate.test.tsx      # Loading, unauthenticated, authenticated layout
 │       ├── staging-gate.test.ts    # SHA-256 hashing and token verification
 │       └── staging-login.test.tsx  # Staging login page rendering, submit, error, redirect
@@ -369,6 +372,7 @@ personal-finance/
 │   ├── test_scheduler.py            # Per-household scheduler + statement reminders
 │   ├── test_sync_config.py          # Sync config CRUD (owner-only)
 │   ├── test_plaid.py               # Link token, exchange token, sync (mocked)
+│   ├── test_webhooks.py            # Plaid webhook endpoint, verification, admin listing
 │   ├── test_plaid_config.py        # BYO Plaid config CRUD (owner-only, encryption)
 │   ├── test_llm_config.py          # BYO LLM config CRUD (owner-only, encryption)
 │   ├── test_managed_plaid.py       # PlaidMode enum, AppPlaidConfig model, client resolution
@@ -412,6 +416,7 @@ personal-finance/
 | `HouseholdInvitation` | Pending email invitation to join a household |
 | `ActivityLog` | Records user actions (login, sync, import, etc.) for DAU/WAU/MAU analytics |
 | `ErrorLog` | Records errors (Plaid sync/link, API 4xx/5xx) for admin monitoring |
+| `PlaidWebhookEvent` | Records incoming Plaid webhook events (type, code, item ID, error details, processed status) |
 
 ## API Reference
 
@@ -426,6 +431,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | DELETE | `/users/:id` | Hard-delete user and all associated data (full FK cascade) |
 | GET | `/users/:id/detail` | User detail: accounts, recent transactions, activity, summary stats |
 | GET | `/plaid-health` | Plaid sync/link error aggregations and recent failures |
+| GET | `/webhook-events` | Paginated Plaid webhook event log (filterable by type/code) |
 | GET | `/errors` | Paginated error log (filterable by user, type, date range) |
 | GET | `/analytics/active-users` | DAU/WAU/MAU time series |
 | GET | `/analytics/feature-adoption` | Users with budgets, goals, tags, rules, categories, linked accounts |
@@ -459,6 +465,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | POST | `/sync/:plaid_item_id` | Sync transactions for a specific item |
 | POST | `/sync-all` | Sync all linked Plaid items (background) |
 | POST | `/sync-all-stream` | Sync all items with streaming NDJSON progress (sync + categorize phases) |
+| POST | `/webhook` | Receive Plaid webhook events (no auth, JWS-verified) |
 | GET | `/items` | List all Plaid connections with accounts |
 | POST | `/items/:id/unlink` | Revoke and delete a Plaid connection |
 
@@ -662,7 +669,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (527 tests across 23 files):**
+**What's tested (538 tests across 24 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -676,6 +683,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_scheduler` | 11 | Statement reminder scheduler job (day match, de-duplication, last-day-of-month fallback, no-accounts), per-household scheduler (reads DB config, no-config skips, disabled skips, multiple households, scoped sync items, scoped reminders) |
 | `test_sync_config` | 13 | Sync config CRUD (get configured/unconfigured/no-household/member-read, create/update/invalid-hour/invalid-minute/non-owner/no-household, delete/non-owner/not-configured/no-household) |
 | `test_plaid` | 28 | Link token, exchange token (success, relink, conflict, institution name, no background sync), sync, sync-all-stream (NDJSON streaming, batch account lookup, update-existing, batch LLM, rules-before-LLM), background sync (batch lookups, batch LLM), auto-create missing accounts (create, activity log, reuse, stream event), items (all Plaid calls mocked) |
+| `test_webhooks` | 11 | Webhook endpoint (store event, reject missing/invalid verification, trigger sync for TRANSACTIONS, skip unknown item, handle ITEM.ERROR, non-sync code), admin webhook-events listing (list, admin-required, pagination, filter by type) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 11 | Resend HTTP API, invitation + statement reminder templates, send/skip/fail/network-error handling, bearer auth, app_url in CTAs |
@@ -708,7 +716,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (489 tests across 47 files):**
+**What's tested (492 tests across 48 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -757,6 +765,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `plaid-mode-aware` | 4 | PlaidSetupBanner hidden for managed mode, shown for BYOK; LinkAccount skips config redirect for managed, unavailable message when disabled |
 | `admin` | 20 | Tab rendering (6 tabs including Plaid Config and LLM Config), KPI cards with drill-down click (Active 7d, Linked/Manual accounts → users tab with filters), filter badge and clear, user list, disable/delete actions with confirmation, expandable user detail row (accounts, transactions, activity), tab switching (plaid health, analytics with active-users and transaction-volume charts), Plaid Config tab (config status, environment selector, save button), LLM Config tab (config status, model/base URL display, save button, enabled toggle) |
 | `admin-plaid-section` | 3 | Plaid Config tab visibility in admin panel, managed household count, environment selector |
+| `admin-webhooks` | 3 | Webhooks tab rendering (event list with type badges and processed status, empty state, error code display) |
 | `staging-gate` | 7 | SHA-256 hashing (deterministic, hex format, uniqueness), token verification (match, mismatch, empty, malformed) |
 | `staging-login` | 6 | Password input and submit button rendering, POST to /api/staging-auth, redirect to / or ?from, error on 401, empty password guard |
 

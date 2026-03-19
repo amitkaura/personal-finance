@@ -31,6 +31,7 @@ from app.models import (
     HouseholdMember,
     NetWorthSnapshot,
     PlaidItem,
+    PlaidWebhookEvent,
     SpendingPreference,
     Tag,
     Transaction,
@@ -723,4 +724,55 @@ def admin_user_detail(
         "recent_transactions": txns_out,
         "recent_activity": activity_out,
         "stats": stats,
+    }
+
+
+# ── Webhook Events ──────────────────────────────────────────────
+
+
+@router.get("/webhook-events")
+def admin_webhook_events(
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+    webhook_type: Optional[str] = Query(default=None),
+    webhook_code: Optional[str] = Query(default=None),
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """List Plaid webhook events (admin only)."""
+    _require_admin(user)
+
+    query = select(PlaidWebhookEvent)
+    count_query = select(func.count(PlaidWebhookEvent.id))
+
+    if webhook_type:
+        query = query.where(PlaidWebhookEvent.webhook_type == webhook_type)
+        count_query = count_query.where(PlaidWebhookEvent.webhook_type == webhook_type)
+    if webhook_code:
+        query = query.where(PlaidWebhookEvent.webhook_code == webhook_code)
+        count_query = count_query.where(PlaidWebhookEvent.webhook_code == webhook_code)
+
+    total = session.exec(count_query).one()
+
+    events = session.exec(
+        query.order_by(col(PlaidWebhookEvent.created_at).desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+
+    return {
+        "total": total,
+        "events": [
+            {
+                "id": e.id,
+                "webhook_type": e.webhook_type,
+                "webhook_code": e.webhook_code,
+                "item_id": e.item_id,
+                "error_code": e.error_code,
+                "error_message": e.error_message,
+                "processed": e.processed,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in events
+        ],
     }
