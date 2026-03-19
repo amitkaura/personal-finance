@@ -35,6 +35,7 @@ from app.models import (
     Account,
     AccountBalanceSnapshot,
     AccountType,
+    ActivityLog,
     AppLLMConfig,
     AppPlaidConfig,
     Budget,
