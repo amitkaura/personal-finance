@@ -73,6 +73,7 @@ const MOCK_WEBHOOK_EVENTS = {
       error_code: null,
       error_message: null,
       processed: true,
+      action_taken: "sync_triggered",
       created_at: "2026-03-18T12:00:00",
     },
     {
@@ -82,7 +83,8 @@ const MOCK_WEBHOOK_EVENTS = {
       item_id: "item_def",
       error_code: "ITEM_LOGIN_REQUIRED",
       error_message: "Login required",
-      processed: false,
+      processed: true,
+      action_taken: "item_status:error:ITEM_LOGIN_REQUIRED",
       created_at: "2026-03-18T11:00:00",
     },
     {
@@ -93,6 +95,7 @@ const MOCK_WEBHOOK_EVENTS = {
       error_code: null,
       error_message: null,
       processed: true,
+      action_taken: "sync_triggered",
       created_at: "2026-03-18T10:00:00",
     },
   ],
@@ -139,6 +142,24 @@ describe("Admin Webhooks Tab", () => {
     await waitFor(() => {
       expect(screen.getByText(/no webhook events/i)).toBeInTheDocument();
     });
+  });
+
+  it("displays action_taken for processed events", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /webhooks/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("tab", { name: /webhooks/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("item_status:error:ITEM_LOGIN_REQUIRED")).toBeInTheDocument();
+    });
+
+    const actionCells = screen.getAllByText("sync_triggered");
+    expect(actionCells.length).toBeGreaterThanOrEqual(1);
   });
 
   it("displays error details for ITEM.ERROR events", async () => {

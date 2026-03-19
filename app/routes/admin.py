@@ -771,6 +771,7 @@ def admin_webhook_events(
                 "error_code": e.error_code,
                 "error_message": e.error_message,
                 "processed": e.processed,
+                "action_taken": e.action_taken,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
             }
             for e in events

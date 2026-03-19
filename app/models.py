@@ -76,6 +76,9 @@ class PlaidItem(SQLModel, table=True):
     encrypted_access_token: str = Field(index=True)
     item_id: str = Field(unique=True, index=True)
     institution_name: Optional[str] = None
+    status: str = Field(default="healthy")
+    plaid_error_code: Optional[str] = None
+    plaid_error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default=None)
 
@@ -512,6 +515,11 @@ class ErrorLog(SQLModel, table=True):
 
 
 # Sync-triggering webhook codes
+PLAID_ITEM_STATUS_HEALTHY = "healthy"
+PLAID_ITEM_STATUS_ERROR = "error"
+PLAID_ITEM_STATUS_PENDING_DISCONNECT = "pending_disconnect"
+PLAID_ITEM_STATUS_REVOKED = "revoked"
+
 SYNC_TRIGGERING_CODES = frozenset({
     "SYNC_UPDATES_AVAILABLE",
     "DEFAULT_UPDATE",
@@ -533,6 +541,7 @@ class PlaidWebhookEvent(SQLModel, table=True):
     error_message: Optional[str] = None
     raw_payload: str
     processed: bool = Field(default=False)
+    action_taken: Optional[str] = None
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), index=True
     )

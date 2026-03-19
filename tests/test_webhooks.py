@@ -12,8 +12,17 @@ from sqlmodel import Session, select
 
 from app.auth import get_current_user
 from app.main import app
-from app.models import PlaidItem, PlaidWebhookEvent, SYNC_TRIGGERING_CODES
-from tests.conftest import make_household, make_user
+from app.models import (
+    PlaidItem,
+    PlaidWebhookEvent,
+    SYNC_TRIGGERING_CODES,
+    PLAID_ITEM_STATUS_HEALTHY,
+    PLAID_ITEM_STATUS_ERROR,
+    PLAID_ITEM_STATUS_PENDING_DISCONNECT,
+    PLAID_ITEM_STATUS_REVOKED,
+    Transaction,
+)
+from tests.conftest import make_account, make_household, make_transaction, make_user
 
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -191,9 +200,9 @@ def test_webhook_handles_item_error(mock_verify, mock_client, client, session):
 @patch("app.routes.plaid.get_app_plaid_client")
 @patch("app.routes.plaid.verify_plaid_webhook")
 @patch("app.routes.plaid.sync_transactions")
-def test_webhook_non_sync_code_not_processed(mock_sync, mock_verify, mock_client, client, session):
-    """TRANSACTIONS webhooks with non-sync codes are stored but not processed."""
-    payload = _build_webhook_payload(webhook_code="TRANSACTIONS_REMOVED")
+def test_webhook_recurring_not_processed(mock_sync, mock_verify, mock_client, client, session):
+    """RECURRING_TRANSACTIONS_UPDATE webhooks are stored but not processed."""
+    payload = _build_webhook_payload(webhook_code="RECURRING_TRANSACTIONS_UPDATE")
     resp = client.post(
         "/api/v1/plaid/webhook",
         json=payload,
@@ -204,6 +213,303 @@ def test_webhook_non_sync_code_not_processed(mock_sync, mock_verify, mock_client
     event = session.exec(select(PlaidWebhookEvent)).first()
     assert event.processed is False
     mock_sync.assert_not_called()
+
+
+# ── TRANSACTIONS_REMOVED handler tests ──────────────────────────
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+def test_webhook_transactions_removed_deletes_matching(mock_verify, mock_client, client, session):
+    """TRANSACTIONS_REMOVED deletes transactions matching removed_transactions IDs."""
+    user = make_user(session)
+    acct = make_account(session, user)
+    txn1 = make_transaction(session, user, account=acct, is_manual=False,
+                            plaid_transaction_id="plaid-rm-1")
+    txn2 = make_transaction(session, user, account=acct, is_manual=False,
+                            plaid_transaction_id="plaid-rm-2")
+    txn_keep = make_transaction(session, user, account=acct, is_manual=False,
+                                plaid_transaction_id="plaid-keep")
+
+    payload = _build_webhook_payload(
+        webhook_code="TRANSACTIONS_REMOVED",
+        removed_transactions=["plaid-rm-1", "plaid-rm-2"],
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    event = session.exec(select(PlaidWebhookEvent)).first()
+    assert event.processed is True
+    assert "transactions_removed:2" in (event.action_taken or "")
+
+    remaining = session.exec(select(Transaction)).all()
+    remaining_ids = {t.plaid_transaction_id for t in remaining}
+    assert "plaid-keep" in remaining_ids
+    assert "plaid-rm-1" not in remaining_ids
+    assert "plaid-rm-2" not in remaining_ids
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+def test_webhook_transactions_removed_empty_list(mock_verify, mock_client, client, session):
+    """TRANSACTIONS_REMOVED with empty list is processed but does nothing."""
+    payload = _build_webhook_payload(
+        webhook_code="TRANSACTIONS_REMOVED",
+        removed_transactions=[],
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    event = session.exec(select(PlaidWebhookEvent)).first()
+    assert event.processed is True
+
+
+# ── ITEM webhook handler tests ──────────────────────────────────
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+def test_webhook_item_error_sets_status(mock_verify, mock_client, client, session):
+    """ITEM.ERROR sets PlaidItem status to error and stores error details."""
+    user = make_user(session)
+    make_household(session, user)
+    item = _make_plaid_item(session, user)
+
+    payload = _build_webhook_payload(
+        webhook_type="ITEM",
+        webhook_code="ERROR",
+        item_id=item.item_id,
+        error={"error_code": "ITEM_LOGIN_REQUIRED", "error_message": "Login required"},
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    session.refresh(item)
+    assert item.status == PLAID_ITEM_STATUS_ERROR
+    assert item.plaid_error_code == "ITEM_LOGIN_REQUIRED"
+    assert item.plaid_error_message == "Login required"
+
+    event = session.exec(select(PlaidWebhookEvent)).first()
+    assert event.processed is True
+    assert "item_status:error" in (event.action_taken or "")
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+@patch("app.routes.plaid.sync_transactions")
+def test_webhook_login_repaired_clears_error(mock_sync, mock_verify, mock_client, client, session):
+    """ITEM.LOGIN_REPAIRED clears error state and triggers sync."""
+    user = make_user(session)
+    make_household(session, user)
+    item = _make_plaid_item(session, user)
+    item.status = PLAID_ITEM_STATUS_ERROR
+    item.plaid_error_code = "ITEM_LOGIN_REQUIRED"
+    item.plaid_error_message = "Login required"
+    session.add(item)
+    session.commit()
+
+    payload = _build_webhook_payload(
+        webhook_type="ITEM",
+        webhook_code="LOGIN_REPAIRED",
+        item_id=item.item_id,
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    session.refresh(item)
+    assert item.status == PLAID_ITEM_STATUS_HEALTHY
+    assert item.plaid_error_code is None
+    assert item.plaid_error_message is None
+
+    event = session.exec(select(PlaidWebhookEvent)).first()
+    assert event.processed is True
+    mock_sync.assert_called_once_with(item.id)
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+@patch("app.routes.plaid.sync_transactions")
+def test_webhook_new_accounts_triggers_sync(mock_sync, mock_verify, mock_client, client, session):
+    """ITEM.NEW_ACCOUNTS_AVAILABLE triggers a sync."""
+    user = make_user(session)
+    make_household(session, user)
+    item = _make_plaid_item(session, user)
+
+    payload = _build_webhook_payload(
+        webhook_type="ITEM",
+        webhook_code="NEW_ACCOUNTS_AVAILABLE",
+        item_id=item.item_id,
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    event = session.exec(select(PlaidWebhookEvent)).first()
+    assert event.processed is True
+    mock_sync.assert_called_once_with(item.id)
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+def test_webhook_pending_disconnect_sets_status(mock_verify, mock_client, client, session):
+    """ITEM.PENDING_DISCONNECT sets PlaidItem status."""
+    user = make_user(session)
+    make_household(session, user)
+    item = _make_plaid_item(session, user)
+
+    payload = _build_webhook_payload(
+        webhook_type="ITEM",
+        webhook_code="PENDING_DISCONNECT",
+        item_id=item.item_id,
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    session.refresh(item)
+    assert item.status == PLAID_ITEM_STATUS_PENDING_DISCONNECT
+
+    event = session.exec(select(PlaidWebhookEvent)).first()
+    assert event.processed is True
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+def test_webhook_pending_expiration_sets_status(mock_verify, mock_client, client, session):
+    """ITEM.PENDING_EXPIRATION also sets pending_disconnect status."""
+    user = make_user(session)
+    make_household(session, user)
+    item = _make_plaid_item(session, user)
+
+    payload = _build_webhook_payload(
+        webhook_type="ITEM",
+        webhook_code="PENDING_EXPIRATION",
+        item_id=item.item_id,
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    session.refresh(item)
+    assert item.status == PLAID_ITEM_STATUS_PENDING_DISCONNECT
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+def test_webhook_user_permission_revoked_sets_status(mock_verify, mock_client, client, session):
+    """ITEM.USER_PERMISSION_REVOKED sets PlaidItem status to revoked."""
+    user = make_user(session)
+    make_household(session, user)
+    item = _make_plaid_item(session, user)
+
+    payload = _build_webhook_payload(
+        webhook_type="ITEM",
+        webhook_code="USER_PERMISSION_REVOKED",
+        item_id=item.item_id,
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    session.refresh(item)
+    assert item.status == PLAID_ITEM_STATUS_REVOKED
+
+    event = session.exec(select(PlaidWebhookEvent)).first()
+    assert event.processed is True
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+@patch("app.routes.plaid.sync_transactions")
+def test_webhook_liabilities_default_update_triggers_sync(mock_sync, mock_verify, mock_client, client, session):
+    """LIABILITIES.DEFAULT_UPDATE triggers a sync."""
+    user = make_user(session)
+    make_household(session, user)
+    item = _make_plaid_item(session, user)
+
+    payload = _build_webhook_payload(
+        webhook_type="LIABILITIES",
+        webhook_code="DEFAULT_UPDATE",
+        item_id=item.item_id,
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    event = session.exec(select(PlaidWebhookEvent)).first()
+    assert event.processed is True
+    mock_sync.assert_called_once_with(item.id)
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+def test_webhook_item_error_unknown_item(mock_verify, mock_client, client, session):
+    """ITEM.ERROR for unknown item_id stores event but no PlaidItem is updated."""
+    payload = _build_webhook_payload(
+        webhook_type="ITEM",
+        webhook_code="ERROR",
+        item_id="nonexistent_item",
+        error={"error_code": "ITEM_LOGIN_REQUIRED", "error_message": "Login required"},
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    event = session.exec(select(PlaidWebhookEvent)).first()
+    assert event.processed is True
+
+
+@patch("app.routes.plaid.get_app_plaid_client")
+@patch("app.routes.plaid.verify_plaid_webhook")
+def test_webhook_update_acknowledged_log_only(mock_verify, mock_client, client, session):
+    """ITEM.WEBHOOK_UPDATE_ACKNOWLEDGED is stored but not processed."""
+    payload = _build_webhook_payload(
+        webhook_type="ITEM",
+        webhook_code="WEBHOOK_UPDATE_ACKNOWLEDGED",
+    )
+    resp = client.post(
+        "/api/v1/plaid/webhook",
+        json=payload,
+        headers={"Plaid-Verification": "fake-token"},
+    )
+    assert resp.status_code == 200
+
+    event = session.exec(select(PlaidWebhookEvent)).first()
+    assert event.processed is False
 
 
 # ── Admin webhook-events endpoint tests ─────────────────────────

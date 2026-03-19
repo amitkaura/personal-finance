@@ -496,6 +496,7 @@ export interface WebhookEvent {
   error_code: string | null;
   error_message: string | null;
   processed: boolean;
+  action_taken: string | null;
   created_at: string | null;
 }
 
