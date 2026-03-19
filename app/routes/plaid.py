@@ -89,6 +89,69 @@ def create_link_token(
     return LinkTokenResponse(link_token=response.link_token)
 
 
+@router.post("/link-token/update/{plaid_item_id}", response_model=LinkTokenResponse)
+def create_update_link_token(
+    plaid_item_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Generate a Plaid Link token for update mode (re-authentication)."""
+    from app.config import get_settings
+
+    item = session.exec(
+        select(PlaidItem).where(
+            PlaidItem.id == plaid_item_id,
+            PlaidItem.user_id == user.id,
+        )
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Plaid item not found")
+
+    settings = get_settings()
+    client = get_household_plaid_client(session, user)
+    access_token = decrypt_token(item.encrypted_access_token)
+
+    webhook_url = f"{settings.app_url}/api/v1/plaid/webhook"
+    request = LinkTokenCreateRequest(
+        user=LinkTokenCreateRequestUser(client_user_id=str(user.id)),
+        client_name="Personal Finance",
+        country_codes=[CountryCode("US"), CountryCode("CA")],
+        language="en",
+        webhook=webhook_url,
+        access_token=access_token,
+    )
+    response = client.link_token_create(request)
+    return LinkTokenResponse(link_token=response.link_token)
+
+
+@router.post("/items/{plaid_item_id}/repair")
+def repair_plaid_item(
+    plaid_item_id: int,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Mark a PlaidItem as healthy after successful update mode and trigger sync."""
+    item = session.exec(
+        select(PlaidItem).where(
+            PlaidItem.id == plaid_item_id,
+            PlaidItem.user_id == user.id,
+        )
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Plaid item not found")
+
+    item.status = PLAID_ITEM_STATUS_HEALTHY
+    item.plaid_error_code = None
+    item.plaid_error_message = None
+    session.add(item)
+    session.commit()
+
+    background_tasks.add_task(sync_transactions, item.id)
+
+    return {"status": "repaired"}
+
+
 @router.post("/exchange-token", response_model=ExchangeTokenResponse)
 def exchange_public_token(
     body: ExchangeTokenRequest,
@@ -529,6 +592,9 @@ def list_plaid_items(
             "id": item.id,
             "item_id": item.item_id,
             "institution_name": item.institution_name,
+            "status": item.status,
+            "plaid_error_code": item.plaid_error_code,
+            "plaid_error_message": item.plaid_error_message,
             "owner_name": owner.get("name", ""),
             "owner_picture": owner.get("picture"),
             "accounts": [

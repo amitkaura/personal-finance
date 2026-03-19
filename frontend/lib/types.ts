@@ -28,10 +28,20 @@ export interface PlaidConnectionAccount {
   is_linked: boolean;
 }
 
+export const PLAID_ITEM_STATUS = {
+  HEALTHY: "healthy",
+  ERROR: "error",
+  PENDING_DISCONNECT: "pending_disconnect",
+  REVOKED: "revoked",
+} as const;
+
 export interface PlaidConnection {
   id: number;
   item_id: string;
   institution_name: string | null;
+  status: string;
+  plaid_error_code: string | null;
+  plaid_error_message: string | null;
   owner_name?: string;
   owner_picture?: string | null;
   accounts: PlaidConnectionAccount[];

@@ -33,6 +33,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Edit account modal** -- consolidated edit dialog for name, type, subtype, and balance; balance is disabled for Plaid accounts with an explanatory note
 - Unlink individual accounts or revoke full institution connections with confirmation dialog
 - **Sync feedback** -- clear "Synced" or "Sync failed" status after each connection sync
+- **Update mode (reconnect)** -- when a bank connection enters error, pending disconnect, or revoked state, a status banner appears on the connection card with a "Reconnect" button; clicking it launches Plaid Link in update mode to re-authenticate; a dashboard alert banner links to Connections when any connection needs attention
 - **Dashboard quick actions** -- Link Account, Add Account, and Add Partner buttons in the dashboard header; Add Account navigates to the accounts page with the add form pre-opened
 - **Plaid setup banner** -- dismissible dashboard banner prompts household owners to configure Plaid when not yet set up
 - **Click-to-filter** -- click any account row to navigate to the Transactions page pre-filtered by that account
@@ -236,7 +237,7 @@ personal-finance/
 │       ├── admin.py                # Admin panel: overview, users CRUD, plaid-health, errors, analytics
 │       ├── auth.py                 # POST /google, GET /me, POST /logout
 │       ├── accounts.py             # CRUD, manual accounts, CSV import, unlink, summary
-│       ├── plaid.py                # POST /link-token, /exchange-token, /sync, GET /items
+│       ├── plaid.py                # POST /link-token, /link-token/update, /exchange-token, /sync, /repair, GET /items
 │       ├── transactions.py         # GET /, POST /, PATCH /:id, DELETE /:id, recurring
 │       ├── settings.py             # GET /, PUT /, rules CRUD, export, delete
 │       ├── budgets.py              # GET /, POST /, PATCH /:id, DELETE /:id, copy, summary
@@ -275,6 +276,7 @@ personal-finance/
 │   │   ├── dashboard-actions.tsx    # Dashboard header actions (link/add account, partner status)
 │   │   ├── add-partner-dialog.tsx  # Invite partner email dialog
 │   │   ├── plaid-setup-banner.tsx  # Dismissible Plaid config prompt (hidden for managed mode)
+│   │   ├── connection-alert-banner.tsx # Dashboard banner when connections need attention (error/pending/revoked)
 │   │   ├── sandbox-banner.tsx       # Amber warning banner shown when Plaid is in sandbox/test mode
 │   │   ├── sandbox-banner-wrapper.tsx # Client wrapper that queries plaidConfig and conditionally renders SandboxBanner
 │   │   ├── link-account.tsx        # Plaid Link flow (mode-aware: managed skips config redirect, sandbox label)
@@ -329,7 +331,8 @@ personal-finance/
 │       ├── goals-page.test.tsx     # Active/completed, create dialog, progress, shared summary
 │       ├── reports-page.test.tsx   # Period selector, summary cards, category bars, merchants
 │       ├── recurring-page.test.tsx # Frequency tabs, sort, consistent/varies badges
-│       ├── connections-page.test.tsx # Connection cards, sync, disconnect, confirm, sandbox banner
+│       ├── connections-page.test.tsx # Connection cards, sync, disconnect, confirm, sandbox banner, status banners, reconnect
+│       ├── connection-alert-banner.test.tsx # Dashboard alert for unhealthy connections
 │       ├── sandbox-banner.test.tsx  # Sandbox mode warning banner rendering
 │       ├── sandbox-banner-wrapper.test.tsx # Wrapper: renders banner when sandbox, nothing otherwise
 │       ├── login-page.test.tsx     # Hero, trust badges, Google sign-in flow
@@ -373,6 +376,7 @@ personal-finance/
 │   ├── test_sync_config.py          # Sync config CRUD (owner-only)
 │   ├── test_plaid.py               # Link token, exchange token, sync (mocked)
 │   ├── test_webhooks.py            # Plaid webhook endpoint, verification, admin listing
+│   ├── test_plaid_update_mode.py   # Update mode link token, repair endpoint, status in items list
 │   ├── test_plaid_config.py        # BYO Plaid config CRUD (owner-only, encryption)
 │   ├── test_llm_config.py          # BYO LLM config CRUD (owner-only, encryption)
 │   ├── test_managed_plaid.py       # PlaidMode enum, AppPlaidConfig model, client resolution
@@ -392,7 +396,7 @@ personal-finance/
 | Model | Purpose |
 |-------|---------|
 | `User` | Google OAuth user (google_id, email, name, picture, is_admin, is_disabled, created_at, updated_at) |
-| `PlaidItem` | Bank connection with encrypted access token |
+| `PlaidItem` | Bank connection with encrypted access token, status tracking (healthy/error/pending_disconnect/revoked), error code and message |
 | `Account` | Bank/credit/loan/investment account with balances, optional `statement_available_day` (1-31) and `last_statement_reminder_sent` for recurring reminders |
 | `Transaction` | Financial transaction (Plaid-synced or manual) |
 | `CategoryRule` | Keyword-to-category mapping for auto-categorization |
@@ -461,13 +465,15 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/link-token` | Create a Plaid Link token |
+| POST | `/link-token/update/:id` | Create a Plaid Link token for update mode (re-authentication) |
 | POST | `/exchange-token` | Exchange public token for access token |
 | POST | `/sync/:plaid_item_id` | Sync transactions for a specific item |
 | POST | `/sync-all` | Sync all linked Plaid items (background) |
 | POST | `/sync-all-stream` | Sync all items with streaming NDJSON progress (sync + categorize phases) |
 | POST | `/webhook` | Receive Plaid webhook events (no auth, JWS-verified) |
-| GET | `/items` | List all Plaid connections with accounts |
+| GET | `/items` | List all Plaid connections with accounts and status |
 | POST | `/items/:id/unlink` | Revoke and delete a Plaid connection |
+| POST | `/items/:id/repair` | Mark item healthy after update mode, trigger sync |
 
 ### Accounts (`/accounts`)
 | Method | Path | Description |
@@ -669,7 +675,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (549 tests across 24 files):**
+**What's tested (558 tests across 25 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -684,6 +690,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_sync_config` | 13 | Sync config CRUD (get configured/unconfigured/no-household/member-read, create/update/invalid-hour/invalid-minute/non-owner/no-household, delete/non-owner/not-configured/no-household) |
 | `test_plaid` | 28 | Link token, exchange token (success, relink, conflict, institution name, no background sync), sync, sync-all-stream (NDJSON streaming, batch account lookup, update-existing, batch LLM, rules-before-LLM), background sync (batch lookups, batch LLM), auto-create missing accounts (create, activity log, reuse, stream event), items (all Plaid calls mocked) |
 | `test_webhooks` | 22 | Webhook endpoint (store event, reject missing/invalid verification, trigger sync for TRANSACTIONS, skip unknown item, handle ITEM.ERROR), webhook handlers (TRANSACTIONS_REMOVED deletes txns, ITEM.ERROR/LOGIN_REPAIRED/PENDING_DISCONNECT/PENDING_EXPIRATION/USER_PERMISSION_REVOKED update PlaidItem status, NEW_ACCOUNTS_AVAILABLE/LIABILITIES.DEFAULT_UPDATE trigger sync, WEBHOOK_UPDATE_ACKNOWLEDGED log-only), admin webhook-events listing (list, admin-required, pagination, filter by type) |
+| `test_plaid_update_mode` | 9 | Update mode link token (success, missing item, wrong user), repair endpoint (sets status healthy, clears errors, triggers sync, missing item, wrong user), list items includes status fields (error, healthy null) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 11 | Resend HTTP API, invitation + statement reminder templates, send/skip/fail/network-error handling, bearer auth, app_url in CTAs |
@@ -716,7 +723,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (493 tests across 48 files):**
+**What's tested (501 tests across 49 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -739,7 +746,8 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `budgets-page` | 10 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes, click row navigates to filtered transactions, add-budget validation message for zero amount |
 | `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
 | `recurring-page` | 7 | Title, loading, empty state, recurring cards, summary, consistent/varies badges, sort dropdown |
-| `connections-page` | 9 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync, sandbox banner shown/hidden based on plaid_env |
+| `connections-page` | 13 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync, sandbox banner shown/hidden based on plaid_env, status banners (error/pending_disconnect/revoked with Reconnect button), no banner for healthy connections |
+| `connection-alert-banner` | 4 | Dashboard alert for unhealthy connections, hidden when all healthy, hidden when no connections, link to connections page |
 | `net-worth-history` | 7 | Loading, empty state with snapshot, SVG line chart rendering, polyline assertion, change indicator, period selector |
 | `credit-cards-widget` | 6 | Loading, empty, card list, total owed, utilization bar colors, no-limit handling |
 | `recurring-widget` | 6 | Loading, empty, recurring detection, max 6 items, null merchant handling, sort by amount |
@@ -777,7 +785,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 
 ### Latest coverage snapshot
 
-- Backend (`pytest --cov=app --cov-report=term`): **86% total** (`4207` statements, `601` missed)
+- Backend (`pytest --cov=app --cov-report=term`): **87% total** (`4479` statements, `583` missed)
 - Frontend (`npx vitest run --coverage`): **76% statements**, **72% branches**, **62% functions**, **77% lines**
 
 ## Environment Variables
