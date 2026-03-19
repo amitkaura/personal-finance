@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { usePlaidLink } from "react-plaid-link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, CheckCircle, Loader2, AlertCircle } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, clearPlaidBrowserState } from "@/lib/api";
 import { PLAID_MODES } from "@/lib/types";
 import { useCategorizationProgress } from "@/components/categorization-progress-provider";
 
@@ -49,6 +49,8 @@ export default function LinkAccount() {
     onSuccess: (data) => {
       setResult(data);
       setStatus("done");
+      setLinkToken(null);
+      clearPlaidBrowserState();
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["accountSummary"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
