@@ -21,6 +21,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 ### Account Management
 - Connect bank accounts, credit cards, loans, and investment accounts via Plaid Link
+- **Duplicate item prevention** -- before exchanging a Plaid Link public token, checks if the user (or household) already has a connection at the same institution; returns a clear error message directing them to manage the existing connection
 - **Sandbox mode indicator** -- when Plaid is configured in sandbox/test mode, a visible banner appears on the Dashboard, Connections page, and during onboarding; the Link Account button shows "Link Demo Account"; the onboarding managed-mode card shows a "(Demo)" tag
 - **Managed or Bring Your Own Plaid** -- hosted instances can offer managed Plaid credentials so users connect instantly; alternatively each household configures its own Plaid API keys in Settings; Plaid and LLM mode can be switched in Settings when no accounts are linked
 - **Managed or Bring Your Own LLM** -- admin can configure app-level LLM credentials for managed AI categorization; users choose managed or BYOK during onboarding; switchable in Settings at any time
@@ -398,7 +399,7 @@ personal-finance/
 | Model | Purpose |
 |-------|---------|
 | `User` | Google OAuth user (google_id, email, name, picture, is_admin, is_disabled, created_at, updated_at) |
-| `PlaidItem` | Bank connection with encrypted access token, status tracking (healthy/error/pending_disconnect/revoked), error code and message |
+| `PlaidItem` | Bank connection with encrypted access token, institution_id for duplicate detection, status tracking (healthy/error/pending_disconnect/revoked), error code and message |
 | `Account` | Bank/credit/loan/investment account with balances, optional `statement_available_day` (1-31) and `last_statement_reminder_sent` for recurring reminders |
 | `Transaction` | Financial transaction (Plaid-synced or manual) |
 | `CategoryRule` | Keyword-to-category mapping for auto-categorization |
@@ -468,7 +469,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 |--------|------|-------------|
 | POST | `/link-token` | Create a Plaid Link token |
 | POST | `/link-token/update/:id` | Create a Plaid Link token for update mode (re-authentication or account selection via `?account_selection=true`) |
-| POST | `/exchange-token` | Exchange public token for access token |
+| POST | `/exchange-token` | Exchange public token for access token (rejects duplicates via `institution_id`) |
 | POST | `/sync/:plaid_item_id` | Sync transactions for a specific item |
 | POST | `/sync-all` | Sync all linked Plaid items (background) |
 | POST | `/sync-all-stream` | Sync all items with streaming NDJSON progress (sync + categorize phases) |
@@ -677,7 +678,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (560 tests across 25 files):**
+**What's tested (565 tests across 25 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -690,7 +691,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_accounts` | 35 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization, statement_available_day (create/update/clear/validate), statement-reminders endpoint (match/no-match/last-day-fallback/auth) |
 | `test_scheduler` | 11 | Statement reminder scheduler job (day match, de-duplication, last-day-of-month fallback, no-accounts), per-household scheduler (reads DB config, no-config skips, disabled skips, multiple households, scoped sync items, scoped reminders) |
 | `test_sync_config` | 13 | Sync config CRUD (get configured/unconfigured/no-household/member-read, create/update/invalid-hour/invalid-minute/non-owner/no-household, delete/non-owner/not-configured/no-household) |
-| `test_plaid` | 28 | Link token, exchange token (success, relink, conflict, institution name, no background sync), sync, sync-all-stream (NDJSON streaming, batch account lookup, update-existing, batch LLM, rules-before-LLM), background sync (batch lookups, batch LLM), auto-create missing accounts (create, activity log, reuse, stream event), items (all Plaid calls mocked) |
+| `test_plaid` | 33 | Link token, exchange token (success, relink, conflict, institution name, no background sync, duplicate institution rejected, different-user allowed, no institution_id skips check, institution_id stored, institution_id in list), sync, sync-all-stream (NDJSON streaming, batch account lookup, update-existing, batch LLM, rules-before-LLM), background sync (batch lookups, batch LLM), auto-create missing accounts (create, activity log, reuse, stream event), items (all Plaid calls mocked) |
 | `test_webhooks` | 22 | Webhook endpoint (store event, reject missing/invalid verification, trigger sync for TRANSACTIONS, skip unknown item, handle ITEM.ERROR), webhook handlers (TRANSACTIONS_REMOVED deletes txns, ITEM.ERROR/LOGIN_REPAIRED/PENDING_DISCONNECT/PENDING_EXPIRATION/USER_PERMISSION_REVOKED update PlaidItem status, NEW_ACCOUNTS_AVAILABLE sets new_accounts status + triggers sync, LIABILITIES.DEFAULT_UPDATE triggers sync, WEBHOOK_UPDATE_ACKNOWLEDGED log-only), admin webhook-events listing (list, admin-required, pagination, filter by type) |
 | `test_plaid_update_mode` | 11 | Update mode link token (success, missing item, wrong user, with account_selection, without account_selection), repair endpoint (sets status healthy, clears errors, triggers sync, missing item, wrong user), list items includes status fields (error, healthy null) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
@@ -725,7 +726,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (509 tests across 50 files):**
+**What's tested (511 tests across 50 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -769,7 +770,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
 | `dashboard-actions` | 6 | Add Account/Link Account/Add Partner buttons, partner status message, navigation to /accounts?add=true, partner dialog open |
 | `add-partner-dialog` | 6 | Email input and submit, invitePartner API call, onClose on success, error display, close button, hidden when closed |
-| `link-account` | 8 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label, startSync triggered after exchange, Plaid browser state cleared after linking |
+| `link-account` | 10 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label, startSync triggered after exchange, Plaid browser state cleared after linking, institution_id passed to exchangeToken, duplicate item error displayed |
 | `sandbox-banner` | 2 | Test-mode warning text, demo accounts mention |
 | `sandbox-banner-wrapper` | 3 | Renders banner when sandbox, nothing when production, nothing when unconfigured |
 | `onboarding` | 21 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, no auto-selection, setPlaidMode calls on card click, Settings info text, no skip; wizard step 2 (LLM mode): managed AI + BYOK cards, no skip, back button returns to step 1, setLLMMode calls, Settings info text; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete; sandbox indicator: banner when managed sandbox keys, hidden for production; cache invalidation: plaid-config cache cleared on managed and BYOK card click |
