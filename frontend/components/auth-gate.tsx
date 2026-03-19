@@ -11,7 +11,7 @@ import OnboardingRedirect from "@/components/onboarding-redirect";
 import LoginPage from "@/app/login/page";
 import { Loader2, Menu } from "lucide-react";
 
-const AUTH_BYPASS_PATHS = ["/staging-login"];
+const AUTH_BYPASS_PATHS = ["/staging-login", "/privacy"];
 const SIDEBAR_SKIP_PATHS = ["/onboarding"];
 
 export default function AuthGate({ children }: { children: ReactNode }) {

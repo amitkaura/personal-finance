@@ -72,7 +72,8 @@ export default function LoginPage() {
         {/* Hero */}
         <section className="flex min-h-screen flex-col items-center justify-center px-6">
           {/* Wordmark */}
-          <div className="mb-10">
+          <div className="mb-10 flex items-center gap-3">
+            <img src="/logo.png" alt="" className="h-12 w-12 sm:h-14 sm:w-14" />
             <h2 className="text-5xl font-extrabold tracking-tight gradient-text-warm sm:text-6xl">
               fino
             </h2>
@@ -184,9 +185,12 @@ export default function LoginPage() {
 
         {/* Footer */}
         <footer className="border-t border-border/50 py-8">
-          <p className="text-center text-xs text-muted-foreground">
+          <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <img src="/logo.png" alt="" className="h-4 w-4" />
             <span className="gradient-text-warm font-semibold">fino</span>
-            {" "}&mdash; Self-hosted personal finance
+            &mdash; Self-hosted personal finance
+            <span className="mx-1">&middot;</span>
+            <a href="/privacy" className="underline hover:text-foreground transition-colors">Privacy</a>
           </p>
         </footer>
       </div>
