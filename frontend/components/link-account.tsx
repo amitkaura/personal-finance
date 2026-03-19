@@ -42,10 +42,12 @@ export default function LinkAccount() {
     mutationFn: ({
       publicToken,
       institutionName,
+      institutionId,
     }: {
       publicToken: string;
       institutionName?: string;
-    }) => api.exchangeToken(publicToken, institutionName),
+      institutionId?: string;
+    }) => api.exchangeToken(publicToken, institutionName, institutionId),
     onSuccess: (data) => {
       setResult(data);
       setStatus("done");
@@ -58,18 +60,20 @@ export default function LinkAccount() {
       queryClient.invalidateQueries({ queryKey: ["netWorthHistory"] });
       startSync();
     },
-    onError: () => {
+    onError: (err: Error) => {
       setStatus("idle");
       setLinkToken(null);
+      setLinkError(err.message);
     },
   });
 
   const onSuccess = useCallback(
-    (publicToken: string, metadata: { institution?: { name?: string } | null }) => {
+    (publicToken: string, metadata: { institution?: { name?: string; institution_id?: string } | null }) => {
       setStatus("exchanging");
       exchangeToken.mutate({
         publicToken,
         institutionName: metadata?.institution?.name ?? undefined,
+        institutionId: metadata?.institution?.institution_id ?? undefined,
       });
     },
     [exchangeToken]

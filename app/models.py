@@ -76,6 +76,7 @@ class PlaidItem(SQLModel, table=True):
     encrypted_access_token: str = Field(index=True)
     item_id: str = Field(unique=True, index=True)
     institution_name: Optional[str] = None
+    institution_id: Optional[str] = Field(default=None, index=True)
     status: str = Field(default="healthy")
     plaid_error_code: Optional[str] = None
     plaid_error_message: Optional[str] = None
