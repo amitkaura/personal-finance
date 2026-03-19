@@ -33,7 +33,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 - **Edit account modal** -- consolidated edit dialog for name, type, subtype, and balance; balance is disabled for Plaid accounts with an explanatory note
 - Unlink individual accounts or revoke full institution connections with confirmation dialog
 - **Sync feedback** -- clear "Synced" or "Sync failed" status after each connection sync
-- **Update mode (reconnect)** -- when a bank connection enters error, pending disconnect, or revoked state, a status banner appears on the connection card with a "Reconnect" button; clicking it launches Plaid Link in update mode to re-authenticate; a dashboard alert banner links to Connections when any connection needs attention
+- **Update mode (reconnect)** -- when a bank connection enters error, pending disconnect, or revoked state, a status banner appears on the connection card with a "Reconnect" button; clicking it launches Plaid Link in update mode to re-authenticate; when new accounts are available at an institution, a blue info banner prompts the user to "Review Accounts" and launches Plaid Link with account selection enabled; a dashboard alert banner links to Connections when any connection needs attention
 - **Dashboard quick actions** -- Link Account, Add Account, and Add Partner buttons in the dashboard header; Add Account navigates to the accounts page with the add form pre-opened
 - **Plaid setup banner** -- dismissible dashboard banner prompts household owners to configure Plaid when not yet set up
 - **Click-to-filter** -- click any account row to navigate to the Transactions page pre-filtered by that account
@@ -465,7 +465,7 @@ All endpoints are prefixed with `/api/v1`. Authenticated via JWT cookie.
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/link-token` | Create a Plaid Link token |
-| POST | `/link-token/update/:id` | Create a Plaid Link token for update mode (re-authentication) |
+| POST | `/link-token/update/:id` | Create a Plaid Link token for update mode (re-authentication or account selection via `?account_selection=true`) |
 | POST | `/exchange-token` | Exchange public token for access token |
 | POST | `/sync/:plaid_item_id` | Sync transactions for a specific item |
 | POST | `/sync-all` | Sync all linked Plaid items (background) |
@@ -675,7 +675,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (558 tests across 25 files):**
+**What's tested (560 tests across 25 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -689,8 +689,8 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_scheduler` | 11 | Statement reminder scheduler job (day match, de-duplication, last-day-of-month fallback, no-accounts), per-household scheduler (reads DB config, no-config skips, disabled skips, multiple households, scoped sync items, scoped reminders) |
 | `test_sync_config` | 13 | Sync config CRUD (get configured/unconfigured/no-household/member-read, create/update/invalid-hour/invalid-minute/non-owner/no-household, delete/non-owner/not-configured/no-household) |
 | `test_plaid` | 28 | Link token, exchange token (success, relink, conflict, institution name, no background sync), sync, sync-all-stream (NDJSON streaming, batch account lookup, update-existing, batch LLM, rules-before-LLM), background sync (batch lookups, batch LLM), auto-create missing accounts (create, activity log, reuse, stream event), items (all Plaid calls mocked) |
-| `test_webhooks` | 22 | Webhook endpoint (store event, reject missing/invalid verification, trigger sync for TRANSACTIONS, skip unknown item, handle ITEM.ERROR), webhook handlers (TRANSACTIONS_REMOVED deletes txns, ITEM.ERROR/LOGIN_REPAIRED/PENDING_DISCONNECT/PENDING_EXPIRATION/USER_PERMISSION_REVOKED update PlaidItem status, NEW_ACCOUNTS_AVAILABLE/LIABILITIES.DEFAULT_UPDATE trigger sync, WEBHOOK_UPDATE_ACKNOWLEDGED log-only), admin webhook-events listing (list, admin-required, pagination, filter by type) |
-| `test_plaid_update_mode` | 9 | Update mode link token (success, missing item, wrong user), repair endpoint (sets status healthy, clears errors, triggers sync, missing item, wrong user), list items includes status fields (error, healthy null) |
+| `test_webhooks` | 22 | Webhook endpoint (store event, reject missing/invalid verification, trigger sync for TRANSACTIONS, skip unknown item, handle ITEM.ERROR), webhook handlers (TRANSACTIONS_REMOVED deletes txns, ITEM.ERROR/LOGIN_REPAIRED/PENDING_DISCONNECT/PENDING_EXPIRATION/USER_PERMISSION_REVOKED update PlaidItem status, NEW_ACCOUNTS_AVAILABLE sets new_accounts status + triggers sync, LIABILITIES.DEFAULT_UPDATE triggers sync, WEBHOOK_UPDATE_ACKNOWLEDGED log-only), admin webhook-events listing (list, admin-required, pagination, filter by type) |
+| `test_plaid_update_mode` | 11 | Update mode link token (success, missing item, wrong user, with account_selection, without account_selection), repair endpoint (sets status healthy, clears errors, triggers sync, missing item, wrong user), list items includes status fields (error, healthy null) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 11 | Resend HTTP API, invitation + statement reminder templates, send/skip/fail/network-error handling, bearer auth, app_url in CTAs |
@@ -723,7 +723,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (501 tests across 49 files):**
+**What's tested (502 tests across 49 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -746,7 +746,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `budgets-page` | 10 | Title, loading, totals, rollover tooltip, inline amount editing (Enter/Escape), progress bar ARIA attributes, click row navigates to filtered transactions, add-budget validation message for zero amount |
 | `view-switcher` | 8 | Hidden when no household, labels, pictures, scope switching, fallbacks |
 | `recurring-page` | 7 | Title, loading, empty state, recurring cards, summary, consistent/varies badges, sort dropdown |
-| `connections-page` | 13 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync, sandbox banner shown/hidden based on plaid_env, status banners (error/pending_disconnect/revoked with Reconnect button), no banner for healthy connections |
+| `connections-page` | 14 | Title, empty state, connection cards, sync success/failure feedback, disabled state during sync, sandbox banner shown/hidden based on plaid_env, status banners (error/pending_disconnect/revoked with Reconnect, new_accounts with Review Accounts), no banner for healthy connections |
 | `connection-alert-banner` | 4 | Dashboard alert for unhealthy connections, hidden when all healthy, hidden when no connections, link to connections page |
 | `net-worth-history` | 7 | Loading, empty state with snapshot, SVG line chart rendering, polyline assertion, change indicator, period selector |
 | `credit-cards-widget` | 6 | Loading, empty, card list, total owed, utilization bar colors, no-limit handling |

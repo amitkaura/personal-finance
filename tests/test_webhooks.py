@@ -345,8 +345,10 @@ def test_webhook_login_repaired_clears_error(mock_sync, mock_verify, mock_client
 @patch("app.routes.plaid.get_app_plaid_client")
 @patch("app.routes.plaid.verify_plaid_webhook")
 @patch("app.routes.plaid.sync_transactions")
-def test_webhook_new_accounts_triggers_sync(mock_sync, mock_verify, mock_client, client, session):
-    """ITEM.NEW_ACCOUNTS_AVAILABLE triggers a sync."""
+def test_webhook_new_accounts_triggers_sync_and_sets_status(mock_sync, mock_verify, mock_client, client, session):
+    """ITEM.NEW_ACCOUNTS_AVAILABLE triggers a sync and sets status to new_accounts."""
+    from app.models import PLAID_ITEM_STATUS_NEW_ACCOUNTS
+
     user = make_user(session)
     make_household(session, user)
     item = _make_plaid_item(session, user)
@@ -366,6 +368,9 @@ def test_webhook_new_accounts_triggers_sync(mock_sync, mock_verify, mock_client,
     event = session.exec(select(PlaidWebhookEvent)).first()
     assert event.processed is True
     mock_sync.assert_called_once_with(item.id)
+
+    session.refresh(item)
+    assert item.status == PLAID_ITEM_STATUS_NEW_ACCOUNTS
 
 
 @patch("app.routes.plaid.get_app_plaid_client")

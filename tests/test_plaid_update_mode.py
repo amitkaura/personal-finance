@@ -13,6 +13,7 @@ from app.models import (
     PlaidItem,
     PLAID_ITEM_STATUS_ERROR,
     PLAID_ITEM_STATUS_HEALTHY,
+    PLAID_ITEM_STATUS_NEW_ACCOUNTS,
     PLAID_ITEM_STATUS_PENDING_DISCONNECT,
 )
 from tests.conftest import make_account, make_user
@@ -181,3 +182,46 @@ def test_repair_plaid_item_wrong_user(auth_client, session):
 
     resp = client.post(f"/api/v1/plaid/items/{item.id}/repair")
     assert resp.status_code == 404
+
+
+# ── account_selection param on update link token ───────────────
+
+
+@patch("app.routes.plaid.get_household_plaid_client")
+def test_update_link_token_with_account_selection(mock_get_client, auth_client, session):
+    """account_selection=true passes account_selection_enabled to Plaid."""
+    client, user = auth_client
+    item = _make_plaid_item(
+        session, user,
+        status=PLAID_ITEM_STATUS_NEW_ACCOUNTS,
+    )
+
+    mock_plaid = MagicMock()
+    mock_plaid.link_token_create.return_value = MagicMock(link_token="link-sandbox-acct-sel")
+    mock_get_client.return_value = mock_plaid
+
+    resp = client.post(f"/api/v1/plaid/link-token/update/{item.id}?account_selection=true")
+    assert resp.status_code == 200
+
+    call_args = mock_plaid.link_token_create.call_args[0][0]
+    assert call_args.update.account_selection_enabled is True
+
+
+@patch("app.routes.plaid.get_household_plaid_client")
+def test_update_link_token_without_account_selection(mock_get_client, auth_client, session):
+    """Default (no account_selection) does not include update field."""
+    client, user = auth_client
+    item = _make_plaid_item(
+        session, user,
+        status=PLAID_ITEM_STATUS_ERROR,
+    )
+
+    mock_plaid = MagicMock()
+    mock_plaid.link_token_create.return_value = MagicMock(link_token="link-sandbox-no-sel")
+    mock_get_client.return_value = mock_plaid
+
+    resp = client.post(f"/api/v1/plaid/link-token/update/{item.id}")
+    assert resp.status_code == 200
+
+    call_args = mock_plaid.link_token_create.call_args[0][0]
+    assert not hasattr(call_args, "update") or call_args.get("update") is None

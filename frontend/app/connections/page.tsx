@@ -139,18 +139,26 @@ export default function ConnectionsPage() {
   );
 }
 
-const STATUS_BANNER_CONFIG: Record<string, { message: string; className: string }> = {
+const STATUS_BANNER_CONFIG: Record<string, { message: string; className: string; actionLabel: string }> = {
   [PLAID_ITEM_STATUS.ERROR]: {
     message: "This connection needs re-authentication. Your bank requires you to log in again.",
     className: "bg-red-500/10 text-red-400",
+    actionLabel: "Reconnect",
   },
   [PLAID_ITEM_STATUS.PENDING_DISCONNECT]: {
     message: "This connection will expire soon. Reconnect to renew access.",
     className: "bg-amber-500/10 text-amber-400",
+    actionLabel: "Reconnect",
   },
   [PLAID_ITEM_STATUS.REVOKED]: {
     message: "Access to this institution was revoked. Reconnect to restore access.",
     className: "bg-red-500/10 text-red-400",
+    actionLabel: "Reconnect",
+  },
+  [PLAID_ITEM_STATUS.NEW_ACCOUNTS]: {
+    message: "New accounts are available at this institution. Review and add them to stay up to date.",
+    className: "bg-blue-500/10 text-blue-400",
+    actionLabel: "Review Accounts",
   },
 };
 
@@ -220,7 +228,11 @@ function ConnectionCard({
   >("idle");
 
   const fetchUpdateToken = useMutation({
-    mutationFn: () => api.createUpdateLinkToken(connection.id),
+    mutationFn: () =>
+      api.createUpdateLinkToken(
+        connection.id,
+        connection.status === PLAID_ITEM_STATUS.NEW_ACCOUNTS,
+      ),
     onSuccess: (data) => {
       setReconnectToken(data.link_token);
       setReconnectStatus("linking");
@@ -365,7 +377,7 @@ function ConnectionCard({
                 ) : (
                   <RefreshCw className="h-3.5 w-3.5" />
                 )}
-                Reconnect
+                {bannerConfig.actionLabel}
               </button>
             )}
           </div>

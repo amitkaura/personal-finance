@@ -459,8 +459,11 @@ export const api = {
 
   createLinkToken: () => fetcher<{ link_token: string }>("/plaid/link-token", { method: "POST" }),
 
-  createUpdateLinkToken: (plaidItemId: number) =>
-    fetcher<{ link_token: string }>(`/plaid/link-token/update/${plaidItemId}`, { method: "POST" }),
+  createUpdateLinkToken: (plaidItemId: number, accountSelection?: boolean) =>
+    fetcher<{ link_token: string }>(
+      `/plaid/link-token/update/${plaidItemId}${accountSelection ? "?account_selection=true" : ""}`,
+      { method: "POST" },
+    ),
 
   repairPlaidItem: (plaidItemId: number) =>
     fetcher<{ status: string }>(`/plaid/items/${plaidItemId}/repair`, { method: "POST" }),
