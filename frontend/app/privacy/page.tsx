@@ -5,6 +5,8 @@ export const metadata = {
 };
 
 export default function PrivacyPolicyPage() {
+  const contactEmail = process.env.ADMIN_EMAIL || "privacy@tryfino.com";
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-16">
       <Link
@@ -271,7 +273,7 @@ export default function PrivacyPolicyPage() {
             your rights, please reach out to us at:
           </p>
           <p className="mt-2">
-            <a href="mailto:privacy@tryfino.com" className="underline hover:text-foreground">privacy@tryfino.com</a>
+            <a href={`mailto:${contactEmail}`} className="underline hover:text-foreground">{contactEmail}</a>
           </p>
         </section>
       </div>
