@@ -292,7 +292,8 @@ personal-finance/
 │   │   ├── review-snippet.tsx      # Uncategorized transactions snippet
 │   │   ├── budget-snippet.tsx      # Budget progress summary
 │   │   ├── goals-snippet.tsx       # Goals progress summary
-│   │   ├── top-movers.tsx          # Top spending category changes
+│   │   ├── cash-accounts-widget.tsx # Cash (depository) accounts list with balances
+│   │   ├── top-movers.tsx          # Investment accounts list with balances
 │   │   ├── cashflow-bar-chart.tsx  # Income vs expenses bar chart with drill-down
 │   │   ├── csv-import-dialog.tsx   # CSV import wizard (upload, map columns, preview); hands off to drawer for progress
 │   │   ├── bulk-csv-import-dialog.tsx # Bulk import wizard (upload, columns, accounts, categories, preview); hands off to drawer
@@ -324,6 +325,7 @@ personal-finance/
 │       ├── csv-import-dialog.test.tsx # Upload, column mapping, debit/credit, preview, startImport handoff
 │       ├── bulk-csv-import-dialog.test.tsx # Bulk upload, multi-account mapping, category matching, startBulkImport handoff
 │       ├── balance-import-dialog.test.tsx # Balance history import dialog
+│       ├── cash-accounts-widget.test.tsx # Cash accounts widget (loading, empty, filter, total, subtype)
 │       ├── cashflow-bar-chart.test.tsx # Bar chart, drill-down, period switching, breadcrumbs
 │       ├── confirm-dialog.test.tsx # Rendering, variants, ARIA attributes, dismiss
 │       ├── transactions-page.test.tsx # Filters, search, add/approve/delete, badges
@@ -723,7 +725,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (504 tests across 49 files):**
+**What's tested (509 tests across 50 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -757,6 +759,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `goals-snippet` | 7 | Loading, empty with "Set one" link, personal goals (max 3), expanded shared rows in personal scope, partner/household shared visibility, view all link |
 | `auth-gate` | 11 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, hamburger menu button, toggle sidebar open, responsive margin classes, OnboardingRedirect (redirects when plaid_mode or llm_mode null, skips when modes set) |
 | `net-worth-card` | 5 | Loading skeleton, net worth display, asset/liability breakdown, account count pluralization |
+| `cash-accounts-widget` | 5 | Loading, empty, depository account filter, total balance, subtype fallback |
 | `top-movers` | 6 | Loading, empty, investment filter, scrollable list, trend icons, official name fallback |
 | `budget-snippet` | 8 | Loading, empty with "Create one" link, personal/shared totals, top-3 category sort, expanded shared categories in personal scope, partner scope, and household scope, view all link |
 | `login-page` | 5 | Hero section, trust badges, feature cards, Google sign-in flow |
