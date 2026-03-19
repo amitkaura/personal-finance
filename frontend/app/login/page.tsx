@@ -189,6 +189,8 @@ export default function LoginPage() {
             <img src="/logo.png" alt="" className="h-4 w-4" />
             <span className="gradient-text-warm font-semibold">fino</span>
             &mdash; Self-hosted personal finance
+            <span className="mx-1">&middot;</span>
+            <a href="/privacy" className="underline hover:text-foreground transition-colors">Privacy</a>
           </p>
         </footer>
       </div>
