@@ -23,6 +23,9 @@ const CreditCardsWidget = dynamic(() => import("@/components/credit-cards-widget
 const LoansWidget = dynamic(() => import("@/components/loans-widget"), {
   loading: skeleton,
 });
+const CashAccountsWidget = dynamic(() => import("@/components/cash-accounts-widget"), {
+  loading: skeleton,
+});
 const ReviewSnippet = dynamic(() => import("@/components/review-snippet"), {
   loading: skeleton,
 });
@@ -73,11 +76,8 @@ export default function DashboardPage() {
         <ConnectionAlertBanner />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 [&>div]:h-full">
-          <NetWorthCard />
-        </div>
-        <TopMovers />
+      <div className="mt-6">
+        <NetWorthCard />
       </div>
 
       <div className="mt-6">
@@ -92,7 +92,12 @@ export default function DashboardPage() {
         <GoalsSnippet />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <CashAccountsWidget />
+        <TopMovers />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <CreditCardsWidget />
         <LoansWidget />
       </div>
