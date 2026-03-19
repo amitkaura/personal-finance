@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from sqlmodel import select
 
-from app.models import AccountType, CategoryRule, PlaidItem, Transaction
+from app.models import Account, AccountType, ActivityAction, ActivityLog, CategoryRule, PlaidItem, Transaction
 from app.crypto import encrypt_token
 from tests.conftest import (
     add_household_member,
@@ -556,3 +556,153 @@ def test_exchange_token_no_background_sync(auth_client, session):
 
     assert resp.status_code == 200
     mock_sync.assert_not_called()
+
+
+# -- Auto-create missing accounts during sync ------------------------------
+
+
+def _make_mock_plaid_account(account_id, name="New Account", acct_type="depository"):
+    """Build a mock Plaid account object for accounts_get responses."""
+    acct = MagicMock()
+    acct.account_id = account_id
+    acct.name = name
+    acct.official_name = f"Official {name}"
+    acct.type.value = acct_type
+    acct.subtype = MagicMock()
+    acct.subtype.value = "checking"
+    acct.balances.current = 2500.00
+    acct.balances.available = 2400.00
+    acct.balances.limit = None
+    acct.balances.iso_currency_code = "USD"
+    return acct
+
+
+def test_upsert_auto_creates_missing_account(auth_client, session):
+    """When a Plaid txn references an unknown account, it is auto-created."""
+    import json as _json
+
+    client, user = auth_client
+    item = _make_plaid_item(session, user)
+    make_account(session, user, name="Existing", plaid_account_id="known-acct", plaid_item_id=item.id)
+
+    txns = [
+        _make_mock_txn("txn-new-acct-1", "unknown-acct-xyz", 55.0, "Coffee Shop"),
+    ]
+    mock_acct = _make_mock_plaid_account("unknown-acct-xyz", name="New Savings")
+    mock_client = _mock_plaid_transactions(transactions=txns, total=1)
+    acct_resp = MagicMock()
+    acct_resp.accounts = [mock_acct]
+    mock_client.accounts_get.return_value = acct_resp
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client), \
+         patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)):
+        resp = client.post("/api/v1/plaid/sync-all-stream")
+
+    assert resp.status_code == 200
+
+    created_acct = session.exec(
+        select(Account).where(Account.plaid_account_id == "unknown-acct-xyz")
+    ).first()
+    assert created_acct is not None
+    assert created_acct.name == "New Savings"
+    assert created_acct.user_id == user.id
+
+    txn = session.exec(
+        select(Transaction).where(Transaction.plaid_transaction_id == "txn-new-acct-1")
+    ).first()
+    assert txn.account_id == created_acct.id
+
+
+def test_upsert_logs_activity_on_discovery(auth_client, session):
+    """Auto-creating an account logs an ACCOUNT_DISCOVERED ActivityLog entry."""
+    client, user = auth_client
+    item = _make_plaid_item(session, user)
+
+    txns = [_make_mock_txn("txn-log-1", "discover-acct-1", 10.0, "Store")]
+    mock_acct = _make_mock_plaid_account("discover-acct-1", name="Discovered Checking")
+    mock_client = _mock_plaid_transactions(transactions=txns, total=1)
+    acct_resp = MagicMock()
+    acct_resp.accounts = [mock_acct]
+    mock_client.accounts_get.return_value = acct_resp
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client), \
+         patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)):
+        resp = client.post("/api/v1/plaid/sync-all-stream")
+
+    assert resp.status_code == 200
+
+    log_entry = session.exec(
+        select(ActivityLog).where(
+            ActivityLog.user_id == user.id,
+            ActivityLog.action == ActivityAction.ACCOUNT_DISCOVERED,
+        )
+    ).first()
+    assert log_entry is not None
+    assert "Discovered Checking" in (log_entry.detail or "")
+
+
+def test_upsert_reuses_discovered_account(auth_client, session):
+    """Two txns for the same unknown account create only one Account record."""
+    client, user = auth_client
+    item = _make_plaid_item(session, user)
+
+    txns = [
+        _make_mock_txn("txn-reuse-1", "shared-new-acct", 10.0, "Store A"),
+        _make_mock_txn("txn-reuse-2", "shared-new-acct", 20.0, "Store B"),
+    ]
+    mock_acct = _make_mock_plaid_account("shared-new-acct", name="Shared New")
+    mock_client = _mock_plaid_transactions(transactions=txns, total=2)
+    acct_resp = MagicMock()
+    acct_resp.accounts = [mock_acct]
+    mock_client.accounts_get.return_value = acct_resp
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client), \
+         patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)):
+        resp = client.post("/api/v1/plaid/sync-all-stream")
+
+    assert resp.status_code == 200
+
+    accounts = session.exec(
+        select(Account).where(Account.plaid_account_id == "shared-new-acct")
+    ).all()
+    assert len(accounts) == 1
+
+    saved_txns = session.exec(
+        select(Transaction).where(
+            Transaction.plaid_transaction_id.in_(["txn-reuse-1", "txn-reuse-2"])
+        )
+    ).all()
+    assert all(t.account_id == accounts[0].id for t in saved_txns)
+
+
+def test_stream_emits_account_discovered_event(auth_client, session):
+    """Streaming sync emits an account_discovered NDJSON event for new accounts."""
+    import json as _json
+
+    client, user = auth_client
+    item = _make_plaid_item(session, user)
+
+    txns = [_make_mock_txn("txn-evt-1", "evt-new-acct", 15.0, "Cafe")]
+    mock_acct = _make_mock_plaid_account("evt-new-acct", name="Event Account")
+    mock_client = _mock_plaid_transactions(transactions=txns, total=1)
+    acct_resp = MagicMock()
+    acct_resp.accounts = [mock_acct]
+    mock_client.accounts_get.return_value = acct_resp
+
+    with patch(MOCK_HH_CLIENT, return_value=mock_client), \
+         patch(MOCK_HH_CLIENT_UID, return_value=mock_client), \
+         patch("app.routes.plaid.decrypt_token", return_value="access-test"), \
+         patch("app.categorizer._get_llm_config", return_value=("", "", "", 10)):
+        resp = client.post("/api/v1/plaid/sync-all-stream")
+
+    assert resp.status_code == 200
+    events = [_json.loads(l) for l in resp.text.strip().split("\n") if l]
+    discovered_events = [e for e in events if e.get("status") == "account_discovered"]
+    assert len(discovered_events) >= 1
+    assert "Event Account" in discovered_events[0]["accounts"]

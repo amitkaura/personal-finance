@@ -139,11 +139,17 @@ export interface SyncProgressEvent {
   total: number;
 }
 
+export interface AccountDiscoveredEvent {
+  status: "account_discovered";
+  accounts: string[];
+}
+
 export interface SyncCompleteEvent {
   status: "complete";
   synced: number;
   categorized: number;
   skipped: number;
+  discoveredAccounts?: string[];
 }
 
 export interface BulkImportPayload {
@@ -280,7 +286,7 @@ async function streamAutoCategorize(
 
 async function streamSyncAll(
   path: string,
-  onEvent?: (event: SyncProgressEvent | AutoCatProgressEvent) => void,
+  onEvent?: (event: SyncProgressEvent | AutoCatProgressEvent | AccountDiscoveredEvent) => void,
 ): Promise<SyncCompleteEvent> {
   const res = await fetch(`${STREAM_BASE}${path}`, {
     method: "POST",
@@ -300,6 +306,7 @@ async function streamSyncAll(
   let result: SyncCompleteEvent | null = null;
   let lastProgressTime = 0;
   let pendingEvent: (SyncProgressEvent | AutoCatProgressEvent) | null = null;
+  const discoveredAccounts: string[] = [];
 
   while (true) {
     const { done, value } = await reader.read();
@@ -312,6 +319,9 @@ async function streamSyncAll(
       const event = JSON.parse(line);
       if (event.status === "complete") {
         result = event as SyncCompleteEvent;
+      } else if (event.status === "account_discovered") {
+        discoveredAccounts.push(...(event as AccountDiscoveredEvent).accounts);
+        if (onEvent) onEvent(event as AccountDiscoveredEvent);
       } else if (onEvent) {
         const now = Date.now();
         if (now - lastProgressTime >= 100) {
@@ -332,6 +342,9 @@ async function streamSyncAll(
     if (event.status === "complete") result = event as SyncCompleteEvent;
   }
   if (!result) throw new Error("Sync stream ended without completion event");
+  if (discoveredAccounts.length > 0) {
+    result.discoveredAccounts = discoveredAccounts;
+  }
   return result;
 }
 
@@ -439,7 +452,7 @@ export const api = {
     fetcher<{ status: string; items_queued: number }>("/plaid/sync-all", { method: "POST" }),
 
   syncAllStream: (
-    onEvent?: (event: SyncProgressEvent | AutoCatProgressEvent) => void,
+    onEvent?: (event: SyncProgressEvent | AutoCatProgressEvent | AccountDiscoveredEvent) => void,
   ): Promise<SyncCompleteEvent> => {
     return streamSyncAll("/plaid/sync-all-stream", onEvent);
   },

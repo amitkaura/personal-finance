@@ -44,6 +44,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 
 ### Transaction Management
 - **Batched transaction sync** -- all sync paths (first sync after linking, manual sync, scheduled sync) use batch DB lookups and batch LLM categorization instead of per-transaction queries; first sync after linking shows streaming progress in the drawer (same UX as CSV import)
+- **Auto-create missing accounts** -- if Plaid returns transactions for an account not yet in the database (e.g., a new account opened at the same bank), the account is automatically created, an `ACCOUNT_DISCOVERED` activity log entry is recorded, and the sync progress drawer shows an info banner notifying the user
 - Manual transaction entry with merchant name, amount, date, category, and notes
 - **CSV import** -- bulk import accounts & transactions from bank exports with a multi-step wizard; auto-creates accounts, categorizes transactions, skips duplicates, and lets you set account type, subtype, and starting balance per new account
   - Drag-and-drop or file picker upload
@@ -661,7 +662,7 @@ python3 -m pytest -v              # verbose output
 python3 -m pytest tests/test_auth.py  # run a single file
 ```
 
-**What's tested (523 tests across 23 files):**
+**What's tested (527 tests across 23 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -674,7 +675,7 @@ python3 -m pytest tests/test_auth.py  # run a single file
 | `test_accounts` | 35 | List, update, unlink, summary, manual create/delete, unlinked Plaid delete, balance update (manual-only restriction), CSV import, cascade delete, negative amounts, inline auto-categorization, statement_available_day (create/update/clear/validate), statement-reminders endpoint (match/no-match/last-day-fallback/auth) |
 | `test_scheduler` | 11 | Statement reminder scheduler job (day match, de-duplication, last-day-of-month fallback, no-accounts), per-household scheduler (reads DB config, no-config skips, disabled skips, multiple households, scoped sync items, scoped reminders) |
 | `test_sync_config` | 13 | Sync config CRUD (get configured/unconfigured/no-household/member-read, create/update/invalid-hour/invalid-minute/non-owner/no-household, delete/non-owner/not-configured/no-household) |
-| `test_plaid` | 24 | Link token, exchange token (success, relink, conflict, institution name, no background sync), sync, sync-all-stream (NDJSON streaming, batch account lookup, update-existing, batch LLM, rules-before-LLM), background sync (batch lookups, batch LLM), items (all Plaid calls mocked) |
+| `test_plaid` | 28 | Link token, exchange token (success, relink, conflict, institution name, no background sync), sync, sync-all-stream (NDJSON streaming, batch account lookup, update-existing, batch LLM, rules-before-LLM), background sync (batch lookups, batch LLM), auto-create missing accounts (create, activity log, reuse, stream event), items (all Plaid calls mocked) |
 | `test_tags` | 13 | CRUD, attach/detach tags, idempotent tagging |
 | `test_reports` | 8 | Spending by category, monthly trends, top merchants |
 | `test_email` | 11 | Resend HTTP API, invitation + statement reminder templates, send/skip/fail/network-error handling, bearer auth, app_url in CTAs |
@@ -707,7 +708,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (488 tests across 47 files):**
+**What's tested (489 tests across 47 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -744,7 +745,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `budget-snippet` | 8 | Loading, empty with "Create one" link, personal/shared totals, top-3 category sort, expanded shared categories in personal scope, partner scope, and household scope, view all link |
 | `login-page` | 5 | Hero section, trust badges, feature cards, Google sign-in flow |
 | `loans-widget` | 4 | Loading, empty, loan list, total remaining |
-| `categorization-drawer` | 9 | Idle hidden, syncing state, importing state with account name, importing→complete transition, import→categorize chain, bulk import progress, categorizing progress, completion summary with dismiss, dismiss resets to idle |
+| `categorization-drawer` | 10 | Idle hidden, syncing state, importing state with account name, importing→complete transition, import→categorize chain, bulk import progress, categorizing progress, completion summary with dismiss, dismiss resets to idle, discovered-account banner on auto-created accounts |
 | `sync-button` | 4 | Idle state, click triggers sync stream, syncing state (disabled), returns to idle after completion |
 | `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
 | `dashboard-actions` | 6 | Add Account/Link Account/Add Partner buttons, partner status message, navigation to /accounts?add=true, partner dialog open |

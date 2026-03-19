@@ -285,4 +285,27 @@ describe("CategorizationDrawer", () => {
       expect(screen.queryByText(/synced/i)).not.toBeInTheDocument();
     });
   });
+
+  it("shows discovered-account banner when accounts are auto-created during sync", async () => {
+    mockApi.syncAllStream.mockImplementation((onEvent: (e: unknown) => void) => {
+      onEvent({ status: "account_discovered", accounts: ["New Savings"] });
+      return Promise.resolve({
+        status: "complete", synced: 3, categorized: 1, skipped: 2,
+        discoveredAccounts: ["New Savings"],
+      });
+    });
+
+    render(
+      <Wrapper>
+        <SyncTrigger />
+      </Wrapper>,
+    );
+
+    await userEvent.click(screen.getByText("Sync"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/New Savings/)).toBeInTheDocument();
+      expect(screen.getByText(/automatically linked/i)).toBeInTheDocument();
+    });
+  });
 });

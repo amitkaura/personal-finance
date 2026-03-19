@@ -467,6 +467,7 @@ class ActivityAction(str, Enum):
     CATEGORIZE = "categorize"
     CREATE_BUDGET = "create_budget"
     CREATE_GOAL = "create_goal"
+    ACCOUNT_DISCOVERED = "account_discovered"
 
 
 class ErrorType(str, Enum):

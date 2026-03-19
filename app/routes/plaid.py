@@ -198,10 +198,15 @@ def _upsert_plaid_page(
     plaid_transactions: list,
     user_id: int,
     account_map: dict[str, Account],
-) -> int:
-    """Upsert a page of Plaid transactions using batch lookups. Returns new count."""
+    client,
+    plaid_item_id: int,
+) -> tuple[int, list[str]]:
+    """Upsert a page of Plaid transactions using batch lookups.
+
+    Returns (new_txn_count, discovered_account_names).
+    """
     if not plaid_transactions:
-        return 0
+        return 0, []
 
     plaid_ids = [t.transaction_id for t in plaid_transactions]
     existing_rows = session.exec(
@@ -212,10 +217,17 @@ def _upsert_plaid_page(
     existing_map = {t.plaid_transaction_id: t for t in existing_rows}
 
     new_count = 0
+    discovered: list[str] = []
     for txn in plaid_transactions:
         existing = existing_map.get(txn.transaction_id)
         account = account_map.get(txn.account_id)
         plaid_cat = _extract_plaid_category(txn)
+
+        if not account and txn.account_id:
+            account = _discover_account(
+                session, txn.account_id, user_id, client, plaid_item_id,
+                account_map, discovered,
+            )
 
         if existing:
             existing.amount = Decimal(str(txn.amount))
@@ -239,7 +251,59 @@ def _upsert_plaid_page(
             session.add(new_txn)
             new_count += 1
 
-    return new_count
+    return new_count, discovered
+
+
+def _discover_account(
+    session: Session,
+    plaid_account_id: str,
+    user_id: int,
+    client,
+    plaid_item_id: int,
+    account_map: dict[str, Account],
+    discovered: list[str],
+) -> Account | None:
+    """Fetch a missing account from Plaid, create it locally, and log the event."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    if plaid_account_id in account_map:
+        return account_map[plaid_account_id]
+
+    try:
+        access_token = decrypt_token(
+            session.get(PlaidItem, plaid_item_id).encrypted_access_token  # type: ignore[union-attr]
+        )
+        resp = client.accounts_get(AccountsGetRequest(access_token=access_token))
+    except Exception:
+        logger.warning("Failed to fetch account %s from Plaid", plaid_account_id)
+        return None
+
+    for acct in resp.accounts:
+        if acct.account_id == plaid_account_id:
+            db_account = _plaid_account_to_db(acct, plaid_item_id, user_id)
+            session.add(db_account)
+            session.flush()
+            account_map[plaid_account_id] = db_account
+            discovered.append(db_account.name)
+
+            logger.warning(
+                "Auto-created account %s (plaid_id=%s) for user %d during sync",
+                db_account.name, plaid_account_id, user_id,
+            )
+
+            from app.models import ActivityAction, ActivityLog
+            session.add(ActivityLog(
+                user_id=user_id,
+                action=ActivityAction.ACCOUNT_DISCOVERED,
+                detail=f"Auto-created account: {db_account.name}",
+            ))
+
+            return db_account
+
+    logger.warning("Account %s not found in Plaid response", plaid_account_id)
+    return None
 
 
 def _sync_single_item(
@@ -248,13 +312,17 @@ def _sync_single_item(
     user_id: int,
     client,
     account_map: dict[str, Account],
-) -> int:
-    """Paginate through Plaid transactions for one item and upsert. Returns new count."""
+) -> tuple[int, list[str]]:
+    """Paginate through Plaid transactions for one item and upsert.
+
+    Returns (new_txn_count, discovered_account_names).
+    """
     access_token = decrypt_token(item.encrypted_access_token)
     end_date = date.today()
     start_date = end_date - timedelta(days=30)
 
     total_synced = 0
+    all_discovered: list[str] = []
     offset = 0
     page_total = 1
     while offset < page_total:
@@ -267,9 +335,12 @@ def _sync_single_item(
         txn_response = client.transactions_get(txn_request)
         page_total = txn_response.total_transactions
 
-        total_synced += _upsert_plaid_page(
+        new_count, discovered = _upsert_plaid_page(
             session, txn_response.transactions, user_id, account_map,
+            client, item.id,
         )
+        total_synced += new_count
+        all_discovered.extend(discovered)
         session.commit()
 
         batch_size = len(txn_response.transactions)
@@ -277,7 +348,7 @@ def _sync_single_item(
             break
         offset += batch_size
 
-    return total_synced
+    return total_synced, all_discovered
 
 
 def _categorize_uncategorized(
@@ -359,7 +430,14 @@ def _sync_all_stream_generator(
             "total": total_items,
         }) + "\n"
 
-        total_synced += _sync_single_item(session, item, user_id, client, account_map)
+        synced, discovered = _sync_single_item(session, item, user_id, client, account_map)
+        total_synced += synced
+
+        if discovered:
+            yield json.dumps({
+                "status": "account_discovered",
+                "accounts": discovered,
+            }) + "\n"
 
         try:
             access_token = decrypt_token(item.encrypted_access_token)
@@ -497,7 +575,7 @@ def sync_transactions(plaid_item_id: int) -> None:
         account_map = _build_account_map(session, user_id)
         client = get_household_plaid_client_for_user_id(session, user_id)
 
-        _sync_single_item(session, item, user_id, client, account_map)
+        _sync_single_item(session, item, user_id, client, account_map)  # ignore returned tuple
         _categorize_uncategorized(session, user_id)
 
         access_token = decrypt_token(item.encrypted_access_token)
