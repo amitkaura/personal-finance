@@ -1,0 +1,8 @@
+cd frontend && npx lint-staged
+
+cd ..
+
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+if [ -n "$STAGED_PY" ]; then
+  ruff check $STAGED_PY
+fi

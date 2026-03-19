@@ -1,0 +1,13 @@
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E402",  # module-import-not-at-top — intentional in some files
+    "E501",  # line-too-long — not enforced, would require mass reformatting
+    "E741",  # ambiguous variable name — common in loop vars (e, l, n)
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["F401", "F841"]  # unused imports/vars common in test fixtures

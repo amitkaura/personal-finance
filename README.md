@@ -14,6 +14,7 @@ A self-hosted personal finance platform that aggregates bank accounts via Plaid,
 | **AI Categorization** | Managed LLM or BYOK (OpenAI, Ollama, Azure, any OpenAI-compatible API) |
 | **Charts** | Nivo (bar) |
 | **Scheduling** | APScheduler (per-household cron jobs for transaction sync + statement reminders) |
+| **Linting** | ESLint (frontend, via Husky + lint-staged), ruff (backend) |
 | **Infrastructure** | Docker Compose (Postgres + Redis + API) |
 
 ## Features
@@ -376,6 +377,7 @@ personal-finance/
 ├── docker-compose.yml              # Postgres + Redis + API services
 ├── Dockerfile                      # Python 3.12-slim, uvicorn
 ├── requirements.txt                # Python dependencies
+├── ruff.toml                       # Ruff linter config (Python)
 ├── pytest.ini                      # Pytest configuration
 └── .env.example                    # All required environment variables
 ```
@@ -622,6 +624,15 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and sign in with Google.
+
+### 5. Pre-commit hooks (automatic)
+
+Running `npm install` in `frontend/` automatically installs pre-commit hooks via Husky. On every `git commit`, the hook:
+
+- **Frontend**: runs ESLint (with `--fix`) on staged `.ts`/`.tsx` files via lint-staged
+- **Backend**: runs ruff on staged `.py` files
+
+If either linter finds errors, the commit is blocked. To skip the hook in an emergency: `git commit --no-verify`.
 
 ### Docker (full stack)
 
