@@ -24,6 +24,8 @@ vi.mock("@/components/categorization-progress-provider", () => ({
   useCategorizationProgress: () => ({ startSync: mockStartSync }),
 }));
 
+const mockClearPlaidBrowserState = vi.hoisted(() => vi.fn());
+
 const mockApi = vi.hoisted(() => ({
   createLinkToken: vi.fn(),
   exchangeToken: vi.fn(),
@@ -39,7 +41,10 @@ const mockApi = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("@/lib/api", () => ({ api: mockApi }));
+vi.mock("@/lib/api", () => ({
+  api: mockApi,
+  clearPlaidBrowserState: mockClearPlaidBrowserState,
+}));
 
 describe("LinkAccount", () => {
   beforeEach(() => {
@@ -128,11 +133,23 @@ describe("LinkAccount", () => {
       expect(mockApi.createLinkToken).toHaveBeenCalled();
     });
 
-    // Simulate Plaid onSuccess callback triggering exchangeToken
-    // Since usePlaidLink is mocked, we need to verify startSync is eventually called
-    // after exchangeToken resolves (the component calls startSync in onSuccess)
     await waitFor(() => {
       expect(mockStartSync).toHaveBeenCalled();
     });
+  });
+
+  it("clears Plaid browser state after successful exchange", async () => {
+    const user = userEvent.setup();
+    mockApi.createLinkToken.mockResolvedValue({ link_token: "link-tok" });
+    mockApi.exchangeToken.mockResolvedValue({ item_id: "item-1", accounts_synced: 2 });
+
+    renderWithProviders(<LinkAccount />);
+    await user.click(screen.getByText("Link Account"));
+
+    await waitFor(() => {
+      expect(mockApi.exchangeToken).toHaveBeenCalled();
+    });
+
+    expect(mockClearPlaidBrowserState).toHaveBeenCalled();
   });
 });

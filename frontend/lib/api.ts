@@ -348,6 +348,23 @@ async function streamSyncAll(
   return result;
 }
 
+export function clearPlaidBrowserState() {
+  if (typeof window === "undefined") return;
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && /plaid/i.test(key)) keysToRemove.push(key);
+  }
+  keysToRemove.forEach((k) => localStorage.removeItem(k));
+
+  const sessionKeysToRemove: string[] = [];
+  for (let i = 0; i < sessionStorage.length; i++) {
+    const key = sessionStorage.key(i);
+    if (key && /plaid/i.test(key)) sessionKeysToRemove.push(key);
+  }
+  sessionKeysToRemove.forEach((k) => sessionStorage.removeItem(k));
+}
+
 export const api = {
   // Auth
   loginWithGoogle: (idToken: string) =>
