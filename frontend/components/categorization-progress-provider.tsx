@@ -11,6 +11,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import {
   api,
+  type AccountDiscoveredEvent,
   type AutoCatProgressEvent,
   type SyncProgressEvent,
   type SyncCompleteEvent,
@@ -44,6 +45,7 @@ interface CategorizationProgressValue {
   importAccountName: string | null;
   result: { synced: number; categorized: number; skipped: number } | null;
   importResult: ImportResult | null;
+  discoveredAccounts: string[];
   errorMessage: string | null;
   startSync: () => void;
   startAutoCategorize: () => void;
@@ -67,6 +69,7 @@ const INITIAL: CategorizationProgressValue = {
   importAccountName: null,
   result: null,
   importResult: null,
+  discoveredAccounts: [],
   errorMessage: null,
   startSync: () => {},
   startAutoCategorize: () => {},
@@ -118,6 +121,7 @@ export function CategorizationProgressProvider({
   const [importMerchant, setImportMerchant] = useState<string | null>(null);
   const [importAccountName, setImportAccountName] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [discoveredAccounts, setDiscoveredAccounts] = useState<string[]>([]);
 
   const runningRef = useRef(false);
   const queryClient = useQueryClient();
@@ -143,6 +147,7 @@ export function CategorizationProgressProvider({
     setImportAccountName(null);
     setResult(null);
     setImportResult(null);
+    setDiscoveredAccounts([]);
     setErrorMessage(null);
     runningRef.current = false;
   }, []);
@@ -160,6 +165,9 @@ export function CategorizationProgressProvider({
           setInstitution(e.institution);
           setSyncCurrent(e.current);
           setSyncTotal(e.total);
+        } else if ((event as AccountDiscoveredEvent).status === "account_discovered") {
+          const e = event as AccountDiscoveredEvent;
+          setDiscoveredAccounts((prev) => [...prev, ...e.accounts]);
         } else {
           const e = event as AutoCatProgressEvent;
           setState("categorizing");
@@ -170,6 +178,12 @@ export function CategorizationProgressProvider({
         }
       })
       .then((complete: SyncCompleteEvent) => {
+        if (complete.discoveredAccounts?.length) {
+          setDiscoveredAccounts((prev) => {
+            const merged = new Set([...prev, ...complete.discoveredAccounts!]);
+            return [...merged];
+          });
+        }
         setResult({
           synced: complete.synced,
           categorized: complete.categorized,
@@ -340,6 +354,7 @@ export function CategorizationProgressProvider({
         importAccountName,
         result,
         importResult,
+        discoveredAccounts,
         errorMessage,
         startSync,
         startAutoCategorize,

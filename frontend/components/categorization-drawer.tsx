@@ -21,6 +21,7 @@ export default function CategorizationDrawer() {
     importAccountName,
     result,
     importResult,
+    discoveredAccounts,
     errorMessage,
     dismiss,
   } = useCategorizationProgress();
@@ -129,6 +130,15 @@ export default function CategorizationDrawer() {
                 <p className="text-xs text-muted-foreground">
                   Tip: <a href="/settings?section=ai" className="underline hover:text-foreground">configure AI categorization</a> in Settings to reduce skipped transactions.
                 </p>
+              )}
+              {discoveredAccounts.length > 0 && (
+                <div className="mt-2 rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
+                  {discoveredAccounts.map((name) => (
+                    <p key={name}>
+                      New account discovered: <strong>{name}</strong>. It has been automatically linked.
+                    </p>
+                  ))}
+                </div>
               )}
             </div>
           )}
