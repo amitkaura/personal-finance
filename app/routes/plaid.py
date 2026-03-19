@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from starlette.responses import StreamingResponse
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.country_code import CountryCode
@@ -27,8 +28,19 @@ from app.categorizer import categorize_batch_llm, load_rules, match_rules
 from app.crypto import decrypt_token, encrypt_token
 from app.database import get_session
 from app.household import get_scoped_user_ids
-from app.models import Account, AccountType, PlaidItem, Transaction, User
-from app.plaid_client import get_household_plaid_client, get_household_plaid_client_for_user_id
+from app.models import (
+    Account,
+    AccountType,
+    PlaidItem,
+    PlaidWebhookEvent,
+    SYNC_TRIGGERING_CODES,
+    Transaction,
+    User,
+)
+from app.plaid_client import get_app_plaid_client, get_household_plaid_client, get_household_plaid_client_for_user_id
+from app.webhook_verify import verify_plaid_webhook
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/plaid", tags=["plaid"])
 
@@ -53,13 +65,19 @@ def create_link_token(
     user: User = Depends(get_current_user),
 ):
     """Generate a Plaid Link token to initialize the Link flow."""
+    from app.config import get_settings
+
+    settings = get_settings()
     client = get_household_plaid_client(session, user)
+
+    webhook_url = f"{settings.app_url}/api/v1/plaid/webhook"
     request = LinkTokenCreateRequest(
         user=LinkTokenCreateRequestUser(client_user_id=str(user.id)),
         client_name="Personal Finance",
         products=[Products("transactions"), Products("liabilities")],
         country_codes=[CountryCode("US"), CountryCode("CA")],
         language="en",
+        webhook=webhook_url,
     )
     response = client.link_token_create(request)
     return LinkTokenResponse(link_token=response.link_token)
@@ -560,6 +578,71 @@ def unlink_plaid_item(
         "institution_name": item.institution_name,
         "accounts_unlinked": len(accounts),
     }
+
+
+@router.post("/webhook")
+async def plaid_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    """Receive and process Plaid webhook events.
+
+    This endpoint is called by Plaid directly — no user authentication.
+    Verification is done via the Plaid-Verification JWS header.
+    """
+    body = await request.body()
+    verification_header = request.headers.get("Plaid-Verification")
+
+    if not verification_header:
+        raise HTTPException(status_code=400, detail="Missing Plaid-Verification header")
+
+    try:
+        plaid_client = get_app_plaid_client(session)
+        verify_plaid_webhook(body, verification_header, plaid_client)
+    except ValueError as exc:
+        logger.warning("Webhook verification failed: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise HTTPException(
+            status_code=503, detail="Plaid configuration unavailable for webhook verification"
+        )
+
+    payload = json.loads(body)
+    webhook_type = payload.get("webhook_type", "")
+    webhook_code = payload.get("webhook_code", "")
+    item_id = payload.get("item_id")
+
+    error_info = payload.get("error") or {}
+    error_code = error_info.get("error_code") if isinstance(error_info, dict) else None
+    error_message = error_info.get("error_message") if isinstance(error_info, dict) else None
+
+    event = PlaidWebhookEvent(
+        webhook_type=webhook_type,
+        webhook_code=webhook_code,
+        item_id=item_id,
+        error_code=error_code,
+        error_message=error_message,
+        raw_payload=json.dumps(payload),
+    )
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+
+    if webhook_type == "TRANSACTIONS" and webhook_code in SYNC_TRIGGERING_CODES:
+        plaid_item = session.exec(
+            select(PlaidItem).where(PlaidItem.item_id == item_id)
+        ).first()
+        if plaid_item:
+            background_tasks.add_task(sync_transactions, plaid_item.id)
+            event.processed = True
+            session.add(event)
+            session.commit()
+            logger.info("Webhook triggered sync for PlaidItem %s", plaid_item.id)
+        else:
+            logger.warning("Webhook received for unknown item_id: %s", item_id)
+
+    return {"status": "received"}
 
 
 def sync_transactions(plaid_item_id: int) -> None:

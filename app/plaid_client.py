@@ -73,6 +73,18 @@ def get_household_plaid_client(session: Session, user: User) -> plaid_api.PlaidA
     return get_plaid_client(client_id=client_id, secret=secret, env=env)
 
 
+def get_app_plaid_client(session: Session) -> plaid_api.PlaidApi:
+    """Build a Plaid client using the app-level managed config (no user context)."""
+    app_config = session.exec(select(AppPlaidConfig)).first()
+    if not app_config or not app_config.enabled:
+        raise HTTPException(status_code=400, detail="Managed Plaid is not available")
+    return get_plaid_client(
+        client_id=decrypt_token(app_config.encrypted_client_id),
+        secret=decrypt_token(app_config.encrypted_secret),
+        env=app_config.plaid_env,
+    )
+
+
 def get_household_plaid_client_for_user_id(session: Session, user_id: int) -> plaid_api.PlaidApi:
     """Build a Plaid client given a user_id (for background tasks without a User object)."""
     member = session.exec(

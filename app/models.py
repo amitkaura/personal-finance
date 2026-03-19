@@ -509,3 +509,31 @@ class ErrorLog(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc), index=True
     )
     updated_at: Optional[datetime] = Field(default=None)
+
+
+# Sync-triggering webhook codes
+SYNC_TRIGGERING_CODES = frozenset({
+    "SYNC_UPDATES_AVAILABLE",
+    "DEFAULT_UPDATE",
+    "INITIAL_UPDATE",
+    "HISTORICAL_UPDATE",
+})
+
+
+class PlaidWebhookEvent(SQLModel, table=True):
+    """Records incoming Plaid webhook events for admin visibility and auto-sync."""
+
+    __tablename__ = "plaid_webhook_events"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    webhook_type: str = Field(index=True)
+    webhook_code: str = Field(index=True)
+    item_id: Optional[str] = Field(default=None, index=True)
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    raw_payload: str
+    processed: bool = Field(default=False)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), index=True
+    )
+    updated_at: Optional[datetime] = Field(default=None)

@@ -487,3 +487,19 @@ export interface AdminUserDetail {
   recent_activity: AdminUserDetailActivity[];
   stats: AdminUserDetailStats;
 }
+
+export interface WebhookEvent {
+  id: number;
+  webhook_type: string;
+  webhook_code: string;
+  item_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  processed: boolean;
+  created_at: string | null;
+}
+
+export interface WebhookEventsResponse {
+  total: number;
+  events: WebhookEvent[];
+}

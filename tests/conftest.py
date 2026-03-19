@@ -54,6 +54,7 @@ from app.models import (
     NetWorthSnapshot,
     PlaidItem,
     PlaidMode,
+    PlaidWebhookEvent,
     SpendingPreference,
     Tag,
     Transaction,
