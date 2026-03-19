@@ -62,9 +62,12 @@ export default function Sidebar({
         }`}
       >
         <div className="flex h-16 items-center justify-between px-6">
-          <span className="text-xl font-extrabold tracking-tight gradient-text-warm">
-            fino
-          </span>
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="" className="h-7 w-7" />
+            <span className="text-xl font-extrabold tracking-tight gradient-text-warm">
+              fino
+            </span>
+          </div>
           {onClose && (
             <button
               onClick={onClose}
