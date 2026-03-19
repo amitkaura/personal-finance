@@ -41,6 +41,9 @@ const PlaidSetupBanner = dynamic(() => import("@/components/plaid-setup-banner")
 const SandboxBannerWrapper = dynamic(() => import("@/components/sandbox-banner-wrapper"), {
   loading: () => null,
 });
+const ConnectionAlertBanner = dynamic(() => import("@/components/connection-alert-banner"), {
+  loading: () => null,
+});
 
 export default function DashboardPage() {
   return (
@@ -64,6 +67,10 @@ export default function DashboardPage() {
 
       <div className="mt-6">
         <SandboxBannerWrapper />
+      </div>
+
+      <div className="mt-6">
+        <ConnectionAlertBanner />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">

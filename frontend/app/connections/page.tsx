@@ -1,11 +1,13 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { usePlaidLink } from "react-plaid-link";
 import {
   AlertCircle,
+  AlertTriangle,
   Building2,
   Landmark,
   TrendingUp,
@@ -17,10 +19,12 @@ import {
   XCircle,
   Link2,
   Settings,
+  Loader2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 import type { PlaidConnection, PlaidConnectionAccount } from "@/lib/types";
+import { PLAID_ITEM_STATUS } from "@/lib/types";
 import LinkAccount from "@/components/link-account";
 import SandboxBanner from "@/components/sandbox-banner";
 import ConfirmDialog from "@/components/confirm-dialog";
@@ -131,6 +135,21 @@ export default function ConnectionsPage() {
   );
 }
 
+const STATUS_BANNER_CONFIG: Record<string, { message: string; className: string }> = {
+  [PLAID_ITEM_STATUS.ERROR]: {
+    message: "This connection needs re-authentication. Your bank requires you to log in again.",
+    className: "bg-red-500/10 text-red-400",
+  },
+  [PLAID_ITEM_STATUS.PENDING_DISCONNECT]: {
+    message: "This connection will expire soon. Reconnect to renew access.",
+    className: "bg-amber-500/10 text-amber-400",
+  },
+  [PLAID_ITEM_STATUS.REVOKED]: {
+    message: "Access to this institution was revoked. Reconnect to restore access.",
+    className: "bg-red-500/10 text-red-400",
+  },
+};
+
 function ConnectionCard({
   connection,
   showOwner = false,
@@ -188,6 +207,66 @@ function ConnectionCard({
       }
     };
   }, [syncStatus]);
+
+  // ── Reconnect (update mode) flow ──
+  const isUnhealthy = connection.status !== PLAID_ITEM_STATUS.HEALTHY;
+  const [reconnectToken, setReconnectToken] = useState<string | null>(null);
+  const [reconnectStatus, setReconnectStatus] = useState<
+    "idle" | "fetching" | "linking" | "repairing" | "done"
+  >("idle");
+
+  const fetchUpdateToken = useMutation({
+    mutationFn: () => api.createUpdateLinkToken(connection.id),
+    onSuccess: (data) => {
+      setReconnectToken(data.link_token);
+      setReconnectStatus("linking");
+    },
+    onError: () => setReconnectStatus("idle"),
+  });
+
+  const repairMutation = useMutation({
+    mutationFn: () => api.repairPlaidItem(connection.id),
+    onSuccess: () => {
+      setReconnectStatus("done");
+      invalidate();
+      setTimeout(() => {
+        setReconnectStatus("idle");
+        setReconnectToken(null);
+      }, 3000);
+    },
+    onError: () => setReconnectStatus("idle"),
+  });
+
+  const onReconnectSuccess = useCallback(() => {
+    setReconnectStatus("repairing");
+    repairMutation.mutate();
+  }, [repairMutation]);
+
+  const onReconnectExit = useCallback(() => {
+    if (reconnectStatus === "linking") {
+      setReconnectStatus("idle");
+      setReconnectToken(null);
+    }
+  }, [reconnectStatus]);
+
+  const { open: openReconnect, ready: reconnectReady } = usePlaidLink({
+    token: reconnectToken,
+    onSuccess: onReconnectSuccess,
+    onExit: onReconnectExit,
+  });
+
+  useEffect(() => {
+    if (reconnectStatus === "linking" && reconnectToken && reconnectReady) {
+      openReconnect();
+    }
+  }, [reconnectStatus, reconnectToken, reconnectReady, openReconnect]);
+
+  const handleReconnect = () => {
+    setReconnectStatus("fetching");
+    fetchUpdateToken.mutate();
+  };
+
+  const bannerConfig = isUnhealthy ? STATUS_BANNER_CONFIG[connection.status] : null;
 
   return (
     <>
@@ -258,6 +337,35 @@ function ConnectionCard({
             </button>
           </div>
         </div>
+
+        {/* Status banner for unhealthy connections */}
+        {bannerConfig && (
+          <div className={`flex items-center justify-between px-6 py-3 ${bannerConfig.className}`}>
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <p className="text-sm">{bannerConfig.message}</p>
+            </div>
+            {reconnectStatus === "done" ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 shrink-0">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Reconnected
+              </span>
+            ) : (
+              <button
+                onClick={handleReconnect}
+                disabled={reconnectStatus !== "idle"}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-white/20 disabled:opacity-50 shrink-0"
+              >
+                {reconnectStatus !== "idle" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Reconnect
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Accounts list */}
         <div className="divide-y divide-border/50">

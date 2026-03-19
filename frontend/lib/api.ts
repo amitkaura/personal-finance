@@ -459,6 +459,12 @@ export const api = {
 
   createLinkToken: () => fetcher<{ link_token: string }>("/plaid/link-token", { method: "POST" }),
 
+  createUpdateLinkToken: (plaidItemId: number) =>
+    fetcher<{ link_token: string }>(`/plaid/link-token/update/${plaidItemId}`, { method: "POST" }),
+
+  repairPlaidItem: (plaidItemId: number) =>
+    fetcher<{ status: string }>(`/plaid/items/${plaidItemId}/repair`, { method: "POST" }),
+
   exchangeToken: (publicToken: string, institutionName?: string) =>
     fetcher<{ item_id: string; accounts_synced: number }>("/plaid/exchange-token", {
       method: "POST",
