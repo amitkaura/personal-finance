@@ -5,35 +5,50 @@ alwaysApply: true
 
 # Database Schema Migration
 
-## The Problem
+## What's Automated (no manual SQL needed)
 
-This project uses SQLModel with `create_db_and_tables()` on startup. That call
-creates **new** tables but does **not** alter existing ones. When you add a
-column to an existing model, the Python code works but the database column
-doesn't exist, causing runtime `UndefinedColumn` errors.
+| Schema change | Handled by | When |
+|---|---|---|
+| New table | `create_db_and_tables()` | App startup |
+| New column on existing table | `auto_sync_columns()` | App startup |
+| New enum value (e.g. `ActivityAction`) | Nothing needed | All enums use `sa_type=sa.String(...)`, stored as `VARCHAR` — new values just work |
 
-## When this rule does NOT apply
+**CI guard:** `test_all_columns_present` in `tests/test_auto_sync.py` fails if
+any model column is missing from the DB schema, catching forgotten migrations
+before deploy.
 
-- Adding a brand-new model/table — `create_db_and_tables()` handles that automatically
-- Changes to Pydantic-only models (request/response schemas) that have no `table=True`
+### Enum convention
 
-## After Modifying an Existing Model
+All Python `Enum` fields in this project use `sa_type=sa.String(N)` instead of
+native PostgreSQL enum types. This means adding a new value to a Python enum
+(e.g. `ACCOUNT_DISCOVERED = "account_discovered"` on `ActivityAction`) requires
+**no** `ALTER TYPE` statement. Do NOT use native PG enums; keep using
+`sa_type=sa.String(...)` so new values deploy without migration.
 
-Whenever you add, remove, or rename a field on a model whose table already
-exists, you **must** also apply the change to the live database.
+## What Requires Manual Migration
+
+These changes are **not** handled automatically and need manual SQL:
+
+- Removing a column
+- Renaming a column
+- Changing a column's type
+- Adding an index to an existing column (new columns with `index=True` get
+  indexed by `auto_sync_columns`, but adding `index=True` to a column that
+  already exists does not)
+- Adding a foreign key constraint to an existing column
+
+## Manual Migration Process
+
+When a change from the list above is needed:
 
 ### Step 1 — Generate the ALTER statement
 
-For each changed field, determine the SQL:
-
 | Change | SQL |
 |--------|-----|
-| Add nullable column | `ALTER TABLE <table> ADD COLUMN IF NOT EXISTS <col> <type>;` |
-| Add non-null column | `ALTER TABLE <table> ADD COLUMN IF NOT EXISTS <col> <type> NOT NULL DEFAULT <default>;` |
-| Add indexed column | Also run `CREATE INDEX IF NOT EXISTS ix_<table>_<col> ON <table>(<col>);` |
-| Add FK column | Also add `REFERENCES <parent_table>(id)` |
 | Remove column | `ALTER TABLE <table> DROP COLUMN IF EXISTS <col>;` |
 | Rename column | `ALTER TABLE <table> RENAME COLUMN <old> TO <new>;` |
+| Add index to existing column | `CREATE INDEX IF NOT EXISTS ix_<table>_<col> ON <table>(<col>);` |
+| Add FK to existing column | `ALTER TABLE <table> ADD CONSTRAINT ... FOREIGN KEY ...` |
 
 ### Step 2 — Map Python types to PostgreSQL types
 
@@ -76,8 +91,9 @@ psql -d finance -c "\d <table>"
 
 Before considering a model change complete:
 
-- [ ] ALTER TABLE executed for every added/removed/renamed column
-- [ ] Indexes created for any `index=True` fields
-- [ ] Foreign key constraints added for any FK fields
+- [ ] Determine if the change is automated (see table above) — if so, no SQL needed
+- [ ] For manual changes: ALTER/DROP/RENAME executed
+- [ ] Indexes created for any new `index=True` fields on existing columns
+- [ ] Foreign key constraints added for any FK fields on existing columns
 - [ ] Existing rows backfilled where applicable
 - [ ] Schema verified with `\d <table>`
