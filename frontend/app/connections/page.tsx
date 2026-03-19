@@ -21,7 +21,7 @@ import {
   Settings,
   Loader2,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, clearPlaidBrowserState } from "@/lib/api";
 import { useFormatCurrencyPrecise, useScope } from "@/lib/hooks";
 import type { PlaidConnection, PlaidConnectionAccount } from "@/lib/types";
 import { PLAID_ITEM_STATUS } from "@/lib/types";
@@ -255,6 +255,7 @@ function ConnectionCard({
 
   const onReconnectSuccess = useCallback(() => {
     setReconnectStatus("repairing");
+    clearPlaidBrowserState();
     repairMutation.mutate();
   }, [repairMutation]);
 

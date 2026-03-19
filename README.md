@@ -723,7 +723,7 @@ npm run test:watch                # watch mode
 npx vitest run tests/sidebar.test.tsx  # run a single file
 ```
 
-**What's tested (502 tests across 49 files):**
+**What's tested (504 tests across 49 files):**
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -753,7 +753,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `recurring-widget` | 6 | Loading, empty, recurring detection, max 6 items, null merchant handling, sort by amount |
 | `household-provider` | 6 | Load household/partner, scope persistence per user in localStorage, reset |
 | `hooks` | 6 | `useFormatCurrency`, `useFormatCurrencyPrecise`, `useScope` |
-| `auth-provider` | 6 | Loading state, login/logout, cache clearing, default context |
+| `auth-provider` | 7 | Loading state, login/logout, cache clearing, Plaid browser state cleanup on logout, default context |
 | `goals-snippet` | 7 | Loading, empty with "Set one" link, personal goals (max 3), expanded shared rows in personal scope, partner/household shared visibility, view all link |
 | `auth-gate` | 11 | Loading spinner, unauthenticated shows login, authenticated renders sidebar + children, hamburger menu button, toggle sidebar open, responsive margin classes, OnboardingRedirect (redirects when plaid_mode or llm_mode null, skips when modes set) |
 | `net-worth-card` | 5 | Loading skeleton, net worth display, asset/liability breakdown, account count pluralization |
@@ -766,7 +766,7 @@ npx vitest run tests/sidebar.test.tsx  # run a single file
 | `review-snippet` | 4 | Loading, empty "all caught up", transaction list, view all link |
 | `dashboard-actions` | 6 | Add Account/Link Account/Add Partner buttons, partner status message, navigation to /accounts?add=true, partner dialog open |
 | `add-partner-dialog` | 6 | Email input and submit, invitePartner API call, onClose on success, error display, close button, hidden when closed |
-| `link-account` | 7 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label, startSync triggered after exchange |
+| `link-account` | 8 | Idle button, token fetch on click, success message, pluralization, sandbox "Link Demo Account" label, production "Link Account" label, startSync triggered after exchange, Plaid browser state cleared after linking |
 | `sandbox-banner` | 2 | Test-mode warning text, demo accounts mention |
 | `sandbox-banner-wrapper` | 3 | Renders banner when sandbox, nothing when production, nothing when unconfigured |
 | `onboarding` | 21 | Wizard step 1 (Plaid mode): managed + BYOK cards, hidden managed when unavailable, no auto-selection, setPlaidMode calls on card click, Settings info text, no skip; wizard step 2 (LLM mode): managed AI + BYOK cards, no skip, back button returns to step 1, setLLMMode calls, Settings info text; wizard progression: step indicator, advancement after plaid mode set, skip step 2 when already set, redirect after all steps complete; sandbox indicator: banner when managed sandbox keys, hidden for production; cache invalidation: plaid-config cache cleared on managed and BYOK card click |

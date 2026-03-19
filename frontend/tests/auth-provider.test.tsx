@@ -10,8 +10,11 @@ const mockApi = vi.hoisted(() => ({
   logout: vi.fn(),
 }));
 
+const mockClearPlaidBrowserState = vi.hoisted(() => vi.fn());
+
 vi.mock("@/lib/api", () => ({
   api: mockApi,
+  clearPlaidBrowserState: mockClearPlaidBrowserState,
 }));
 
 function AuthConsumer() {
@@ -97,6 +100,21 @@ describe("AuthProvider", () => {
     await waitFor(() => expect(screen.getByTestId("user").textContent).toBe("none"));
     expect(mockApi.logout).toHaveBeenCalled();
     expect(clearSpy).toHaveBeenCalled();
+  });
+
+  it("logout clears Plaid browser state", async () => {
+    mockApi.getMe.mockResolvedValue(TEST_USER);
+    mockApi.logout.mockResolvedValue({ ok: true });
+
+    renderAuth();
+    await waitFor(() => expect(screen.getByTestId("user").textContent).toBe("Alice Smith"));
+
+    await act(async () => {
+      screen.getByText("Logout").click();
+    });
+
+    await waitFor(() => expect(screen.getByTestId("user").textContent).toBe("none"));
+    expect(mockClearPlaidBrowserState).toHaveBeenCalled();
   });
 
   it("refreshUser updates user without clearing cache", async () => {

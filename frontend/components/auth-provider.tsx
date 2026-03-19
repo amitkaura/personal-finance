@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "@/lib/types";
-import { api } from "@/lib/api";
+import { api, clearPlaidBrowserState } from "@/lib/api";
 
 interface AuthContextValue {
   user: User | null;
@@ -56,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await api.logout();
     queryClient.clear();
+    clearPlaidBrowserState();
     setUser(null);
   }, [queryClient]);
 
