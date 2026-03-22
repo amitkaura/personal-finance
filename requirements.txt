@@ -5,7 +5,7 @@ uvicorn[standard]==0.41.0
 # Database
 sqlmodel==0.0.37
 psycopg2-binary==2.9.11
-alembic==1.14.0
+alembic==1.18.4
 
 # Plaid Integration
 plaid-python==38.4.0
