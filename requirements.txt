@@ -18,7 +18,7 @@ apscheduler==3.11.2
 
 # Authentication
 PyJWT==2.12.1
-google-auth==2.36.0
+google-auth==2.49.1
 requests==2.32.5
 
 # Security & Config
